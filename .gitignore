@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.basedpyright/
+
+# Node / Bun
+node_modules/
+.pnp
+.pnp.*
+dist/
+build/
+.next/
+.turbo/
+*.tsbuildinfo
+.vite/
+
+# APX / OpenAPI generated (regenerated automatically)
+src/**/ui/src/lib/api.ts.bak
+src/**/ui/src/types/routeTree.gen.ts.bak
+
+# Databricks
+.databricks/
+.databrickscfg
+*.dbcp
+
+# Editor
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Local env / secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# Logs
+*.log
+logs/
+
+# Coverage
+coverage/
+.coverage
+htmlcov/
+
+# OS
+Thumbs.db
