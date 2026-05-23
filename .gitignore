@@ -1,59 +1,58 @@
-# Python
+# Python-generated files
 __pycache__/
-*.py[cod]
+*.py[oc]
 *$py.class
-*.so
-.Python
-.venv/
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
 venv/
-env/
-*.egg-info/
+
+# Test / cache
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 .basedpyright/
+htmlcov/
+.coverage
 
-# Node / Bun
+# Version / metadata (generated)
+src/nuclea_modeler/_version.py
+src/nuclea_modeler/_metadata.py
+
+# JS-related
 node_modules/
-.pnp
-.pnp.*
-dist/
-build/
-.next/
-.turbo/
+.tanstack/
 *.tsbuildinfo
 .vite/
 
-# APX / OpenAPI generated (regenerated automatically)
-src/**/ui/src/lib/api.ts.bak
-src/**/ui/src/types/routeTree.gen.ts.bak
+# Env / secrets
+.env
+.env.local
+.env.*
 
-# Databricks
-.databricks/
-.databrickscfg
-*.dbcp
+# OS
+.DS_Store
+Thumbs.db
 
 # Editor
 .vscode/
 .idea/
 *.swp
-.DS_Store
 
-# Local env / secrets
-.env
-.env.local
-.env.*.local
-*.pem
-*.key
+# DABs
+.databricks/
+
+# apx
+.apx/
+
+# UI build output
+src/nuclea_modeler/__dist__/
+.build/
 
 # Logs
 *.log
 logs/
-
-# Coverage
-coverage/
-.coverage
-htmlcov/
-
-# OS
-Thumbs.db

@@ -1,0 +1,1 @@
+command: ["uvicorn", "nuclea_modeler.backend.app:app", "--workers", "2"]
