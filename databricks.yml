@@ -1,6 +1,20 @@
 bundle:
   name: nuclea-modeler
 
+variables:
+  catalog:
+    description: "Unity Catalog where the app schema lives"
+    default: "stable_classic_pg4xe1_catalog"
+  schema:
+    description: "Schema for app state (Delta tables)"
+    default: "data_catalog_app"
+  warehouse_id:
+    description: "Serverless SQL Warehouse for app queries"
+    default: "b8e52268d9828bdd"
+  secrets_scope:
+    description: "Databricks Secrets scope for source-system credentials"
+    default: "nuclea-modeler"
+
 sync:
   include:
     - .build
@@ -13,10 +27,41 @@ resources:
   apps:
     nuclea-modeler-app:
       name: "nuclea-modeler"
-      description: "nuclea-modeler created with apx"
+      description: "Núclea data catalog & modeling — Databricks-native app (APX/FastAPI/React)"
       source_code_path: ./.build
+      resources:
+        - name: app-sql-warehouse
+          description: "SQL Warehouse used to read/write Delta tables of the app"
+          sql_warehouse:
+            id: ${var.warehouse_id}
+            permission: "CAN_USE"
+        - name: app-secrets
+          description: "Secret scope holding HINT/HEXT/PROD source credentials"
+          secret:
+            scope: ${var.secrets_scope}
+            key: "*"
+            permission: "READ"
+      config:
+        env:
+          - name: NUCLEA_CATALOG
+            value: ${var.catalog}
+          - name: NUCLEA_SCHEMA
+            value: ${var.schema}
+          - name: NUCLEA_WAREHOUSE_ID
+            value: ${var.warehouse_id}
+          - name: NUCLEA_SECRETS_SCOPE
+            value: ${var.secrets_scope}
+          - name: DATABRICKS_SQL_WAREHOUSE_ID
+            value: ${var.warehouse_id}
 
 targets:
   dev:
     mode: development
     default: true
+    workspace:
+      host: https://fevm-stable-classic-pg4xe1.cloud.databricks.com
+
+  prod:
+    mode: production
+    workspace:
+      host: https://fevm-stable-classic-pg4xe1.cloud.databricks.com
