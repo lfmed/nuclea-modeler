@@ -875,3 +875,208 @@ export const usePreviewDdl = (
       (await api.post<DDLExportResult>("/ddl/preview", data)).data,
     ...opts?.mutation,
   });
+
+// ─── Glossary (Module 6) ─────────────────────────────────────────────────────
+
+export type TermStatus = "DRAFT" | "IN_REVIEW" | "APPROVED" | "DEPRECATED";
+export type ConceptualType =
+  | "IDENTIFIER"
+  | "MONETARY"
+  | "DATE"
+  | "BOOLEAN"
+  | "TEXT"
+  | "NUMERIC"
+  | "CATEGORICAL"
+  | "OTHER";
+
+export interface TermIn {
+  canonical_name: string;
+  definition: string;
+  synonyms?: string[];
+  domain?: string | null;
+  conceptual_type?: ConceptualType | null;
+  valid_examples?: string[];
+  owner_person?: string | null;
+}
+
+export interface TermListOut {
+  term_id: string;
+  canonical_name: string;
+  domain?: string | null;
+  conceptual_type?: ConceptualType | null;
+  status: TermStatus;
+  owner_person?: string | null;
+  mappings_count: number;
+  updated_at: string;
+}
+
+export interface TermOut {
+  term_id: string;
+  canonical_name: string;
+  definition: string;
+  synonyms: string[];
+  domain?: string | null;
+  conceptual_type?: ConceptualType | null;
+  valid_examples: string[];
+  owner_person?: string | null;
+  status: TermStatus;
+  approved_by?: string | null;
+  approved_at?: string | null;
+  created_at: string;
+  created_by: string;
+  updated_at: string;
+  updated_by: string;
+  mappings_count: number;
+}
+
+export interface MappingIn {
+  term_id: string;
+  attribute_id: string;
+  inherit_description?: boolean;
+  override_description?: string | null;
+}
+
+export interface MappingOut {
+  mapping_id: string;
+  term_id: string;
+  attribute_id: string;
+  inherit_description: boolean;
+  override_description?: string | null;
+  type_compat_warning: boolean;
+  created_at: string;
+  created_by: string;
+  term_canonical_name?: string | null;
+  term_status?: TermStatus | null;
+  term_conceptual_type?: ConceptualType | null;
+  term_definition?: string | null;
+  attribute_technical_name?: string | null;
+  attribute_logical_name?: string | null;
+  native_data_type?: string | null;
+  entity_id?: string | null;
+  entity_technical_name?: string | null;
+  schema_name?: string | null;
+  system_id?: string | null;
+  system_name?: string | null;
+}
+
+export const useListTermsSuspense = (
+  params: { status?: TermStatus; domain?: string; q?: string } = {},
+  s?: Selector<TermListOut[]>,
+) =>
+  useSuspenseQuery({
+    queryKey: ["listTerms", params],
+    queryFn: () =>
+      api.get<TermListOut[]>("/glossary/terms", {
+        params: {
+          status: params.status,
+          domain: params.domain,
+          q: params.q,
+        },
+      }),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useGetTermSuspense = (id: string, s?: Selector<TermOut>) =>
+  useSuspenseQuery({
+    queryKey: ["getTerm", id],
+    queryFn: () => api.get<TermOut>(`/glossary/terms/${encodeURIComponent(id)}`),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useListTermMappingsSuspense = (
+  termId: string,
+  s?: Selector<MappingOut[]>,
+) =>
+  useSuspenseQuery({
+    queryKey: ["listTermMappings", termId],
+    queryFn: () =>
+      api.get<MappingOut[]>(`/glossary/terms/${encodeURIComponent(termId)}/mappings`),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useListAttributeGlossarySuspense = (
+  attributeId: string,
+  s?: Selector<MappingOut[]>,
+) =>
+  useSuspenseQuery({
+    queryKey: ["listAttributeGlossary", attributeId],
+    queryFn: () =>
+      api.get<MappingOut[]>(
+        `/attributes/${encodeURIComponent(attributeId)}/glossary`,
+      ),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useCreateTerm = (opts?: Opts<TermOut, { data: TermIn }>) =>
+  useMutation({
+    mutationFn: async ({ data }) =>
+      (await api.post<TermOut>("/glossary/terms", data)).data,
+    ...opts?.mutation,
+  });
+
+export const useUpdateTerm = (
+  opts?: Opts<TermOut, { termId: string; data: TermIn }>,
+) =>
+  useMutation({
+    mutationFn: async ({ termId, data }) =>
+      (await api.put<TermOut>(`/glossary/terms/${encodeURIComponent(termId)}`, data)).data,
+    ...opts?.mutation,
+  });
+
+export const useTransitionTerm = (
+  opts?: Opts<TermOut, { termId: string; to: TermStatus; note?: string }>,
+) =>
+  useMutation({
+    mutationFn: async ({ termId, to, note }) =>
+      (
+        await api.post<TermOut>(
+          `/glossary/terms/${encodeURIComponent(termId)}/transitions`,
+          { to, note },
+        )
+      ).data,
+    ...opts?.mutation,
+  });
+
+export const useDeleteTerm = (
+  opts?: Opts<{ deprecated: string }, { termId: string }>,
+) =>
+  useMutation({
+    mutationFn: async ({ termId }) =>
+      (
+        await api.delete<{ deprecated: string }>(
+          `/glossary/terms/${encodeURIComponent(termId)}`,
+        )
+      ).data,
+    ...opts?.mutation,
+  });
+
+export const useCreateMapping = (
+  opts?: Opts<MappingOut, { termId: string; data: MappingIn }>,
+) =>
+  useMutation({
+    mutationFn: async ({ termId, data }) =>
+      (
+        await api.post<MappingOut>(
+          `/glossary/terms/${encodeURIComponent(termId)}/mappings`,
+          data,
+        )
+      ).data,
+    ...opts?.mutation,
+  });
+
+export const useDeleteMapping = (
+  opts?: Opts<{ deleted: string }, { mappingId: string }>,
+) =>
+  useMutation({
+    mutationFn: async ({ mappingId }) =>
+      (
+        await api.delete<{ deleted: string }>(
+          `/glossary/mappings/${encodeURIComponent(mappingId)}`,
+        )
+      ).data,
+    ...opts?.mutation,
+  });
