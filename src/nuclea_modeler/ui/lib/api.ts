@@ -540,3 +540,88 @@ export const useApplyTicket = (
       (await api.post<TicketApplyResult>(`/tickets/${encodeURIComponent(ticketId)}/apply`)).data,
     ...opts?.mutation,
   });
+
+// ─── Sync (Módulo 9) ──────────────────────────────────────────────────────────
+
+export type SyncMode = "INCREMENTAL" | "FULL";
+export type SyncStatus = "RUNNING" | "SUCCESS" | "PARTIAL" | "FAILED";
+export type SyncObjectStatus = "OK" | "SKIPPED" | "ERROR";
+
+export interface SyncRunRequest {
+  system_id: string;
+  target_catalog: string;
+  target_schema_map?: Record<string, string> | null;
+  mode?: SyncMode;
+  dry_run?: boolean;
+}
+
+export interface SyncObjectResult {
+  schema_name: string;
+  technical_name: string;
+  target_table: string;
+  status: SyncObjectStatus;
+  message?: string | null;
+}
+
+export interface SyncRunResult {
+  sync_id: string;
+  status: SyncStatus;
+  objects_total: number;
+  objects_synced: number;
+  objects_failed: number;
+  duration_ms: number;
+  target_catalog: string;
+  dry_run: boolean;
+  errors: string[];
+  objects: SyncObjectResult[];
+}
+
+export interface SyncLogListOut {
+  sync_id: string;
+  system_id: string;
+  started_at: string;
+  ended_at?: string | null;
+  status: SyncStatus;
+  objects_total?: number | null;
+  objects_synced?: number | null;
+  objects_failed?: number | null;
+  duration_ms?: number | null;
+  target_catalog?: string | null;
+  triggered_by?: string | null;
+  error_summary?: string | null;
+}
+
+export interface SyncLogOut extends SyncLogListOut {
+  version_id: string;
+  objects: SyncObjectResult[];
+}
+
+export const useListSyncRunsSuspense = (s?: Selector<SyncLogListOut[]>) =>
+  useSuspenseQuery({
+    queryKey: ["listSyncRuns"],
+    queryFn: () => api.get<SyncLogListOut[]>("/sync/runs"),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useGetSyncRunSuspense = (id: string, s?: Selector<SyncLogOut>) =>
+  useSuspenseQuery({
+    queryKey: ["getSyncRun", id],
+    queryFn: () => api.get<SyncLogOut>(`/sync/runs/${encodeURIComponent(id)}`),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useRunSync = (opts?: Opts<SyncRunResult, { data: SyncRunRequest }>) =>
+  useMutation({
+    mutationFn: async ({ data }) =>
+      (await api.post<SyncRunResult>("/sync/run", data)).data,
+    ...opts?.mutation,
+  });
+
+export const usePreviewSync = (opts?: Opts<SyncRunResult, { data: SyncRunRequest }>) =>
+  useMutation({
+    mutationFn: async ({ data }) =>
+      (await api.post<SyncRunResult>("/sync/preview", data)).data,
+    ...opts?.mutation,
+  });

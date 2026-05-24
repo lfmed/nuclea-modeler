@@ -5,6 +5,7 @@ from .systems.router import router as systems_router
 from .entities.router import router as entities_router
 from .rbac.router import router as rbac_router
 from .tickets.router import router as tickets_router
+from .sync.router import router as sync_router
 
 app = create_app(
     routers=[
@@ -14,5 +15,6 @@ app = create_app(
         entities_router,
         rbac_router,
         tickets_router,
+        sync_router,
     ]
 )
