@@ -807,3 +807,71 @@ export const useRemoveAttributeFlag = (
       )).data,
     ...opts?.mutation,
   });
+
+// ─── DDL Export (Módulo 10) ──────────────────────────────────────────────────
+
+export type DDLDialect =
+  | "ANSI"
+  | "TSQL"
+  | "PLSQL"
+  | "POSTGRES"
+  | "MYSQL"
+  | "SPARKSQL";
+
+export interface DDLDialectInfo {
+  code: DDLDialect;
+  label: string;
+  subtitle: string;
+}
+
+export interface DDLExportRequest {
+  system_id: string;
+  dialect: DDLDialect;
+  include_comments?: boolean;
+  qualify_schema?: boolean;
+  include_drop_if_exists?: boolean;
+  one_file_per_object?: boolean;
+  entity_ids?: string[] | null;
+}
+
+export interface DDLObjectResult {
+  object_name: string;
+  object_kind: "TABLE" | "VIEW";
+  ddl_text: string;
+  errors: string[];
+}
+
+export interface DDLExportResult {
+  dialect: DDLDialect;
+  total_objects: number;
+  success_count: number;
+  error_count: number;
+  files: DDLObjectResult[];
+  combined_text: string;
+}
+
+export const useListDdlDialectsSuspense = (s?: Selector<DDLDialectInfo[]>) =>
+  useSuspenseQuery({
+    queryKey: ["listDdlDialects"],
+    queryFn: () => api.get<DDLDialectInfo[]>("/ddl/dialects"),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useExportDdl = (
+  opts?: Opts<DDLExportResult, { data: DDLExportRequest }>,
+) =>
+  useMutation({
+    mutationFn: async ({ data }) =>
+      (await api.post<DDLExportResult>("/ddl/export", data)).data,
+    ...opts?.mutation,
+  });
+
+export const usePreviewDdl = (
+  opts?: Opts<DDLExportResult, { data: DDLExportRequest }>,
+) =>
+  useMutation({
+    mutationFn: async ({ data }) =>
+      (await api.post<DDLExportResult>("/ddl/preview", data)).data,
+    ...opts?.mutation,
+  });
