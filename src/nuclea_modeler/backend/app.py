@@ -14,6 +14,8 @@ from .flags.router import (
 )
 from .ddl.router import router as ddl_router
 from .versions.router import router as versions_router
+from .lakebase.router import router as lakebase_router
+from .extractions.router import router as extractions_router
 
 app = create_app(
     routers=[
@@ -31,5 +33,7 @@ app = create_app(
         attribute_flags_router,
         ddl_router,
         versions_router,
+        lakebase_router,
+        extractions_router,
     ]
 )

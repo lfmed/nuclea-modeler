@@ -1205,3 +1205,238 @@ export const useDeprecateVersion = (
       )).data,
     ...opts?.mutation,
   });
+
+// ─── Lakebase Sandboxes ───────────────────────────────────────────────────────
+
+export interface SandboxListOut {
+  sandbox_id: string;
+  name: string;
+  instance_name: string;
+  database_name: string;
+  default_schema: string;
+  pg_version?: string | null;
+  last_test_status?: string | null;
+  last_test_at?: string | null;
+  is_active: boolean;
+}
+
+export interface SandboxOut extends SandboxListOut {
+  instance_uid?: string | null;
+  read_write_dns?: string | null;
+  description?: string | null;
+  last_test_error?: string | null;
+  created_at: string;
+  created_by: string;
+  updated_at: string;
+  updated_by: string;
+}
+
+export interface SandboxIn {
+  name: string;
+  instance_name: string;
+  database_name?: string;
+  default_schema?: string;
+  description?: string | null;
+}
+
+export interface SandboxTestResult {
+  status: "success" | "failure";
+  server_version?: string | null;
+  current_db?: string | null;
+  schemas_visible?: number | null;
+  latency_ms?: number | null;
+  error?: string | null;
+}
+
+export interface LakebaseInstanceOut {
+  instance_name: string;
+  state: string;
+  capacity?: string | null;
+  pg_version?: string | null;
+  read_write_dns?: string | null;
+  uid?: string | null;
+}
+
+export const useListLakebaseInstancesSuspense = (s?: Selector<LakebaseInstanceOut[]>) =>
+  useSuspenseQuery({
+    queryKey: ["listLakebaseInstances"],
+    queryFn: () => api.get<LakebaseInstanceOut[]>("/lakebase/instances"),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useListSandboxesSuspense = (s?: Selector<SandboxListOut[]>) =>
+  useSuspenseQuery({
+    queryKey: ["listSandboxes"],
+    queryFn: () => api.get<SandboxListOut[]>("/lakebase/sandboxes"),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useGetSandboxSuspense = (id: string, s?: Selector<SandboxOut>) =>
+  useSuspenseQuery({
+    queryKey: ["getSandbox", id],
+    queryFn: () => api.get<SandboxOut>(`/lakebase/sandboxes/${encodeURIComponent(id)}`),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useListSandboxSchemasSuspense = (id: string, s?: Selector<string[]>) =>
+  useSuspenseQuery({
+    queryKey: ["listSandboxSchemas", id],
+    queryFn: () => api.get<string[]>(`/lakebase/sandboxes/${encodeURIComponent(id)}/schemas`),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useCreateSandbox = (opts?: Opts<SandboxOut, { data: SandboxIn }>) =>
+  useMutation({
+    mutationFn: async ({ data }) =>
+      (await api.post<SandboxOut>("/lakebase/sandboxes", data)).data,
+    ...opts?.mutation,
+  });
+
+export const useTestSandbox = (opts?: Opts<SandboxTestResult, { sandboxId: string }>) =>
+  useMutation({
+    mutationFn: async ({ sandboxId }) =>
+      (await api.post<SandboxTestResult>(`/lakebase/sandboxes/${encodeURIComponent(sandboxId)}/test`)).data,
+    ...opts?.mutation,
+  });
+
+export const useDeactivateSandbox = (
+  opts?: Opts<{ deactivated: string }, { sandboxId: string }>,
+) =>
+  useMutation({
+    mutationFn: async ({ sandboxId }) =>
+      (await api.delete<{ deactivated: string }>(`/lakebase/sandboxes/${encodeURIComponent(sandboxId)}`)).data,
+    ...opts?.mutation,
+  });
+
+// ─── Extractions (M2 — Reverse Engineering) ──────────────────────────────────
+
+export type SourceKind = "LAKEBASE" | "DDL_FILE" | "ODBC" | "REST";
+export type ExtractionStatus = "RUNNING" | "SUCCESS" | "PARTIAL" | "FAILED";
+
+export interface ExtractedAttribute {
+  technical_name: string;
+  ordinal_position?: number | null;
+  native_data_type?: string | null;
+  is_nullable?: boolean | null;
+  default_value?: string | null;
+  is_primary_key: boolean;
+  native_comment?: string | null;
+}
+
+export interface ExtractedEntity {
+  schema_name: string;
+  technical_name: string;
+  entity_type: "TABLE" | "VIEW" | "MATERIALIZED_VIEW" | "EXTERNAL";
+  native_comment?: string | null;
+  row_count_approx?: number | null;
+  attributes: ExtractedAttribute[];
+}
+
+export interface ExtractionSnapshot {
+  source_kind: SourceKind;
+  sandbox_id?: string | null;
+  connection_id?: string | null;
+  system_id: string;
+  captured_at: string;
+  schemas: string[];
+  entities: ExtractedEntity[];
+}
+
+export interface ExtractionListOut {
+  extraction_id: string;
+  source_kind: SourceKind;
+  system_id: string;
+  system_name?: string | null;
+  status: ExtractionStatus;
+  started_at: string;
+  ended_at?: string | null;
+  duration_ms?: number | null;
+  objects_found?: number | null;
+  objects_new?: number | null;
+  objects_changed?: number | null;
+  objects_removed?: number | null;
+  ticket_id?: string | null;
+  created_by: string;
+}
+
+export interface ExtractionOut extends ExtractionListOut {
+  connection_id?: string | null;
+  lakebase_sandbox_id?: string | null;
+  requested_schemas?: string | null;
+  requested_kinds?: string | null;
+  error_summary?: string | null;
+  snapshot?: ExtractionSnapshot | null;
+  diff_summary?: Record<string, number> | null;
+}
+
+export interface LakebaseExtractionIn {
+  sandbox_id: string;
+  system_id: string;
+  schemas: string[];
+  object_kinds: ("TABLE" | "VIEW")[];
+  open_ticket: boolean;
+}
+
+export interface DDLImportIn {
+  system_id: string;
+  dialect: string;
+  ddl_text: string;
+  open_ticket: boolean;
+}
+
+export interface ExtractionResult {
+  extraction_id: string;
+  status: ExtractionStatus;
+  objects_found: number;
+  objects_new: number;
+  objects_changed: number;
+  objects_removed: number;
+  duration_ms: number;
+  ticket_id?: string | null;
+  summary_md: string;
+  errors: string[];
+}
+
+export const useListExtractionsSuspense = (
+  params: { systemId?: string } = {},
+  s?: Selector<ExtractionListOut[]>,
+) =>
+  useSuspenseQuery({
+    queryKey: ["listExtractions", params],
+    queryFn: () =>
+      api.get<ExtractionListOut[]>("/extractions", {
+        params: { system_id: params.systemId },
+      }),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useGetExtractionSuspense = (id: string, s?: Selector<ExtractionOut>) =>
+  useSuspenseQuery({
+    queryKey: ["getExtraction", id],
+    queryFn: () => api.get<ExtractionOut>(`/extractions/${encodeURIComponent(id)}`),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useRunLakebaseExtraction = (
+  opts?: Opts<ExtractionResult, { data: LakebaseExtractionIn }>,
+) =>
+  useMutation({
+    mutationFn: async ({ data }) =>
+      (await api.post<ExtractionResult>("/extractions/lakebase/run", data)).data,
+    ...opts?.mutation,
+  });
+
+export const useRunDDLImport = (
+  opts?: Opts<ExtractionResult, { data: DDLImportIn }>,
+) =>
+  useMutation({
+    mutationFn: async ({ data }) =>
+      (await api.post<ExtractionResult>("/extractions/ddl/run", data)).data,
+    ...opts?.mutation,
+  });
