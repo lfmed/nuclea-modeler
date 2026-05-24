@@ -1,1 +1,24 @@
-command: ["uvicorn", "nuclea_modeler.backend.app:app", "--workers", "2"]
+command:
+  - uvicorn
+  - nuclea_modeler.backend.app:app
+  - --host
+  - 0.0.0.0
+  - --port
+  - "8000"
+  - --workers
+  - "2"
+  - --app-dir
+  - src
+env:
+  - name: PYTHONPATH
+    value: /app/python/source_code/src
+  - name: NUCLEA_CATALOG
+    value: stable_classic_pg4xe1_catalog
+  - name: NUCLEA_SCHEMA
+    value: data_catalog_app
+  - name: NUCLEA_WAREHOUSE_ID
+    value: b8e52268d9828bdd
+  - name: NUCLEA_SECRETS_SCOPE
+    value: nuclea-modeler
+  - name: DATABRICKS_SQL_WAREHOUSE_ID
+    value: b8e52268d9828bdd
