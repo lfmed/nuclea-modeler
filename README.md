@@ -11,7 +11,7 @@ Aplicação full-stack (FastAPI + React, via [APX](https://github.com/databricks
 | **Plataforma** | Databricks Apps + Unity Catalog + Delta Lake |
 | **Stack** | Python 3.11+ · FastAPI · React 19 · TanStack Router · shadcn/ui · Tailwind 4 |
 | **Persistência** | 100% Delta Lake no Unity Catalog (sem Postgres operacional) |
-| **Status** | 🟢 Fase 2 quase 100% — só M4 DER e M7 Lineage faltam (Fase 3) |
+| **Status** | 🟢 9 dos 10 módulos prontos · só M4 DER (não-mandatório) falta |
 | **URL live** | https://nuclea-modeler-7474646973581105.aws.databricksapps.com |
 
 ## Módulos funcionais
@@ -24,7 +24,7 @@ Aplicação full-stack (FastAPI + React, via [APX](https://github.com/databricks
 | M4 | Diagrama Entidade-Relacionamento *(não-mandatório)* | 3 | ⏳ |
 | M5 | Flagueamento (LGPD/uso/qualidade) | 2 | ✅ |
 | M6 | Dicionário Corporativo | 2 | ✅ |
-| M7 | Linhagem (upstream/downstream + UC Lineage) | 3 | ⏳ |
+| M7 | Linhagem (upstream/downstream + UC Lineage) | 3 | ✅ |
 | M8 | Versionamento de Modelos + Diff | 2 | ✅ |
 | M9 | Sincronização Unity Catalog (COMMENT+TAGS) | 1 | ✅ |
 | M10 | Exportação DDL multi-dialect | 2 | ✅ |
