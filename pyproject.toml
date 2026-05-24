@@ -1,6 +1,6 @@
 [project]
 name = "nuclea-modeler"
-dynamic = ["version"]
+version = "0.1.0"
 description = "Núclea data catalog & modeling app — Databricks-native"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -11,41 +11,34 @@ dependencies = [
     "databricks-sdk>=0.74.0",
     "databricks-sql-connector>=3.5.0",
     "sqlglot>=25.0.0",
-    "pyodbc>=5.1.0",
     "httpx>=0.28.0",
     "python-multipart>=0.0.20",
+    "python-dotenv>=1.0.0",
 ]
 
-[dependency-groups]
+[project.optional-dependencies]
 dev = [
-    "ty>=0.0.12",
     "pytest>=8.0.0",
     "ruff>=0.6.0",
 ]
 
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+nuclea_modeler = ["__dist__/**/*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+# APX metadata retained for reference. Not used by the Databricks Apps runtime.
 [tool.apx.metadata]
 app-name = "nuclea-modeler"
 app-slug = "nuclea_modeler"
 app-entrypoint = "nuclea_modeler.backend.app:app"
 api-prefix = "/api"
-metadata-path = "src/nuclea_modeler/_metadata.py"
-
-[build-system]
-requires = ["hatchling", "uv-dynamic-versioning>=0.7.0"]
-build-backend = "hatchling.build"
-
-[tool.hatch.version]
-source = "uv-dynamic-versioning"
-
-[tool.uv-dynamic-versioning]
-vcs = "git"
-fallback-version = "0.0.0"
-
-[tool.hatch.build.hooks.version]
-path = "src/nuclea_modeler/_version.py"
-template = '''
-version = "{version}"
-'''
-
-[tool.hatch.build]
-artifacts = ["src/nuclea_modeler/__dist__", "src/nuclea_modeler/_metadata.py"]

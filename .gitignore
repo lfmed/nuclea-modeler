@@ -19,9 +19,8 @@ venv/
 htmlcov/
 .coverage
 
-# Version / metadata (generated)
-src/nuclea_modeler/_version.py
-src/nuclea_modeler/_metadata.py
+# Version / metadata — written by hand for direct-source deploy (no apx build)
+# (kept tracked; do NOT ignore)
 
 # JS-related
 node_modules/
@@ -49,8 +48,11 @@ Thumbs.db
 # apx
 .apx/
 
-# UI build output
-src/nuclea_modeler/__dist__/
+# UI build output — keep stub index.html, ignore Vite-generated assets
+src/nuclea_modeler/__dist__/assets/
+src/nuclea_modeler/__dist__/*.js
+src/nuclea_modeler/__dist__/*.css
+src/nuclea_modeler/__dist__/*.map
 .build/
 
 # Logs

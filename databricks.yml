@@ -15,20 +15,23 @@ variables:
     description: "Databricks Secrets scope for source-system credentials"
     default: "nuclea-modeler"
 
+# We DO NOT use `apx build` locally because the dev sandbox blocks pypi/npm.
+# Source code is uploaded directly; the Databricks Apps platform handles
+# `pip install -r requirements.txt` server-side at deploy time.
 sync:
   include:
-    - .build
-
-artifacts:
-  default:
-    build: apx build
+    - app.yml
+    - pyproject.toml
+    - requirements.txt
+    - README.md
+    - src/**
 
 resources:
   apps:
     nuclea-modeler-app:
       name: "nuclea-modeler"
-      description: "Núclea data catalog & modeling — Databricks-native app (APX/FastAPI/React)"
-      source_code_path: ./.build
+      description: "Núclea data catalog & modeling — Databricks-native app"
+      source_code_path: ./.
       resources:
         - name: app-sql-warehouse
           description: "SQL Warehouse used to read/write Delta tables of the app"
