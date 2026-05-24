@@ -1593,3 +1593,117 @@ export const useDeleteDownstream = (
       (await api.delete<{ deleted: string }>(`/lineage/downstream/${encodeURIComponent(consumerId)}`)).data,
     ...opts?.mutation,
   });
+
+// ─── Diagram (Módulo 4 — DER) ────────────────────────────────────────────────
+
+export interface DiagramAttribute {
+  attribute_id: string;
+  technical_name: string;
+  logical_name?: string | null;
+  native_data_type?: string | null;
+  is_primary_key: boolean;
+  is_nullable?: boolean | null;
+  ordinal_position?: number | null;
+  has_lgpd_flag: boolean;
+}
+
+export interface DiagramEntity {
+  entity_id: string;
+  schema_name: string;
+  technical_name: string;
+  logical_name?: string | null;
+  entity_type: "TABLE" | "VIEW" | "MATERIALIZED_VIEW" | "EXTERNAL";
+  domain?: string | null;
+  criticality?: string | null;
+  attributes: DiagramAttribute[];
+  has_lgpd_flag: boolean;
+}
+
+export interface DiagramRelationship {
+  relationship_id: string;
+  source_entity_id: string;
+  target_entity_id: string;
+  rel_type?: string | null;
+  source_cardinality?: string | null;
+  target_cardinality?: string | null;
+  source_attrs: string[];
+  target_attrs: string[];
+  description?: string | null;
+  origin?: string | null;
+}
+
+export interface NodePosition {
+  x: number;
+  y: number;
+}
+
+export interface DiagramView {
+  system_id: string;
+  system_name?: string | null;
+  entities: DiagramEntity[];
+  relationships: DiagramRelationship[];
+  layout: Record<string, NodePosition>;
+  layout_name: string;
+}
+
+export interface LayoutSaveIn {
+  layout_name: string;
+  positions: Record<string, NodePosition>;
+}
+
+export interface LayoutOut {
+  layout_id: string;
+  system_id: string;
+  layout_name: string;
+  positions: Record<string, NodePosition>;
+  created_at: string;
+  created_by: string;
+  updated_at: string;
+  updated_by: string;
+}
+
+export const useGetDiagramSuspense = (
+  systemId: string,
+  layoutName: string = "default",
+  s?: Selector<DiagramView>,
+) =>
+  useSuspenseQuery({
+    queryKey: ["getDiagram", systemId, layoutName],
+    queryFn: () =>
+      api.get<DiagramView>(`/diagram/${encodeURIComponent(systemId)}`, {
+        params: { layout_name: layoutName },
+      }),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useSaveLayout = (
+  opts?: Opts<LayoutOut, { systemId: string; data: LayoutSaveIn }>,
+) =>
+  useMutation({
+    mutationFn: async ({ systemId, data }) =>
+      (await api.post<LayoutOut>(
+        `/diagram/${encodeURIComponent(systemId)}/layout`,
+        data,
+      )).data,
+    ...opts?.mutation,
+  });
+
+export const useListLayoutNamesSuspense = (systemId: string, s?: Selector<string[]>) =>
+  useSuspenseQuery({
+    queryKey: ["listLayoutNames", systemId],
+    queryFn: () => api.get<string[]>(`/diagram/${encodeURIComponent(systemId)}/layouts`),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useDeleteLayout = (
+  opts?: Opts<{ deleted: string }, { systemId: string; layoutName: string }>,
+) =>
+  useMutation({
+    mutationFn: async ({ systemId, layoutName }) =>
+      (await api.delete<{ deleted: string }>(
+        `/diagram/${encodeURIComponent(systemId)}/layouts/${encodeURIComponent(layoutName)}`,
+      )).data,
+    ...opts?.mutation,
+  });
