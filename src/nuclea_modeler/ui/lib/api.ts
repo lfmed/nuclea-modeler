@@ -1440,3 +1440,156 @@ export const useRunDDLImport = (
       (await api.post<ExtractionResult>("/extractions/ddl/run", data)).data,
     ...opts?.mutation,
   });
+
+// ─── Lineage (Módulo 7) ──────────────────────────────────────────────────────
+
+export type IntegrationType = "CDC" | "BATCH" | "API_PULL" | "API_PUSH" | "FILE";
+export type Periodicity = "REAL_TIME" | "DAILY" | "WEEKLY" | "MONTHLY" | "ON_DEMAND";
+export type ConsumptionType = "DIRECT_READ" | "API" | "REPORT" | "ML_MODEL";
+export type SLALevel = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+
+export interface UpstreamIn {
+  entity_id: string;
+  source_system: string;
+  source_entity?: string | null;
+  integration_type?: IntegrationType | null;
+  periodicity?: Periodicity | null;
+  transformations?: string | null;
+  pipeline_link?: string | null;
+}
+
+export interface UpstreamOut {
+  lineage_id: string;
+  entity_id: string;
+  source_system: string;
+  source_entity?: string | null;
+  integration_type?: IntegrationType | null;
+  periodicity?: Periodicity | null;
+  transformations?: string | null;
+  pipeline_link?: string | null;
+  created_at: string;
+  created_by: string;
+  updated_at: string;
+  updated_by: string;
+}
+
+export interface DownstreamIn {
+  entity_id: string;
+  consumer_system: string;
+  consumption_type?: ConsumptionType | null;
+  responsible_team?: string | null;
+  sla_dependency?: SLALevel | null;
+  detected_via?: "MANUAL" | "UC_LINEAGE";
+}
+
+export interface DownstreamOut {
+  consumer_id: string;
+  entity_id: string;
+  consumer_system: string;
+  consumption_type?: ConsumptionType | null;
+  responsible_team?: string | null;
+  sla_dependency?: SLALevel | null;
+  detected_via: "MANUAL" | "UC_LINEAGE";
+  created_at: string;
+  created_by: string;
+  updated_at: string;
+  updated_by: string;
+}
+
+export interface LineageGraphNode {
+  id: string;
+  label: string;
+  kind: "entity" | "upstream_system" | "downstream_system";
+  schema_name?: string | null;
+  system_name?: string | null;
+  domain?: string | null;
+  entity_type?: string | null;
+}
+
+export interface LineageGraphEdge {
+  source: string;
+  target: string;
+  edge_kind: "upstream" | "downstream";
+  label?: string | null;
+  sla_dependency?: SLALevel | null;
+}
+
+export interface LineageGraph {
+  center_entity_id: string;
+  nodes: LineageGraphNode[];
+  edges: LineageGraphEdge[];
+  depth: number;
+}
+
+export const useListUpstreamSuspense = (entityId: string, s?: Selector<UpstreamOut[]>) =>
+  useSuspenseQuery({
+    queryKey: ["listUpstream", entityId],
+    queryFn: () =>
+      api.get<UpstreamOut[]>(`/lineage/entities/${encodeURIComponent(entityId)}/upstream`),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useListDownstreamSuspense = (entityId: string, s?: Selector<DownstreamOut[]>) =>
+  useSuspenseQuery({
+    queryKey: ["listDownstream", entityId],
+    queryFn: () =>
+      api.get<DownstreamOut[]>(`/lineage/entities/${encodeURIComponent(entityId)}/downstream`),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useLineageGraphSuspense = (
+  entityId: string,
+  depth: number = 1,
+  s?: Selector<LineageGraph>,
+) =>
+  useSuspenseQuery({
+    queryKey: ["lineageGraph", entityId, depth],
+    queryFn: () =>
+      api.get<LineageGraph>(`/lineage/entities/${encodeURIComponent(entityId)}/graph`, {
+        params: { depth },
+      }),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useCreateUpstream = (
+  opts?: Opts<UpstreamOut, { entityId: string; data: UpstreamIn }>,
+) =>
+  useMutation({
+    mutationFn: async ({ entityId, data }) =>
+      (await api.post<UpstreamOut>(
+        `/lineage/entities/${encodeURIComponent(entityId)}/upstream`,
+        data,
+      )).data,
+    ...opts?.mutation,
+  });
+
+export const useDeleteUpstream = (opts?: Opts<{ deleted: string }, { lineageId: string }>) =>
+  useMutation({
+    mutationFn: async ({ lineageId }) =>
+      (await api.delete<{ deleted: string }>(`/lineage/upstream/${encodeURIComponent(lineageId)}`)).data,
+    ...opts?.mutation,
+  });
+
+export const useCreateDownstream = (
+  opts?: Opts<DownstreamOut, { entityId: string; data: DownstreamIn }>,
+) =>
+  useMutation({
+    mutationFn: async ({ entityId, data }) =>
+      (await api.post<DownstreamOut>(
+        `/lineage/entities/${encodeURIComponent(entityId)}/downstream`,
+        data,
+      )).data,
+    ...opts?.mutation,
+  });
+
+export const useDeleteDownstream = (
+  opts?: Opts<{ deleted: string }, { consumerId: string }>,
+) =>
+  useMutation({
+    mutationFn: async ({ consumerId }) =>
+      (await api.delete<{ deleted: string }>(`/lineage/downstream/${encodeURIComponent(consumerId)}`)).data,
+    ...opts?.mutation,
+  });
