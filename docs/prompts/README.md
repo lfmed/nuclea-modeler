@@ -20,9 +20,10 @@ Este projeto está sendo construído em colaboração com um assistente de IA (C
 | 01 | [01-plano-militar.md](01-plano-militar.md) | Plano de execução consolidado | ✅ |
 | 10 | [10-fase0-bootstrap.md](10-fase0-bootstrap.md) | Bootstrap: repo, scaffold, UC, recursos | 🟡 em curso |
 | 20 | [20-fase1-mvp.md](20-fase1-mvp.md) | MVP: M1 + M2 + M3 + M9 + deploy | ⏳ |
-| 30 | [30-fase2-governanca.md](30-fase2-governanca.md) | M5 + M6 + M8 + M10 | ⏳ |
-| 40 | [40-fase3-visualizacao.md](40-fase3-visualizacao.md) | M7 + M4 | ⏳ |
-| 90 | [90-cross-rbac-audit.md](90-cross-rbac-audit.md) | RBAC, auditoria, busca global | ⏳ |
+| 30 | [30-tickets-rbac.md](30-tickets-rbac.md) | Tickets de reconciliação + RBAC | ✅ |
+| 40 | [40-madrugada-multiagente.md](40-madrugada-multiagente.md) | Madrugada god-mode: 7 PRs paralelos | ✅ |
+| 50 | [50-fase3-visualizacao.md](50-fase3-visualizacao.md) | M7 + M4 | ⏳ |
+| 90 | [90-cross-rbac-audit.md](90-cross-rbac-audit.md) | RBAC global, auditoria, busca | ⏳ |
 
 ## Convenções
 
