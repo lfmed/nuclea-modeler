@@ -625,3 +625,185 @@ export const usePreviewSync = (opts?: Opts<SyncRunResult, { data: SyncRunRequest
       (await api.post<SyncRunResult>("/sync/preview", data)).data,
     ...opts?.mutation,
   });
+
+// ─── Flags (Módulo 5) ────────────────────────────────────────────────────────
+
+export type FlagCategory = "LGPD" | "USE" | "QUALITY" | "CUSTOM";
+
+export interface FlagOut {
+  flag_id: string;
+  flag_key: string;
+  category: FlagCategory;
+  display_name: string;
+  description?: string | null;
+  color_hex?: string | null;
+  requires_justification: boolean;
+  is_system: boolean;
+  is_active: boolean;
+  uc_tag_key?: string | null;
+}
+
+export interface FlagIn {
+  flag_key: string;
+  category?: FlagCategory;
+  display_name: string;
+  description?: string | null;
+  color_hex?: string | null;
+  requires_justification?: boolean;
+}
+
+export interface FlagPatch {
+  is_active?: boolean | null;
+  display_name?: string | null;
+  description?: string | null;
+  color_hex?: string | null;
+  requires_justification?: boolean | null;
+}
+
+export interface EntityFlagApplyIn {
+  flag_id: string;
+  justification?: string | null;
+}
+
+export interface EntityFlagOut {
+  entity_flag_id: string;
+  entity_id: string;
+  flag_id: string;
+  flag: FlagOut;
+  justification?: string | null;
+  applied_at: string;
+  applied_by: string;
+  applied_in_version?: string | null;
+  is_propagated: boolean;
+}
+
+export interface AttributeFlagApplyIn {
+  flag_id: string;
+  justification?: string | null;
+}
+
+export interface AttributeFlagOut {
+  attribute_flag_id: string;
+  attribute_id: string;
+  flag_id: string;
+  flag: FlagOut;
+  justification?: string | null;
+  applied_at: string;
+  applied_by: string;
+  applied_in_version?: string | null;
+}
+
+export const useListFlagsSuspense = (
+  params: { category?: FlagCategory; isActive?: boolean } = {},
+  s?: Selector<FlagOut[]>,
+) =>
+  useSuspenseQuery({
+    queryKey: ["listFlags", params],
+    queryFn: () =>
+      api.get<FlagOut[]>("/flags", {
+        params: {
+          category: params.category,
+          is_active: params.isActive,
+        },
+      }),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useCreateCustomFlag = (opts?: Opts<FlagOut, { data: FlagIn }>) =>
+  useMutation({
+    mutationFn: async ({ data }) => (await api.post<FlagOut>("/flags", data)).data,
+    ...opts?.mutation,
+  });
+
+export const useToggleFlag = (
+  opts?: Opts<FlagOut, { flagId: string; data: FlagPatch }>,
+) =>
+  useMutation({
+    mutationFn: async ({ flagId, data }) =>
+      (await api.patch<FlagOut>(`/flags/${encodeURIComponent(flagId)}`, data)).data,
+    ...opts?.mutation,
+  });
+
+export const useListEntityFlagsSuspense = (
+  entityId: string,
+  s?: Selector<EntityFlagOut[]>,
+) =>
+  useSuspenseQuery({
+    queryKey: ["listEntityFlags", entityId],
+    queryFn: () =>
+      api.get<EntityFlagOut[]>(
+        `/entities/${encodeURIComponent(entityId)}/flags`,
+      ),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useApplyEntityFlag = (
+  opts?: Opts<EntityFlagOut, { entityId: string; data: EntityFlagApplyIn }>,
+) =>
+  useMutation({
+    mutationFn: async ({ entityId, data }) =>
+      (await api.post<EntityFlagOut>(
+        `/entities/${encodeURIComponent(entityId)}/flags`,
+        data,
+      )).data,
+    ...opts?.mutation,
+  });
+
+export const useRemoveEntityFlag = (
+  opts?: Opts<
+    { deleted: string },
+    { entityId: string; entityFlagId: string }
+  >,
+) =>
+  useMutation({
+    mutationFn: async ({ entityId, entityFlagId }) =>
+      (await api.delete<{ deleted: string }>(
+        `/entities/${encodeURIComponent(entityId)}/flags/${encodeURIComponent(entityFlagId)}`,
+      )).data,
+    ...opts?.mutation,
+  });
+
+export const useListAttributeFlagsSuspense = (
+  attributeId: string,
+  s?: Selector<AttributeFlagOut[]>,
+) =>
+  useSuspenseQuery({
+    queryKey: ["listAttributeFlags", attributeId],
+    queryFn: () =>
+      api.get<AttributeFlagOut[]>(
+        `/attributes/${encodeURIComponent(attributeId)}/flags`,
+      ),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useApplyAttributeFlag = (
+  opts?: Opts<
+    AttributeFlagOut,
+    { attributeId: string; data: AttributeFlagApplyIn }
+  >,
+) =>
+  useMutation({
+    mutationFn: async ({ attributeId, data }) =>
+      (await api.post<AttributeFlagOut>(
+        `/attributes/${encodeURIComponent(attributeId)}/flags`,
+        data,
+      )).data,
+    ...opts?.mutation,
+  });
+
+export const useRemoveAttributeFlag = (
+  opts?: Opts<
+    { deleted: string },
+    { attributeId: string; attributeFlagId: string }
+  >,
+) =>
+  useMutation({
+    mutationFn: async ({ attributeId, attributeFlagId }) =>
+      (await api.delete<{ deleted: string }>(
+        `/attributes/${encodeURIComponent(attributeId)}/flags/${encodeURIComponent(attributeFlagId)}`,
+      )).data,
+    ...opts?.mutation,
+  });
