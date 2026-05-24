@@ -15,6 +15,8 @@ import {
   Network,
   TestTube2,
   User,
+  Inbox,
+  Shield,
 } from "lucide-react";
 import {
   SidebarGroup,
@@ -137,6 +139,17 @@ function Layout() {
       ],
     },
     {
+      label: "Aprovações",
+      items: [
+        {
+          to: "/tickets",
+          label: "Tickets",
+          icon: <Inbox size={16} />,
+          match: (p) => p.startsWith("/tickets"),
+        },
+      ],
+    },
+    {
       label: "Conta",
       items: [
         {
@@ -144,6 +157,12 @@ function Layout() {
           label: "Perfil",
           icon: <User size={16} />,
           match: (p) => p === "/profile",
+        },
+        {
+          to: "/admin/roles",
+          label: "Papéis (RBAC)",
+          icon: <Shield size={16} />,
+          match: (p) => p.startsWith("/admin/roles"),
         },
       ],
     },

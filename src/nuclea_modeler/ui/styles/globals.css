@@ -4,106 +4,121 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * Núclea brand palette (placeholder, refine after visual validation):
- * - Primary: deep magenta/violet — ~#7B2D8E (oklch 0.45 0.21 330)
- * - Accent:  bright yellow      — ~#FFC72C (oklch 0.83 0.17 90)
- * - Surface neutrals: cool grays
+ * Núclea brand palette — captured 2026-05-24 from
+ * https://cdn-sites-assets.mziq.com/wp-content/themes/mziq_nuclea_ri/style.css
+ *
+ * Hex sources:
+ *   --nuclea-primary:    #832ED9  (vibrant violet)
+ *   --nuclea-accent:     #DBED1F  (lime-yellow)
+ *   --nuclea-background: #F9F5FF  (lavender white)
+ *   --nuclea-foreground: #383737  (near-black neutral)
+ *
+ * Typography (per Núclea official theme):
+ *   display: Bahnschrift  (Windows system font; fallback DM Sans)
+ *   body:    Arial Nova   (Microsoft licensed; fallback Inter / Arial)
  */
 
 :root {
-  /* Brand */
-  --nuclea-primary: oklch(0.45 0.21 330);
+  /* Brand tokens — hex values mirrored as CSS vars for direct usage */
+  --nuclea-primary: oklch(0.51 0.27 305);
   --nuclea-primary-foreground: oklch(0.985 0 0);
-  --nuclea-accent: oklch(0.83 0.17 90);
-  --nuclea-accent-foreground: oklch(0.205 0 0);
+  --nuclea-primary-hex: #832ED9;
+  --nuclea-accent: oklch(0.91 0.20 117);
+  --nuclea-accent-foreground: oklch(0.18 0.01 90);
+  --nuclea-accent-hex: #DBED1F;
+  --nuclea-surface: oklch(0.98 0.01 305);
+  --nuclea-foreground: oklch(0.28 0.005 30);
 
-  /* Surfaces (light) */
+  /* shadcn-compatible surfaces (light theme) */
   --background: oklch(1 0 0);
-  --foreground: oklch(0.18 0.02 285);
+  --foreground: var(--nuclea-foreground);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.18 0.02 285);
+  --card-foreground: var(--nuclea-foreground);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.18 0.02 285);
+  --popover-foreground: var(--nuclea-foreground);
 
   --primary: var(--nuclea-primary);
   --primary-foreground: var(--nuclea-primary-foreground);
-  --secondary: oklch(0.96 0.01 300);
-  --secondary-foreground: oklch(0.25 0.05 330);
+  --secondary: var(--nuclea-surface);
+  --secondary-foreground: var(--nuclea-primary);
 
-  --muted: oklch(0.97 0.005 300);
-  --muted-foreground: oklch(0.5 0.02 300);
+  --muted: oklch(0.97 0.005 305);
+  --muted-foreground: oklch(0.5 0.01 280);
 
-  --accent: oklch(0.95 0.02 330);
+  --accent: oklch(0.95 0.04 305);
   --accent-foreground: var(--nuclea-primary);
 
-  --destructive: oklch(0.577 0.245 27.325);
+  --destructive: oklch(0.55 0.21 25);
   --destructive-foreground: oklch(0.985 0 0);
 
-  --border: oklch(0.92 0.01 320);
-  --input: oklch(0.92 0.01 320);
+  --border: oklch(0.92 0.01 305);
+  --input: oklch(0.92 0.01 305);
   --ring: var(--nuclea-primary);
 
-  /* Charts (Núclea palette: magenta/violet base + amber/yellow + emerald + cyan + plum) */
-  --chart-1: oklch(0.55 0.22 330);
-  --chart-2: oklch(0.78 0.17 90);
-  --chart-3: oklch(0.68 0.16 165);
-  --chart-4: oklch(0.65 0.18 235);
-  --chart-5: oklch(0.55 0.20 295);
+  /* Charts: violet → lime → emerald → blue → orange */
+  --chart-1: oklch(0.55 0.25 305);
+  --chart-2: oklch(0.85 0.18 110);
+  --chart-3: oklch(0.66 0.16 165);
+  --chart-4: oklch(0.62 0.18 235);
+  --chart-5: oklch(0.68 0.22 50);
 
   --radius: 0.625rem;
 
-  /* Sidebar (light, subtle violet tint) */
-  --sidebar: oklch(0.98 0.01 320);
-  --sidebar-foreground: oklch(0.18 0.02 285);
+  /* Sidebar (light, subtle violet tint matching #F9F5FF) */
+  --sidebar: var(--nuclea-surface);
+  --sidebar-foreground: var(--nuclea-foreground);
   --sidebar-primary: var(--nuclea-primary);
   --sidebar-primary-foreground: var(--nuclea-primary-foreground);
-  --sidebar-accent: oklch(0.94 0.03 330);
+  --sidebar-accent: oklch(0.94 0.04 305);
   --sidebar-accent-foreground: var(--nuclea-primary);
-  --sidebar-border: oklch(0.91 0.01 320);
+  --sidebar-border: oklch(0.91 0.015 305);
   --sidebar-ring: var(--nuclea-primary);
 }
 
 .dark {
-  /* Surfaces (dark, deep violet-neutral) */
-  --background: oklch(0.16 0.02 290);
-  --foreground: oklch(0.97 0.005 320);
-  --card: oklch(0.20 0.02 290);
-  --card-foreground: oklch(0.97 0.005 320);
-  --popover: oklch(0.20 0.02 290);
-  --popover-foreground: oklch(0.97 0.005 320);
+  --nuclea-primary: oklch(0.65 0.25 305);
+  --nuclea-primary-foreground: oklch(0.12 0.02 305);
+  --nuclea-surface: oklch(0.20 0.03 305);
 
-  --primary: oklch(0.62 0.21 330);
-  --primary-foreground: oklch(0.10 0.02 290);
-  --secondary: oklch(0.27 0.02 290);
-  --secondary-foreground: oklch(0.97 0.005 320);
+  --background: oklch(0.14 0.02 305);
+  --foreground: oklch(0.97 0.005 305);
+  --card: oklch(0.18 0.025 305);
+  --card-foreground: oklch(0.97 0.005 305);
+  --popover: oklch(0.18 0.025 305);
+  --popover-foreground: oklch(0.97 0.005 305);
 
-  --muted: oklch(0.25 0.02 290);
-  --muted-foreground: oklch(0.72 0.02 320);
+  --primary: var(--nuclea-primary);
+  --primary-foreground: var(--nuclea-primary-foreground);
+  --secondary: oklch(0.26 0.03 305);
+  --secondary-foreground: oklch(0.97 0.005 305);
 
-  --accent: oklch(0.30 0.05 330);
-  --accent-foreground: oklch(0.97 0.005 320);
+  --muted: oklch(0.23 0.02 305);
+  --muted-foreground: oklch(0.72 0.02 305);
 
-  --destructive: oklch(0.55 0.20 25);
-  --destructive-foreground: oklch(0.97 0.005 320);
+  --accent: oklch(0.30 0.06 305);
+  --accent-foreground: oklch(0.97 0.005 305);
 
-  --border: oklch(0.30 0.02 290);
-  --input: oklch(0.30 0.02 290);
-  --ring: oklch(0.62 0.21 330);
+  --destructive: oklch(0.55 0.21 25);
+  --destructive-foreground: oklch(0.97 0.005 305);
 
-  --chart-1: oklch(0.62 0.21 330);
-  --chart-2: oklch(0.78 0.17 90);
-  --chart-3: oklch(0.68 0.16 165);
-  --chart-4: oklch(0.65 0.18 235);
-  --chart-5: oklch(0.60 0.22 295);
+  --border: oklch(0.28 0.025 305);
+  --input: oklch(0.28 0.025 305);
+  --ring: var(--nuclea-primary);
 
-  --sidebar: oklch(0.13 0.02 290);
-  --sidebar-foreground: oklch(0.97 0.005 320);
-  --sidebar-primary: oklch(0.62 0.21 330);
-  --sidebar-primary-foreground: oklch(0.10 0.02 290);
-  --sidebar-accent: oklch(0.24 0.04 330);
-  --sidebar-accent-foreground: oklch(0.97 0.005 320);
-  --sidebar-border: oklch(0.27 0.02 290);
-  --sidebar-ring: oklch(0.62 0.21 330);
+  --chart-1: oklch(0.65 0.25 305);
+  --chart-2: oklch(0.85 0.18 110);
+  --chart-3: oklch(0.66 0.16 165);
+  --chart-4: oklch(0.62 0.18 235);
+  --chart-5: oklch(0.68 0.22 50);
+
+  --sidebar: oklch(0.11 0.02 305);
+  --sidebar-foreground: oklch(0.97 0.005 305);
+  --sidebar-primary: var(--nuclea-primary);
+  --sidebar-primary-foreground: oklch(0.12 0.02 305);
+  --sidebar-accent: oklch(0.24 0.05 305);
+  --sidebar-accent-foreground: oklch(0.97 0.005 305);
+  --sidebar-border: oklch(0.25 0.025 305);
+  --sidebar-ring: var(--nuclea-primary);
 }
 
 @theme inline {
@@ -145,17 +160,27 @@
   --color-sidebar-ring: var(--sidebar-ring);
   --color-nuclea-primary: var(--nuclea-primary);
   --color-nuclea-accent: var(--nuclea-accent);
+  --font-display: "Bahnschrift", "DM Sans", "Inter", system-ui, -apple-system, sans-serif;
+  --font-sans: "Arial Nova", "Inter", "Helvetica Neue", Arial, system-ui, -apple-system, sans-serif;
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
+  html {
+    font-family: "Arial Nova", "Inter", "Helvetica Neue", Arial, system-ui, -apple-system, sans-serif;
+  }
   body {
     @apply bg-background text-foreground;
     font-feature-settings: "cv11", "ss01", "ss03";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
-  /* Subtle violet glow on focus rings */
+  h1, h2, h3, h4, h5, h6 {
+    font-family: "Bahnschrift", "DM Sans", "Inter", system-ui, -apple-system, sans-serif;
+    letter-spacing: -0.01em;
+  }
   *:focus-visible {
     outline-color: var(--nuclea-primary);
   }

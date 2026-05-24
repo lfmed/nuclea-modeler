@@ -372,3 +372,171 @@ export const useDeleteAttribute = (
       )).data,
     ...opts?.mutation,
   });
+
+// ─── RBAC ─────────────────────────────────────────────────────────────────────
+
+export type RoleName =
+  | "DATA_ARCHITECT"
+  | "DATA_STEWARD"
+  | "DATA_ENGINEER"
+  | "CDE"
+  | "ADMIN";
+
+export interface MyRolesOut {
+  user_email: string;
+  roles: RoleName[];
+  can_approve_tickets: boolean;
+  can_apply_tickets: boolean;
+  can_create_connections: boolean;
+  is_admin: boolean;
+}
+
+export interface UserRoleOut {
+  user_role_id: string;
+  user_email: string;
+  role_name: RoleName;
+  granted_at: string;
+  granted_by: string;
+  is_active: boolean;
+}
+
+export interface UserRoleIn {
+  user_email: string;
+  role_name: RoleName;
+}
+
+export const useMyRolesSuspense = (s?: Selector<MyRolesOut>) =>
+  useSuspenseQuery({
+    queryKey: ["myRoles"],
+    queryFn: () => api.get<MyRolesOut>("/rbac/me"),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useListRolesSuspense = (s?: Selector<UserRoleOut[]>) =>
+  useSuspenseQuery({
+    queryKey: ["listRoles"],
+    queryFn: () => api.get<UserRoleOut[]>("/rbac"),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useGrantRole = (opts?: Opts<UserRoleOut, { data: UserRoleIn }>) =>
+  useMutation({
+    mutationFn: async ({ data }) => (await api.post<UserRoleOut>("/rbac", data)).data,
+    ...opts?.mutation,
+  });
+
+export const useRevokeRole = (opts?: Opts<{ revoked: string }, { userRoleId: string }>) =>
+  useMutation({
+    mutationFn: async ({ userRoleId }) =>
+      (await api.delete<{ revoked: string }>(`/rbac/${encodeURIComponent(userRoleId)}`)).data,
+    ...opts?.mutation,
+  });
+
+// ─── Tickets ─────────────────────────────────────────────────────────────────
+
+export type TicketStatus = "OPEN" | "APPROVED" | "APPLIED" | "REJECTED";
+export type TicketSource = "REVERSE_ENG" | "DDL_IMPORT" | "LAKEBASE_ROUNDTRIP" | "MANUAL";
+
+export interface DiffEntity {
+  op: "add" | "remove" | "change";
+  schema_name: string;
+  technical_name: string;
+  entity_type?: string;
+  payload?: Record<string, unknown> | null;
+  field_changes?: Array<Record<string, unknown>> | null;
+  attributes?: Array<Record<string, unknown>> | null;
+}
+
+export interface TicketDiff {
+  entities: DiffEntity[];
+  additions: number;
+  removals: number;
+  changes: number;
+}
+
+export interface TicketListOut {
+  ticket_id: string;
+  title: string;
+  system_id: string;
+  system_name?: string | null;
+  source_type: TicketSource;
+  status: TicketStatus;
+  additions_count: number;
+  removals_count: number;
+  changes_count: number;
+  created_at: string;
+  created_by: string;
+  approved_at?: string | null;
+  approved_by?: string | null;
+  applied_at?: string | null;
+}
+
+export interface TicketOut extends TicketListOut {
+  extraction_id?: string | null;
+  summary_md?: string | null;
+  diff: TicketDiff;
+  applied_by?: string | null;
+  rejected_at?: string | null;
+  rejected_by?: string | null;
+  rejection_reason?: string | null;
+  target_version_id?: string | null;
+}
+
+export interface TicketApplyResult {
+  ticket_id: string;
+  status: TicketStatus;
+  applied_entities: number;
+  applied_attributes: number;
+  errors: string[];
+}
+
+export const useListTicketsSuspense = (
+  params: { status?: TicketStatus; systemId?: string } = {},
+  s?: Selector<TicketListOut[]>,
+) =>
+  useSuspenseQuery({
+    queryKey: ["listTickets", params],
+    queryFn: () =>
+      api.get<TicketListOut[]>("/tickets", {
+        params: { status: params.status, system_id: params.systemId },
+      }),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useGetTicketSuspense = (id: string, s?: Selector<TicketOut>) =>
+  useSuspenseQuery({
+    queryKey: ["getTicket", id],
+    queryFn: () => api.get<TicketOut>(`/tickets/${encodeURIComponent(id)}`),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useApproveTicket = (
+  opts?: Opts<TicketOut, { ticketId: string; note?: string }>,
+) =>
+  useMutation({
+    mutationFn: async ({ ticketId, note }) =>
+      (await api.post<TicketOut>(`/tickets/${encodeURIComponent(ticketId)}/approve`, { note })).data,
+    ...opts?.mutation,
+  });
+
+export const useRejectTicket = (
+  opts?: Opts<TicketOut, { ticketId: string; reason: string }>,
+) =>
+  useMutation({
+    mutationFn: async ({ ticketId, reason }) =>
+      (await api.post<TicketOut>(`/tickets/${encodeURIComponent(ticketId)}/reject`, { reason })).data,
+    ...opts?.mutation,
+  });
+
+export const useApplyTicket = (
+  opts?: Opts<TicketApplyResult, { ticketId: string }>,
+) =>
+  useMutation({
+    mutationFn: async ({ ticketId }) =>
+      (await api.post<TicketApplyResult>(`/tickets/${encodeURIComponent(ticketId)}/apply`)).data,
+    ...opts?.mutation,
+  });
