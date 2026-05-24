@@ -11,7 +11,7 @@ Aplicação full-stack (FastAPI + React, via [APX](https://github.com/databricks
 | **Plataforma** | Databricks Apps + Unity Catalog + Delta Lake |
 | **Stack** | Python 3.11+ · FastAPI · React 19 · TanStack Router · shadcn/ui · Tailwind 4 |
 | **Persistência** | 100% Delta Lake no Unity Catalog (sem Postgres operacional) |
-| **Status** | 🟢 9 dos 10 módulos prontos · só M4 DER (não-mandatório) falta |
+| **Status** | 🟢 Spec 100% entregue (10/10 módulos + Tickets + Lakebase) |
 | **URL live** | https://nuclea-modeler-7474646973581105.aws.databricksapps.com |
 
 ## Módulos funcionais
@@ -21,7 +21,7 @@ Aplicação full-stack (FastAPI + React, via [APX](https://github.com/databricks
 | M1 | Conexões de Ambiente (ODBC/REST/DDL) | 1 | ✅ |
 | M2 | Engenharia Reversa (Lakebase + DDL) | 1 | ✅ |
 | M3 | Documentação de Componentes | 1 | ✅ |
-| M4 | Diagrama Entidade-Relacionamento *(não-mandatório)* | 3 | ⏳ |
+| M4 | Diagrama Entidade-Relacionamento (React Flow + Dagre) | 3 | ✅ |
 | M5 | Flagueamento (LGPD/uso/qualidade) | 2 | ✅ |
 | M6 | Dicionário Corporativo | 2 | ✅ |
 | M7 | Linhagem (upstream/downstream + UC Lineage) | 3 | ✅ |
