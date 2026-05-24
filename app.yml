@@ -1,17 +1,23 @@
 command:
-  - uvicorn
-  - nuclea_modeler.backend.app:app
-  - --host
-  - 0.0.0.0
-  - --port
-  - "8000"
-  - --workers
-  - "2"
-  - --app-dir
-  - src
+  - sh
+  - -c
+  - >
+    set -e;
+    cd /app/python/source_code;
+    echo '[NUCLEA] Building UI...';
+    if [ -f node_modules/.bin/vite ]; then
+      ./node_modules/.bin/vite build || echo '[NUCLEA] UI build failed; serving fallback';
+    else
+      echo '[NUCLEA] vite not installed; skipping UI build';
+    fi;
+    ls -la src/nuclea_modeler/__dist__/ 2>/dev/null || true;
+    echo '[NUCLEA] Starting uvicorn...';
+    exec uvicorn nuclea_modeler.backend.app:app --host 0.0.0.0 --port 8000 --workers 2 --app-dir src
 env:
   - name: PYTHONPATH
     value: /app/python/source_code/src
+  - name: NODE_OPTIONS
+    value: --max-old-space-size=2048
   - name: NUCLEA_CATALOG
     value: stable_classic_pg4xe1_catalog
   - name: NUCLEA_SCHEMA
