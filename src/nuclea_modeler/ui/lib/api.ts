@@ -1080,3 +1080,128 @@ export const useDeleteMapping = (
       ).data,
     ...opts?.mutation,
   });
+
+// ─── Versions (Módulo 8) ─────────────────────────────────────────────────────
+
+export type VersionStatus = "DRAFT" | "PUBLISHED" | "ACTIVE" | "DEPRECATED";
+
+export type DiffEntryType =
+  | "entity_added"
+  | "entity_removed"
+  | "entity_changed"
+  | "attribute_added"
+  | "attribute_removed"
+  | "attribute_changed";
+
+export interface VersionListOut {
+  version_id: string;
+  system_id: string;
+  system_name?: string | null;
+  version_number: string;
+  title?: string | null;
+  status: VersionStatus;
+  published_at?: string | null;
+  published_by?: string | null;
+  created_at: string;
+  created_by: string;
+}
+
+export interface VersionOut extends VersionListOut {
+  changelog?: string | null;
+  based_on_version?: string | null;
+  snapshot_json: Record<string, unknown>;
+  updated_at: string;
+  updated_by: string;
+}
+
+export interface PublishRequest {
+  system_id: string;
+  title: string;
+  changelog?: string;
+  make_active?: boolean;
+}
+
+export interface DiffEntry {
+  type: DiffEntryType;
+  entity_key: string;
+  attribute_key?: string | null;
+  field?: string | null;
+  before?: unknown;
+  after?: unknown;
+}
+
+export interface VersionDiff {
+  from_version_id: string;
+  to_version_id: string;
+  additions: DiffEntry[];
+  removals: DiffEntry[];
+  changes: DiffEntry[];
+  totals: { additions: number; removals: number; changes: number };
+}
+
+export const useListVersionsSuspense = (
+  systemId?: string,
+  s?: Selector<VersionListOut[]>,
+) =>
+  useSuspenseQuery({
+    queryKey: ["listVersions", systemId ?? null],
+    queryFn: () =>
+      api.get<VersionListOut[]>("/versions", {
+        params: { system_id: systemId },
+      }),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useGetVersionSuspense = (id: string, s?: Selector<VersionOut>) =>
+  useSuspenseQuery({
+    queryKey: ["getVersion", id],
+    queryFn: () => api.get<VersionOut>(`/versions/${encodeURIComponent(id)}`),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useVersionDiffSuspense = (
+  params: { from: string; to: string },
+  s?: Selector<VersionDiff>,
+) =>
+  useSuspenseQuery({
+    queryKey: ["versionDiff", params.from, params.to],
+    queryFn: () =>
+      api.get<VersionDiff>("/versions/diff", {
+        params: { from: params.from, to: params.to },
+      }),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const usePublishVersion = (
+  opts?: Opts<VersionOut, { data: PublishRequest }>,
+) =>
+  useMutation({
+    mutationFn: async ({ data }) =>
+      (await api.post<VersionOut>("/versions/publish", data)).data,
+    ...opts?.mutation,
+  });
+
+export const useRestoreVersion = (
+  opts?: Opts<VersionOut, { versionId: string }>,
+) =>
+  useMutation({
+    mutationFn: async ({ versionId }) =>
+      (await api.post<VersionOut>(
+        `/versions/${encodeURIComponent(versionId)}/restore`,
+      )).data,
+    ...opts?.mutation,
+  });
+
+export const useDeprecateVersion = (
+  opts?: Opts<VersionOut, { versionId: string }>,
+) =>
+  useMutation({
+    mutationFn: async ({ versionId }) =>
+      (await api.post<VersionOut>(
+        `/versions/${encodeURIComponent(versionId)}/deprecate`,
+      )).data,
+    ...opts?.mutation,
+  });
