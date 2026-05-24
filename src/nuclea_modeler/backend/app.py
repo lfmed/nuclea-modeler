@@ -6,6 +6,11 @@ from .entities.router import router as entities_router
 from .rbac.router import router as rbac_router
 from .tickets.router import router as tickets_router
 from .sync.router import router as sync_router
+from .flags.router import (
+    router as flags_router,
+    entity_router as entity_flags_router,
+    attribute_router as attribute_flags_router,
+)
 
 app = create_app(
     routers=[
@@ -16,5 +21,8 @@ app = create_app(
         rbac_router,
         tickets_router,
         sync_router,
+        flags_router,
+        entity_flags_router,
+        attribute_flags_router,
     ]
 )

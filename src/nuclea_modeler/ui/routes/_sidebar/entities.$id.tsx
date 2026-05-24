@@ -9,6 +9,12 @@ import {
   useCreateAttribute,
   useDeleteAttribute,
   useDeleteEntity,
+  useListEntityFlagsSuspense,
+  useApplyEntityFlag,
+  useRemoveEntityFlag,
+  useListAttributeFlagsSuspense,
+  useApplyAttributeFlag,
+  useRemoveAttributeFlag,
 } from "@/lib/api";
 import selector from "@/lib/selector";
 
@@ -18,8 +24,9 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
+import { FlagPicker } from "@/components/flags/flag-picker";
 import {
-  ArrowLeft, AlertCircle, Trash2, Plus, Key, FileText,
+  ArrowLeft, AlertCircle, Trash2, Plus, Key, FileText, ShieldCheck,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_sidebar/entities/$id")({
@@ -151,11 +158,132 @@ function EntityDetail() {
         </Card>
       </div>
 
+      <Suspense fallback={<Skeleton className="h-24 w-full" />}>
+        <EntityFlagsSection entityId={id} />
+      </Suspense>
+
       <Suspense fallback={<Skeleton className="h-40 w-full" />}>
         <AttributesSection entityId={id} />
       </Suspense>
     </div>
   );
+}
+
+function EntityFlagsSection({ entityId }: { entityId: string }) {
+  const qc = useQueryClient();
+  const { data: appliedFlags } = useListEntityFlagsSuspense(entityId, selector());
+  const { mutate: apply, isPending: applying } = useApplyEntityFlag({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: ["listEntityFlags", entityId] });
+      },
+      onError: (e) => {
+        alert(extractErrorMessage(e));
+      },
+    },
+  });
+  const { mutate: remove } = useRemoveEntityFlag({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: ["listEntityFlags", entityId] });
+      },
+    },
+  });
+
+  const applied = appliedFlags.map((ef) => ({
+    applied_flag_id: ef.entity_flag_id,
+    flag: ef.flag,
+    justification: ef.justification,
+    is_propagated: ef.is_propagated,
+  }));
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5 text-nuclea-primary" />
+              Flags da entidade ({appliedFlags.length})
+            </CardTitle>
+            <CardDescription>
+              LGPD, uso e qualidade aplicados a esta tabela. Flags LGPD em colunas
+              propagam automaticamente para a entidade.
+            </CardDescription>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <FlagPicker
+          applied={applied}
+          applying={applying}
+          onApply={({ flag_id, justification }) =>
+            apply({ entityId, data: { flag_id, justification } })
+          }
+          onRemove={(efid) =>
+            remove({ entityId, entityFlagId: efid })
+          }
+        />
+      </CardContent>
+    </Card>
+  );
+}
+
+function AttributeFlagsCell({ attributeId }: { attributeId: string }) {
+  const qc = useQueryClient();
+  const { data: appliedFlags } = useListAttributeFlagsSuspense(
+    attributeId,
+    selector(),
+  );
+  const params = Route.useParams();
+  const entityId = params.id;
+  const { mutate: apply, isPending: applying } = useApplyAttributeFlag({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: ["listAttributeFlags", attributeId] });
+        qc.invalidateQueries({ queryKey: ["listEntityFlags", entityId] });
+      },
+      onError: (e) => {
+        alert(extractErrorMessage(e));
+      },
+    },
+  });
+  const { mutate: remove } = useRemoveAttributeFlag({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: ["listAttributeFlags", attributeId] });
+        qc.invalidateQueries({ queryKey: ["listEntityFlags", entityId] });
+      },
+    },
+  });
+
+  const applied = appliedFlags.map((af) => ({
+    applied_flag_id: af.attribute_flag_id,
+    flag: af.flag,
+    justification: af.justification,
+  }));
+
+  return (
+    <FlagPicker
+      applied={applied}
+      applying={applying}
+      size="small"
+      label="Flag"
+      onApply={({ flag_id, justification }) =>
+        apply({ attributeId, data: { flag_id, justification } })
+      }
+      onRemove={(afid) =>
+        remove({ attributeId, attributeFlagId: afid })
+      }
+    />
+  );
+}
+
+function extractErrorMessage(e: unknown): string {
+  // Axios errors carry the server response payload under e.response.data.detail.
+  // Fall back to the plain Error message for everything else.
+  const anyE = e as { response?: { data?: { detail?: string } }; message?: string };
+  return anyE?.response?.data?.detail || anyE?.message || "Erro ao aplicar flag";
 }
 
 function AttributesSection({ entityId }: { entityId: string }) {
@@ -265,13 +393,14 @@ function AttributesSection({ entityId }: { entityId: string }) {
                   <th className="py-2 pr-3 font-medium">Nome lógico</th>
                   <th className="py-2 pr-3 font-medium">Tipo</th>
                   <th className="py-2 pr-3 font-medium">Nullable</th>
+                  <th className="py-2 pr-3 font-medium">Flags</th>
                   <th className="py-2 pr-3 font-medium">Descrição</th>
                   <th className="py-2 pr-3 font-medium w-12"></th>
                 </tr>
               </thead>
               <tbody>
                 {attrs.map((a) => (
-                  <tr key={a.attribute_id} className="border-b hover:bg-muted/40">
+                  <tr key={a.attribute_id} className="border-b hover:bg-muted/40 align-top">
                     <td className="py-2 pr-3">
                       {a.is_primary_key && <Key className="h-3.5 w-3.5 text-nuclea-primary" />}
                     </td>
@@ -279,6 +408,13 @@ function AttributesSection({ entityId }: { entityId: string }) {
                     <td className="py-2 pr-3">{a.logical_name || "—"}</td>
                     <td className="py-2 pr-3 font-mono text-xs text-muted-foreground">{a.native_data_type || "—"}</td>
                     <td className="py-2 pr-3 text-xs">{a.is_nullable === false ? "NOT NULL" : "NULL"}</td>
+                    <td className="py-2 pr-3">
+                      <Suspense
+                        fallback={<Skeleton className="h-5 w-20" />}
+                      >
+                        <AttributeFlagsCell attributeId={a.attribute_id} />
+                      </Suspense>
+                    </td>
                     <td className="py-2 pr-3 text-muted-foreground">
                       {a.description_md ? (a.description_md.length > 80 ? a.description_md.slice(0, 80) + "…" : a.description_md) : "—"}
                     </td>
