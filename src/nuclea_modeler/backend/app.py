@@ -13,6 +13,7 @@ from .flags.router import (
     attribute_router as attribute_flags_router,
 )
 from .ddl.router import router as ddl_router
+from .versions.router import router as versions_router
 
 app = create_app(
     routers=[
@@ -29,5 +30,6 @@ app = create_app(
         entity_flags_router,
         attribute_flags_router,
         ddl_router,
+        versions_router,
     ]
 )
