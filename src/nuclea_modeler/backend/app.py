@@ -18,7 +18,16 @@ from .lakebase.router import router as lakebase_router
 from .extractions.router import router as extractions_router
 from .lineage.router import router as lineage_router
 from .diagram.router import router as diagram_router
+<<<<<<< HEAD
 from .relationships.router import router as relationships_router
+=======
+from .code_objects.router import (
+    views_router,
+    procedures_router,
+    triggers_router,
+    sequences_router,
+)
+>>>>>>> fc506e4 (feat(code-objects): Views/Procedures/Triggers/Sequences com Monaco editor)
 
 app = create_app(
     routers=[
@@ -40,6 +49,13 @@ app = create_app(
         extractions_router,
         lineage_router,
         diagram_router,
+<<<<<<< HEAD
         relationships_router,
+=======
+        views_router,
+        procedures_router,
+        triggers_router,
+        sequences_router,
+>>>>>>> fc506e4 (feat(code-objects): Views/Procedures/Triggers/Sequences com Monaco editor)
     ]
 )

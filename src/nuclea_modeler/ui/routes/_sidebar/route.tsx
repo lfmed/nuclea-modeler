@@ -19,6 +19,7 @@ import {
   Inbox,
   Shield,
   HelpCircle,
+  Code2,
 } from "lucide-react";
 import {
   SidebarGroup,
@@ -91,6 +92,12 @@ function Layout() {
           label: "Diagrama (DER)",
           icon: <Network size={16} />,
           match: (p) => p.startsWith("/diagram"),
+        },
+        {
+          to: "/code",
+          label: "Código DB",
+          icon: <Code2 size={16} />,
+          match: (p) => p.startsWith("/code"),
         },
       ],
     },
