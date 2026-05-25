@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Suspense } from "react";
 import { QueryErrorResetBoundary } from "@tanstack/react-query";
 import { ErrorBoundary } from "react-error-boundary";
@@ -76,6 +76,7 @@ function Header() {
 
 function EntitiesTable() {
   const { data: entities } = useListEntitiesSuspense({}, selector());
+  const navigate = useNavigate();
 
   if (!entities || entities.length === 0) {
     return (
@@ -123,9 +124,18 @@ function EntitiesTable() {
             </thead>
             <tbody>
               {entities.map((e) => (
-                <tr key={e.entity_id} className="border-b hover:bg-muted/40">
+                <tr
+                  key={e.entity_id}
+                  className="border-b hover:bg-muted/40 cursor-pointer transition-colors"
+                  onClick={() => navigate({ to: "/entities/$id", params: { id: e.entity_id } })}
+                >
                   <td className="py-2 pr-3 font-mono text-xs">
-                    <Link to="/entities/$id" params={{ id: e.entity_id }} className="hover:text-nuclea-primary">
+                    <Link
+                      to="/entities/$id"
+                      params={{ id: e.entity_id }}
+                      className="hover:text-nuclea-primary"
+                      onClick={(ev) => ev.stopPropagation()}
+                    >
                       {e.technical_name}
                     </Link>
                   </td>

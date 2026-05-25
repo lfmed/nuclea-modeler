@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Suspense } from "react";
 import { QueryErrorResetBoundary } from "@tanstack/react-query";
 import { ErrorBoundary } from "react-error-boundary";
@@ -79,6 +79,7 @@ function Header() {
 
 function ConnectionsTable() {
   const { data: connections } = useListConnectionsSuspense(selector());
+  const navigate = useNavigate();
 
   if (!connections || connections.length === 0) {
     return (
@@ -120,9 +121,20 @@ function ConnectionsTable() {
             </thead>
             <tbody>
               {connections.map((c) => (
-                <tr key={c.connection_id} className="border-b hover:bg-muted/40">
+                <tr
+                  key={c.connection_id}
+                  className="border-b hover:bg-muted/40 cursor-pointer transition-colors"
+                  onClick={() =>
+                    navigate({ to: "/connections/$id", params: { id: c.connection_id } })
+                  }
+                >
                   <td className="py-2 pr-3">
-                    <Link to="/connections/$id" params={{ id: c.connection_id }} className="font-medium hover:text-nuclea-primary">
+                    <Link
+                      to="/connections/$id"
+                      params={{ id: c.connection_id }}
+                      className="font-medium hover:text-nuclea-primary"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       {c.alias}
                     </Link>
                   </td>
