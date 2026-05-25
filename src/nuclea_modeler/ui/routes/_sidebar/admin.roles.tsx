@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Suspense, useState } from "react";
 import { QueryErrorResetBoundary, useQueryClient } from "@tanstack/react-query";
 import { ErrorBoundary } from "react-error-boundary";
+import { toast } from "sonner";
 
 import {
   useListRolesSuspense,
@@ -77,8 +78,14 @@ function RolesAdmin() {
 
   const { mutate: grant, isPending: granting } = useGrantRole({
     mutation: {
-      onSuccess: () => {
+      onSuccess: (data) => {
         qc.invalidateQueries({ queryKey: ["listRoles"] });
+        toast.success(`Papel ${data.role_name} concedido a ${data.user_email}`);
+      },
+      onError: (err) => {
+        toast.error("Erro ao conceder papel", {
+          description: err instanceof Error ? err.message : "Falha desconhecida",
+        });
       },
     },
   });
@@ -86,6 +93,12 @@ function RolesAdmin() {
     mutation: {
       onSuccess: () => {
         qc.invalidateQueries({ queryKey: ["listRoles"] });
+        toast.success("Papel revogado");
+      },
+      onError: (err) => {
+        toast.error("Erro ao revogar papel", {
+          description: err instanceof Error ? err.message : "Falha desconhecida",
+        });
       },
     },
   });

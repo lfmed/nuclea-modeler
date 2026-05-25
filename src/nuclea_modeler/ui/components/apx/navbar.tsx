@@ -1,7 +1,11 @@
 import { ModeToggle } from "@/components/apx/mode-toggle";
 import Logo from "@/components/apx/logo";
+<<<<<<< HEAD
 import { Link } from "@tanstack/react-router";
 import { HelpCircle } from "lucide-react";
+=======
+import GlobalSearch from "@/components/apx/global-search";
+>>>>>>> 8dd8ddd (feat(cross): audit middleware + busca global + página de auditoria + UI polish)
 import { ReactNode } from "react";
 
 interface NavbarProps {
@@ -16,6 +20,7 @@ export function Navbar({ leftContent, rightContent }: NavbarProps) {
         {leftContent || <Logo />}
         <div className="flex-1" />
         {rightContent || (
+<<<<<<< HEAD
           <div className="flex items-center gap-1">
             <Link
               to="/help"
@@ -25,6 +30,10 @@ export function Navbar({ leftContent, rightContent }: NavbarProps) {
             >
               <HelpCircle className="h-4 w-4" />
             </Link>
+=======
+          <div className="flex items-center gap-2">
+            <GlobalSearch />
+>>>>>>> 8dd8ddd (feat(cross): audit middleware + busca global + página de auditoria + UI polish)
             <ModeToggle />
           </div>
         )}

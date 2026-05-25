@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Suspense, useState } from "react";
 import { QueryErrorResetBoundary, useQueryClient } from "@tanstack/react-query";
 import { ErrorBoundary } from "react-error-boundary";
+import { toast } from "sonner";
 
 import {
   useGetTicketSuspense,
@@ -99,10 +100,18 @@ function TicketDetail() {
   });
   const { mutate: apply, isPending: applying, data: applyResult } = useApplyTicket({
     mutation: {
-      onSuccess: () => {
+      onSuccess: (result) => {
         qc.invalidateQueries({ queryKey: ["getTicket", id] });
         qc.invalidateQueries({ queryKey: ["listTickets"] });
         qc.invalidateQueries({ queryKey: ["listEntities"] });
+        toast.success("Ticket aplicado", {
+          description: `${result.applied_entities} entidades · ${result.applied_attributes} atributos`,
+        });
+      },
+      onError: (err) => {
+        toast.error("Falha ao aplicar ticket", {
+          description: err instanceof Error ? err.message : "Falha desconhecida",
+        });
       },
     },
   });

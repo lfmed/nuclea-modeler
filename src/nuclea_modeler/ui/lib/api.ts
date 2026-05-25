@@ -11,6 +11,7 @@
  */
 import {
   useSuspenseQuery,
+  useQuery,
   useMutation,
   type UseSuspenseQueryOptions,
   type UseMutationOptions,
@@ -1708,6 +1709,7 @@ export const useDeleteLayout = (
     ...opts?.mutation,
   });
 
+<<<<<<< HEAD
 // ─── Embarcadero ER/Studio (.erx) import ─────────────────────────────────────
 
 export interface EmbarcaderoImportIn {
@@ -1786,11 +1788,115 @@ export const useListRelationshipsSuspense = (
     queryFn: () =>
       api.get<RelationshipListOut[]>("/relationships", {
         params: { system_id: params.systemId },
+=======
+// ─── Global Search ────────────────────────────────────────────────────────────
+
+export type SearchKind =
+  | "entity"
+  | "attribute"
+  | "term"
+  | "flag"
+  | "ticket"
+  | "connection"
+  | "system";
+
+export interface SearchResult {
+  kind: SearchKind;
+  id: string;
+  label: string;
+  sublabel?: string | null;
+  path: string;
+}
+
+export interface SearchResults {
+  q: string;
+  total: number;
+  results: SearchResult[];
+}
+
+/**
+ * Global search hook. Returns empty results immediately when the query is
+ * shorter than 2 chars to avoid hitting the backend on every keystroke.
+ */
+export const useGlobalSearch = (q: string, limit = 20) => {
+  const enabled = (q?.trim().length ?? 0) >= 2;
+  return useQuery({
+    queryKey: ["globalSearch", q, limit],
+    queryFn: () =>
+      api
+        .get<SearchResults>("/search", { params: { q, limit } })
+        .then((r) => r.data),
+    enabled,
+    staleTime: 30_000,
+    placeholderData: (prev) => prev,
+  });
+};
+
+// ─── Audit ────────────────────────────────────────────────────────────────────
+
+export interface AuditEntry {
+  audit_id: string;
+  occurred_at: string;
+  actor_email: string;
+  actor_role?: string | null;
+  action: string;
+  object_type: string;
+  object_id?: string | null;
+  request_id?: string | null;
+  client_ip?: string | null;
+}
+
+export interface AuditDetailEntry extends AuditEntry {
+  before_json?: string | null;
+  after_json?: string | null;
+  user_agent?: string | null;
+}
+
+export interface AuditCount {
+  key: string;
+  count: number;
+}
+
+export interface AuditStats {
+  since: string;
+  until: string;
+  by_action: AuditCount[];
+  by_object_type: AuditCount[];
+  total: number;
+}
+
+export interface AuditListParams {
+  actor_email?: string;
+  action?: string;
+  object_type?: string;
+  object_id?: string;
+  since?: string;
+  limit?: number;
+}
+
+export const useListAuditSuspense = (
+  params: AuditListParams = {},
+  s?: Selector<AuditEntry[]>,
+) =>
+  useSuspenseQuery({
+    queryKey: ["listAudit", params],
+    queryFn: () =>
+      api.get<AuditEntry[]>("/audit", {
+        params: {
+          actor_email: params.actor_email || undefined,
+          action: params.action || undefined,
+          object_type: params.object_type || undefined,
+          object_id: params.object_id || undefined,
+          since: params.since || undefined,
+          limit: params.limit ?? 200,
+        },
+>>>>>>> 8dd8ddd (feat(cross): audit middleware + busca global + página de auditoria + UI polish)
       }),
     select: (r) => r.data,
     ...s?.query,
   });
 
+<<<<<<< HEAD
 export const useGetRelationshipSuspense = (
   id: string,
   s?: Selector<RelationshipOut>,
@@ -1799,10 +1905,21 @@ export const useGetRelationshipSuspense = (
     queryKey: ["getRelationship", id],
     queryFn: () =>
       api.get<RelationshipOut>(`/relationships/${encodeURIComponent(id)}`),
+=======
+export const useGetAuditDetailSuspense = (
+  auditId: string,
+  s?: Selector<AuditDetailEntry>,
+) =>
+  useSuspenseQuery({
+    queryKey: ["getAuditDetail", auditId],
+    queryFn: () =>
+      api.get<AuditDetailEntry>(`/audit/${encodeURIComponent(auditId)}`),
+>>>>>>> 8dd8ddd (feat(cross): audit middleware + busca global + página de auditoria + UI polish)
     select: (r) => r.data,
     ...s?.query,
   });
 
+<<<<<<< HEAD
 export const useCreateRelationship = (
   opts?: Opts<RelationshipOut, { data: RelationshipIn }>,
 ) =>
@@ -2115,3 +2232,12 @@ export const useDeleteSequence = (opts?: Opts<{ deleted: string }, { sequenceId:
       (await api.delete<{ deleted: string }>(`/sequences/${encodeURIComponent(sequenceId)}`)).data,
     ...opts?.mutation,
   });
+=======
+export const useAuditStatsSuspense = (days = 7, s?: Selector<AuditStats>) =>
+  useSuspenseQuery({
+    queryKey: ["auditStats", days],
+    queryFn: () => api.get<AuditStats>("/audit/stats", { params: { days } }),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+>>>>>>> 8dd8ddd (feat(cross): audit middleware + busca global + página de auditoria + UI polish)

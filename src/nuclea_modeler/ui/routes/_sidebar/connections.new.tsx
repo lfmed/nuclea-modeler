@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { Suspense, useState } from "react";
 import { QueryErrorResetBoundary, useQueryClient } from "@tanstack/react-query";
 import { ErrorBoundary } from "react-error-boundary";
+import { toast } from "sonner";
 
 import { useCreateConnection, useListSystemsSuspense } from "@/lib/api";
 import selector from "@/lib/selector";
@@ -73,7 +74,13 @@ function ConnectionForm() {
     mutation: {
       onSuccess: (data) => {
         qc.invalidateQueries({ queryKey: ["listConnections"] });
+        toast.success("Conexão criada com sucesso!");
         navigate({ to: "/connections/$id", params: { id: data.connection_id } });
+      },
+      onError: (err) => {
+        toast.error("Erro ao criar conexão", {
+          description: err instanceof Error ? err.message : "Falha desconhecida",
+        });
       },
     },
   });
