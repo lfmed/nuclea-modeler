@@ -13,6 +13,22 @@ command:
     ls -la src/nuclea_modeler/__dist__/ 2>/dev/null || true;
     echo '[NUCLEA] Starting uvicorn...';
     exec uvicorn nuclea_modeler.backend.app:app --host 0.0.0.0 --port 8000 --workers 2 --app-dir src
+
+# App resources — concede ao service principal do app o scope SQL no token OAuth.
+# Sem essa declaração o app SP cai em PAT-auth e não tem permissão sql.
+resources:
+  - name: nuclea-warehouse
+    description: SQL Warehouse usado para ler/escrever as tabelas Delta do app
+    sql_warehouse:
+      id: b8e52268d9828bdd
+      permission: CAN_USE
+  - name: nuclea-secrets
+    description: Scope de secrets com credenciais HINT/HEXT/PROD
+    secret:
+      scope: nuclea-modeler
+      key: "*"
+      permission: READ
+
 env:
   - name: PYTHONPATH
     value: /app/python/source_code/src
