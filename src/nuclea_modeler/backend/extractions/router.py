@@ -13,13 +13,14 @@ from ..core.sql import SqlDependency
 from ..rbac.router import _current_email
 from .models import (
     DDLImportIn,
+    EmbarcaderoImportIn,
     ExtractionListOut,
     ExtractionOut,
     ExtractionResult,
     ExtractionSnapshot,
     LakebaseExtractionIn,
 )
-from .service import run_ddl_import, run_lakebase_extraction
+from .service import run_ddl_import, run_embarcadero_import, run_lakebase_extraction
 
 router = APIRouter(prefix=f"{api_prefix}/extractions", tags=["extractions"])
 
@@ -159,6 +160,26 @@ def run_ddl(
         system_id=payload.system_id,
         dialect=payload.dialect,
         ddl_text=payload.ddl_text,
+        actor=actor,
+        open_ticket_on_diff=payload.open_ticket,
+    )
+
+
+@router.post(
+    "/embarcadero/run",
+    response_model=ExtractionResult,
+    operation_id="runEmbarcaderoImport",
+)
+def run_embarcadero(
+    payload: EmbarcaderoImportIn,
+    sql: SqlDependency,
+    user_ws: Dependencies.UserClient,
+) -> ExtractionResult:
+    actor = _current_email(user_ws)
+    return run_embarcadero_import(
+        sql,
+        system_id=payload.system_id,
+        xml_text=payload.xml_text,
         actor=actor,
         open_ticket_on_diff=payload.open_ticket,
     )
