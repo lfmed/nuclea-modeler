@@ -13,11 +13,8 @@ import {
 import SidebarUserFooter from "@/components/apx/sidebar-user-footer";
 import { ModeToggle } from "@/components/apx/mode-toggle";
 import Logo from "@/components/apx/logo";
-<<<<<<< HEAD
 import { HelpCircle } from "lucide-react";
-=======
 import GlobalSearch from "@/components/apx/global-search";
->>>>>>> 8dd8ddd (feat(cross): audit middleware + busca global + página de auditoria + UI polish)
 
 interface SidebarLayoutProps {
   children?: ReactNode;
@@ -42,7 +39,7 @@ function SidebarLayout({ children }: SidebarLayoutProps) {
         <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-sm border-b flex h-16 shrink-0 items-center gap-2 px-4">
           <SidebarTrigger className="-ml-1 cursor-pointer" />
           <div className="flex-1" />
-<<<<<<< HEAD
+          <GlobalSearch />
           <Link
             to="/help"
             title="Ajuda"
@@ -51,9 +48,6 @@ function SidebarLayout({ children }: SidebarLayoutProps) {
           >
             <HelpCircle className="h-4 w-4" />
           </Link>
-=======
-          <GlobalSearch />
->>>>>>> 8dd8ddd (feat(cross): audit middleware + busca global + página de auditoria + UI polish)
           <ModeToggle />
         </header>
         <div className="flex flex-1 justify-center overflow-auto">

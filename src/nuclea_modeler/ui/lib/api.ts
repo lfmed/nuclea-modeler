@@ -1709,7 +1709,6 @@ export const useDeleteLayout = (
     ...opts?.mutation,
   });
 
-<<<<<<< HEAD
 // ─── Embarcadero ER/Studio (.erx) import ─────────────────────────────────────
 
 export interface EmbarcaderoImportIn {
@@ -1788,7 +1787,61 @@ export const useListRelationshipsSuspense = (
     queryFn: () =>
       api.get<RelationshipListOut[]>("/relationships", {
         params: { system_id: params.systemId },
-=======
+      }),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useGetRelationshipSuspense = (
+  id: string,
+  s?: Selector<RelationshipOut>,
+) =>
+  useSuspenseQuery({
+    queryKey: ["getRelationship", id],
+    queryFn: () =>
+      api.get<RelationshipOut>(`/relationships/${encodeURIComponent(id)}`),
+    select: (r) => r.data,
+  });
+
+export const useCreateRelationship = (
+  opts?: Opts<RelationshipOut, { data: RelationshipIn }>,
+) =>
+  useMutation({
+    mutationFn: async ({ data }) =>
+      (await api.post<RelationshipOut>("/relationships", data)).data,
+    ...opts?.mutation,
+  });
+
+export const useUpdateRelationship = (
+  opts?: Opts<
+    RelationshipOut,
+    { relationshipId: string; data: RelationshipIn }
+  >,
+) =>
+  useMutation({
+    mutationFn: async ({ relationshipId, data }) =>
+      (
+        await api.put<RelationshipOut>(
+          `/relationships/${encodeURIComponent(relationshipId)}`,
+          data,
+        )
+      ).data,
+    ...opts?.mutation,
+  });
+
+export const useDeleteRelationship = (
+  opts?: Opts<{ deleted: string }, { relationshipId: string }>,
+) =>
+  useMutation({
+    mutationFn: async ({ relationshipId }) =>
+      (
+        await api.delete<{ deleted: string }>(
+          `/relationships/${encodeURIComponent(relationshipId)}`,
+        )
+      ).data,
+    ...opts?.mutation,
+  });
+
 // ─── Global Search ────────────────────────────────────────────────────────────
 
 export type SearchKind =
@@ -1890,22 +1943,11 @@ export const useListAuditSuspense = (
           since: params.since || undefined,
           limit: params.limit ?? 200,
         },
->>>>>>> 8dd8ddd (feat(cross): audit middleware + busca global + página de auditoria + UI polish)
       }),
     select: (r) => r.data,
     ...s?.query,
   });
 
-<<<<<<< HEAD
-export const useGetRelationshipSuspense = (
-  id: string,
-  s?: Selector<RelationshipOut>,
-) =>
-  useSuspenseQuery({
-    queryKey: ["getRelationship", id],
-    queryFn: () =>
-      api.get<RelationshipOut>(`/relationships/${encodeURIComponent(id)}`),
-=======
 export const useGetAuditDetailSuspense = (
   auditId: string,
   s?: Selector<AuditDetailEntry>,
@@ -1914,52 +1956,9 @@ export const useGetAuditDetailSuspense = (
     queryKey: ["getAuditDetail", auditId],
     queryFn: () =>
       api.get<AuditDetailEntry>(`/audit/${encodeURIComponent(auditId)}`),
->>>>>>> 8dd8ddd (feat(cross): audit middleware + busca global + página de auditoria + UI polish)
     select: (r) => r.data,
     ...s?.query,
   });
-
-<<<<<<< HEAD
-export const useCreateRelationship = (
-  opts?: Opts<RelationshipOut, { data: RelationshipIn }>,
-) =>
-  useMutation({
-    mutationFn: async ({ data }) =>
-      (await api.post<RelationshipOut>("/relationships", data)).data,
-    ...opts?.mutation,
-  });
-
-export const useUpdateRelationship = (
-  opts?: Opts<
-    RelationshipOut,
-    { relationshipId: string; data: RelationshipIn }
-  >,
-) =>
-  useMutation({
-    mutationFn: async ({ relationshipId, data }) =>
-      (
-        await api.put<RelationshipOut>(
-          `/relationships/${encodeURIComponent(relationshipId)}`,
-          data,
-        )
-      ).data,
-    ...opts?.mutation,
-  });
-
-export const useDeleteRelationship = (
-  opts?: Opts<{ deleted: string }, { relationshipId: string }>,
-) =>
-  useMutation({
-    mutationFn: async ({ relationshipId }) =>
-      (
-        await api.delete<{ deleted: string }>(
-          `/relationships/${encodeURIComponent(relationshipId)}`,
-        )
-      ).data,
-    ...opts?.mutation,
-  });
-
-// ─── Code Objects (Views / Procedures / Triggers / Sequences) ───────────────
 
 export type RiskLevel = "CRITICAL" | "MODERATE" | "LOW";
 export type EventType = "INSERT" | "UPDATE" | "DELETE";
@@ -2232,7 +2231,6 @@ export const useDeleteSequence = (opts?: Opts<{ deleted: string }, { sequenceId:
       (await api.delete<{ deleted: string }>(`/sequences/${encodeURIComponent(sequenceId)}`)).data,
     ...opts?.mutation,
   });
-=======
 export const useAuditStatsSuspense = (days = 7, s?: Selector<AuditStats>) =>
   useSuspenseQuery({
     queryKey: ["auditStats", days],
@@ -2240,4 +2238,3 @@ export const useAuditStatsSuspense = (days = 7, s?: Selector<AuditStats>) =>
     select: (r) => r.data,
     ...s?.query,
   });
->>>>>>> 8dd8ddd (feat(cross): audit middleware + busca global + página de auditoria + UI polish)

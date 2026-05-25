@@ -18,22 +18,16 @@ from .lakebase.router import router as lakebase_router
 from .extractions.router import router as extractions_router
 from .lineage.router import router as lineage_router
 from .diagram.router import router as diagram_router
-<<<<<<< HEAD
-<<<<<<< HEAD
 from .relationships.router import router as relationships_router
-=======
 from .code_objects.router import (
     views_router,
     procedures_router,
     triggers_router,
     sequences_router,
 )
->>>>>>> fc506e4 (feat(code-objects): Views/Procedures/Triggers/Sequences com Monaco editor)
-=======
 from .audit.router import router as audit_router
 from .audit.middleware import AuditMiddleware
 from .search.router import router as search_router
->>>>>>> 8dd8ddd (feat(cross): audit middleware + busca global + página de auditoria + UI polish)
 
 app = create_app(
     routers=[
@@ -55,19 +49,13 @@ app = create_app(
         extractions_router,
         lineage_router,
         diagram_router,
-<<<<<<< HEAD
-<<<<<<< HEAD
         relationships_router,
-=======
         views_router,
         procedures_router,
         triggers_router,
         sequences_router,
->>>>>>> fc506e4 (feat(code-objects): Views/Procedures/Triggers/Sequences com Monaco editor)
-=======
         audit_router,
         search_router,
->>>>>>> 8dd8ddd (feat(cross): audit middleware + busca global + página de auditoria + UI polish)
     ]
 )
 
