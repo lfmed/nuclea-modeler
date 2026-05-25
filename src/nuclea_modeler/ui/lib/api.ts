@@ -1724,3 +1724,120 @@ export const useRunEmbarcaderoImport = (
       (await api.post<ExtractionResult>("/extractions/embarcadero/run", data)).data,
     ...opts?.mutation,
   });
+
+// ─── Relationships (Módulo 3+) ───────────────────────────────────────────────
+
+export type RelType = "1:1" | "1:N" | "N:M" | "INHERIT";
+export type Cardinality = "OPTIONAL" | "MANDATORY";
+export type FKRule =
+  | "NO ACTION"
+  | "CASCADE"
+  | "SET NULL"
+  | "SET DEFAULT"
+  | "RESTRICT";
+export type RelationshipOrigin = "EXTRACTED" | "MANUAL";
+
+export interface RelationshipIn {
+  system_id: string;
+  source_entity_id: string;
+  target_entity_id: string;
+  source_attr_ids?: string[];
+  target_attr_ids?: string[];
+  rel_type?: RelType;
+  source_cardinality?: Cardinality;
+  target_cardinality?: Cardinality;
+  description?: string | null;
+  fk_update_rule?: FKRule | null;
+  fk_delete_rule?: FKRule | null;
+}
+
+export interface RelationshipListOut {
+  relationship_id: string;
+  system_id: string;
+  system_name?: string | null;
+  source_entity_id: string;
+  source_entity_label?: string | null;
+  target_entity_id: string;
+  target_entity_label?: string | null;
+  rel_type?: RelType | null;
+  source_cardinality?: Cardinality | null;
+  target_cardinality?: Cardinality | null;
+  origin?: RelationshipOrigin | null;
+  description?: string | null;
+  updated_at: string;
+}
+
+export interface RelationshipOut extends RelationshipListOut {
+  source_attr_ids: string[];
+  target_attr_ids: string[];
+  fk_update_rule?: FKRule | null;
+  fk_delete_rule?: FKRule | null;
+  created_at: string;
+  created_by: string;
+  updated_by: string;
+}
+
+export const useListRelationshipsSuspense = (
+  params: { systemId?: string } = {},
+  s?: Selector<RelationshipListOut[]>,
+) =>
+  useSuspenseQuery({
+    queryKey: ["listRelationships", params],
+    queryFn: () =>
+      api.get<RelationshipListOut[]>("/relationships", {
+        params: { system_id: params.systemId },
+      }),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useGetRelationshipSuspense = (
+  id: string,
+  s?: Selector<RelationshipOut>,
+) =>
+  useSuspenseQuery({
+    queryKey: ["getRelationship", id],
+    queryFn: () =>
+      api.get<RelationshipOut>(`/relationships/${encodeURIComponent(id)}`),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useCreateRelationship = (
+  opts?: Opts<RelationshipOut, { data: RelationshipIn }>,
+) =>
+  useMutation({
+    mutationFn: async ({ data }) =>
+      (await api.post<RelationshipOut>("/relationships", data)).data,
+    ...opts?.mutation,
+  });
+
+export const useUpdateRelationship = (
+  opts?: Opts<
+    RelationshipOut,
+    { relationshipId: string; data: RelationshipIn }
+  >,
+) =>
+  useMutation({
+    mutationFn: async ({ relationshipId, data }) =>
+      (
+        await api.put<RelationshipOut>(
+          `/relationships/${encodeURIComponent(relationshipId)}`,
+          data,
+        )
+      ).data,
+    ...opts?.mutation,
+  });
+
+export const useDeleteRelationship = (
+  opts?: Opts<{ deleted: string }, { relationshipId: string }>,
+) =>
+  useMutation({
+    mutationFn: async ({ relationshipId }) =>
+      (
+        await api.delete<{ deleted: string }>(
+          `/relationships/${encodeURIComponent(relationshipId)}`,
+        )
+      ).data,
+    ...opts?.mutation,
+  });

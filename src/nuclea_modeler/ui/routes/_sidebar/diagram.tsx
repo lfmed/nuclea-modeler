@@ -15,18 +15,22 @@ import {
   type NodeChange,
   type EdgeChange,
   type NodeTypes,
+  type Connection,
   MarkerType,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { toPng } from "html-to-image";
 
 import {
+  useCreateRelationship,
   useGetDiagramSuspense,
   useListSystemsSuspense,
   useSaveLayout,
-  type DiagramView,
+  type Cardinality,
   type DiagramEntity,
   type DiagramRelationship,
+  type DiagramView,
+  type RelType,
 } from "@/lib/api";
 import selector from "@/lib/selector";
 
@@ -47,6 +51,7 @@ import {
   Search,
   FileJson,
   ShieldAlert,
+  X,
 } from "lucide-react";
 
 import { EntityNode } from "@/components/diagram/entity-node";
@@ -183,6 +188,11 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
     },
   });
 
+  const [pendingConn, setPendingConn] = useState<{
+    source: string;
+    target: string;
+  } | null>(null);
+
   const filteredEntities = useMemo(() => {
     const f = filter.toLowerCase();
     return view.entities.filter((e) => {
@@ -243,6 +253,11 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
     (changes: EdgeChange[]) => setEdges((eds) => applyEdgeChanges(changes, eds)),
     [],
   );
+
+  const onConnect = useCallback((conn: Connection) => {
+    if (!conn.source || !conn.target || conn.source === conn.target) return;
+    setPendingConn({ source: conn.source, target: conn.target });
+  }, []);
 
   const autoLayout = useCallback(() => {
     setNodes((nds) => applyDagreLayout(nds, edges, direction, expanded));
@@ -403,6 +418,7 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
             nodeTypes={nodeTypes}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
             fitView
             fitViewOptions={{ padding: 0.15 }}
             minZoom={0.1}
@@ -429,7 +445,201 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
           </ReactFlow>
         </div>
       </CardContent>
+      {pendingConn && (
+        <CreateRelationshipDialog
+          systemId={systemId}
+          source={pendingConn.source}
+          target={pendingConn.target}
+          entities={view.entities}
+          onClose={() => setPendingConn(null)}
+          onCreated={() => {
+            setPendingConn(null);
+            qc.invalidateQueries({ queryKey: ["getDiagram", systemId] });
+            qc.invalidateQueries({ queryKey: ["listRelationships"] });
+          }}
+        />
+      )}
     </Card>
+  );
+}
+
+function CreateRelationshipDialog({
+  systemId,
+  source,
+  target,
+  entities,
+  onClose,
+  onCreated,
+}: {
+  systemId: string;
+  source: string;
+  target: string;
+  entities: DiagramEntity[];
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const [relType, setRelType] = useState<RelType>("1:N");
+  const [sourceCard, setSourceCard] = useState<Cardinality>("OPTIONAL");
+  const [targetCard, setTargetCard] = useState<Cardinality>("MANDATORY");
+  const [description, setDescription] = useState("");
+
+  const { mutate: create, isPending, error } = useCreateRelationship({
+    mutation: { onSuccess: () => onCreated() },
+  });
+
+  const srcEnt = entities.find((e) => e.entity_id === source);
+  const tgtEnt = entities.find((e) => e.entity_id === target);
+  const label = (e?: DiagramEntity) =>
+    e ? `${e.schema_name}.${e.technical_name}` : "?";
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    create({
+      data: {
+        system_id: systemId,
+        source_entity_id: source,
+        target_entity_id: target,
+        rel_type: relType,
+        source_cardinality: sourceCard,
+        target_cardinality: targetCard,
+        description: description || null,
+      },
+    });
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-background rounded-lg border shadow-xl max-w-lg w-full"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between p-4 border-b">
+          <h2 className="text-base font-semibold">Novo relacionamento</h2>
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+        <form onSubmit={submit} className="p-4 space-y-4">
+          <div className="rounded-md bg-muted/40 border p-3 text-xs font-mono">
+            <span className="text-nuclea-primary">{label(srcEnt)}</span>
+            <span className="mx-2 text-muted-foreground">→</span>
+            <span className="text-nuclea-accent">{label(tgtEnt)}</span>
+          </div>
+
+          <div>
+            <label className="text-sm font-medium block mb-1.5">Tipo</label>
+            <div className="flex flex-wrap gap-2">
+              {(["1:1", "1:N", "N:M", "INHERIT"] as RelType[]).map((rt) => (
+                <label
+                  key={rt}
+                  className={`cursor-pointer rounded-md border px-3 py-1.5 text-xs font-mono ${
+                    relType === rt
+                      ? "bg-nuclea-primary text-primary-foreground border-nuclea-primary"
+                      : "hover:bg-muted"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="dl_rel_type"
+                    value={rt}
+                    checked={relType === rt}
+                    onChange={() => setRelType(rt)}
+                    className="sr-only"
+                  />
+                  {rt}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-sm font-medium block mb-1.5">
+                Cardinalidade origem
+              </label>
+              <div className="flex gap-2">
+                {(["OPTIONAL", "MANDATORY"] as Cardinality[]).map((c) => (
+                  <label
+                    key={c}
+                    className={`cursor-pointer rounded-md border px-3 py-1.5 text-xs ${
+                      sourceCard === c
+                        ? "bg-nuclea-primary text-primary-foreground border-nuclea-primary"
+                        : "hover:bg-muted"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="dl_src_card"
+                      value={c}
+                      checked={sourceCard === c}
+                      onChange={() => setSourceCard(c)}
+                      className="sr-only"
+                    />
+                    {c === "OPTIONAL" ? "Opcional" : "Obrig."}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="text-sm font-medium block mb-1.5">
+                Cardinalidade destino
+              </label>
+              <div className="flex gap-2">
+                {(["OPTIONAL", "MANDATORY"] as Cardinality[]).map((c) => (
+                  <label
+                    key={c}
+                    className={`cursor-pointer rounded-md border px-3 py-1.5 text-xs ${
+                      targetCard === c
+                        ? "bg-nuclea-primary text-primary-foreground border-nuclea-primary"
+                        : "hover:bg-muted"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="dl_tgt_card"
+                      value={c}
+                      checked={targetCard === c}
+                      onChange={() => setTargetCard(c)}
+                      className="sr-only"
+                    />
+                    {c === "OPTIONAL" ? "Opcional" : "Obrig."}
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label className="text-sm font-medium block mb-1.5">Descrição</label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+              placeholder="Opcional"
+            />
+          </div>
+
+          {error && (
+            <div className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-xs text-destructive">
+              <pre className="whitespace-pre-wrap">{String(error)}</pre>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2 pt-2 border-t">
+            <Button type="button" variant="outline" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button type="submit" disabled={isPending}>
+              {isPending ? "Criando..." : "Criar"}
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }
 

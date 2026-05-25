@@ -12,6 +12,7 @@ import {
   History,
   CloudCog,
   FileCode,
+  Link2,
   Network,
   TestTube2,
   User,
@@ -77,6 +78,12 @@ function Layout() {
           label: "Entidades",
           icon: <FileText size={16} />,
           match: (p) => p.startsWith("/entities"),
+        },
+        {
+          to: "/relationships",
+          label: "Relacionamentos",
+          icon: <Link2 size={16} />,
+          match: (p) => p.startsWith("/relationships"),
         },
         {
           to: "/diagram",

@@ -18,6 +18,7 @@ from .lakebase.router import router as lakebase_router
 from .extractions.router import router as extractions_router
 from .lineage.router import router as lineage_router
 from .diagram.router import router as diagram_router
+from .relationships.router import router as relationships_router
 
 app = create_app(
     routers=[
@@ -39,5 +40,6 @@ app = create_app(
         extractions_router,
         lineage_router,
         diagram_router,
+        relationships_router,
     ]
 )
