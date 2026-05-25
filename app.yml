@@ -16,18 +16,14 @@ command:
 
 # App resources — concede ao service principal do app o scope SQL no token OAuth.
 # Sem essa declaração o app SP cai em PAT-auth e não tem permissão sql.
+# Secrets são adicionados sob demanda quando uma conexão real for cadastrada
+# (Databricks Apps exige uma key específica por secret resource — '*' não aceito).
 resources:
   - name: nuclea-warehouse
     description: SQL Warehouse usado para ler/escrever as tabelas Delta do app
     sql_warehouse:
       id: b8e52268d9828bdd
       permission: CAN_USE
-  - name: nuclea-secrets
-    description: Scope de secrets com credenciais HINT/HEXT/PROD
-    secret:
-      scope: nuclea-modeler
-      key: "*"
-      permission: READ
 
 env:
   - name: PYTHONPATH
