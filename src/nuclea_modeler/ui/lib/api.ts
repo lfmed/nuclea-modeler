@@ -1841,3 +1841,277 @@ export const useDeleteRelationship = (
       ).data,
     ...opts?.mutation,
   });
+
+// ─── Code Objects (Views / Procedures / Triggers / Sequences) ───────────────
+
+export type RiskLevel = "CRITICAL" | "MODERATE" | "LOW";
+export type EventType = "INSERT" | "UPDATE" | "DELETE";
+export type TriggerTiming = "BEFORE" | "AFTER" | "INSTEAD_OF";
+
+export interface ViewIn {
+  view_entity_id: string;
+  purpose?: string | null;
+  definition_sql?: string | null;
+  base_entity_ids?: string[];
+}
+export interface ViewOut {
+  view_entity_id: string;
+  entity_label?: string | null;
+  system_id?: string | null;
+  system_name?: string | null;
+  purpose?: string | null;
+  definition_sql?: string | null;
+  base_entity_ids: string[];
+  created_at?: string | null;
+  created_by?: string | null;
+  updated_at?: string | null;
+  updated_by?: string | null;
+}
+
+export const useListViewsSuspense = (systemId?: string, s?: Selector<ViewOut[]>) =>
+  useSuspenseQuery({
+    queryKey: ["listViews", systemId ?? null],
+    queryFn: () => api.get<ViewOut[]>("/views", { params: { system_id: systemId } }),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useGetViewSuspense = (viewEntityId: string, s?: Selector<ViewOut>) =>
+  useSuspenseQuery({
+    queryKey: ["getView", viewEntityId],
+    queryFn: () => api.get<ViewOut>(`/views/${encodeURIComponent(viewEntityId)}`),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useUpsertView = (
+  opts?: Opts<ViewOut, { viewEntityId: string; data: ViewIn }>,
+) =>
+  useMutation({
+    mutationFn: async ({ viewEntityId, data }) =>
+      (await api.put<ViewOut>(`/views/${encodeURIComponent(viewEntityId)}`, data)).data,
+    ...opts?.mutation,
+  });
+
+export interface ProcedureParam {
+  name: string;
+  type: string;
+  direction?: "IN" | "OUT" | "INOUT";
+  description?: string | null;
+}
+export interface ProcedureIn {
+  system_id: string;
+  schema_name: string;
+  technical_name: string;
+  logical_name?: string | null;
+  behavior_desc?: string | null;
+  parameters?: ProcedureParam[];
+  source_code?: string | null;
+  dependent_systems?: string[];
+  change_risk_level?: RiskLevel | null;
+}
+export interface ProcedureListOut {
+  procedure_id: string;
+  system_id: string;
+  system_name?: string | null;
+  schema_name: string;
+  technical_name: string;
+  logical_name?: string | null;
+  change_risk_level?: RiskLevel | null;
+  updated_at: string;
+}
+export interface ProcedureOut extends ProcedureListOut {
+  behavior_desc?: string | null;
+  parameters: ProcedureParam[];
+  source_code?: string | null;
+  dependent_systems: string[];
+  created_at: string;
+  created_by: string;
+  updated_by: string;
+}
+
+export const useListProceduresSuspense = (systemId?: string, s?: Selector<ProcedureListOut[]>) =>
+  useSuspenseQuery({
+    queryKey: ["listProcedures", systemId ?? null],
+    queryFn: () => api.get<ProcedureListOut[]>("/procedures", { params: { system_id: systemId } }),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useGetProcedureSuspense = (id: string, s?: Selector<ProcedureOut>) =>
+  useSuspenseQuery({
+    queryKey: ["getProcedure", id],
+    queryFn: () => api.get<ProcedureOut>(`/procedures/${encodeURIComponent(id)}`),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useCreateProcedure = (opts?: Opts<ProcedureOut, { data: ProcedureIn }>) =>
+  useMutation({
+    mutationFn: async ({ data }) => (await api.post<ProcedureOut>("/procedures", data)).data,
+    ...opts?.mutation,
+  });
+
+export const useUpdateProcedure = (
+  opts?: Opts<ProcedureOut, { procedureId: string; data: ProcedureIn }>,
+) =>
+  useMutation({
+    mutationFn: async ({ procedureId, data }) =>
+      (await api.put<ProcedureOut>(`/procedures/${encodeURIComponent(procedureId)}`, data)).data,
+    ...opts?.mutation,
+  });
+
+export const useDeleteProcedure = (opts?: Opts<{ deleted: string }, { procedureId: string }>) =>
+  useMutation({
+    mutationFn: async ({ procedureId }) =>
+      (await api.delete<{ deleted: string }>(`/procedures/${encodeURIComponent(procedureId)}`)).data,
+    ...opts?.mutation,
+  });
+
+export interface TriggerIn {
+  system_id: string;
+  schema_name: string;
+  technical_name: string;
+  associated_entity_id?: string | null;
+  event_type?: EventType | null;
+  timing?: TriggerTiming | null;
+  body?: string | null;
+  behavior_desc?: string | null;
+  change_risk_level?: RiskLevel | null;
+}
+export interface TriggerListOut {
+  trigger_id: string;
+  system_id: string;
+  system_name?: string | null;
+  schema_name: string;
+  technical_name: string;
+  associated_entity_id?: string | null;
+  associated_entity_label?: string | null;
+  event_type?: EventType | null;
+  timing?: TriggerTiming | null;
+  change_risk_level?: RiskLevel | null;
+  updated_at: string;
+}
+export interface TriggerOut extends TriggerListOut {
+  body?: string | null;
+  behavior_desc?: string | null;
+  created_at: string;
+  created_by: string;
+  updated_by: string;
+}
+
+export const useListTriggersSuspense = (systemId?: string, s?: Selector<TriggerListOut[]>) =>
+  useSuspenseQuery({
+    queryKey: ["listTriggers", systemId ?? null],
+    queryFn: () => api.get<TriggerListOut[]>("/triggers", { params: { system_id: systemId } }),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useGetTriggerSuspense = (id: string, s?: Selector<TriggerOut>) =>
+  useSuspenseQuery({
+    queryKey: ["getTrigger", id],
+    queryFn: () => api.get<TriggerOut>(`/triggers/${encodeURIComponent(id)}`),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useCreateTrigger = (opts?: Opts<TriggerOut, { data: TriggerIn }>) =>
+  useMutation({
+    mutationFn: async ({ data }) => (await api.post<TriggerOut>("/triggers", data)).data,
+    ...opts?.mutation,
+  });
+
+export const useUpdateTrigger = (
+  opts?: Opts<TriggerOut, { triggerId: string; data: TriggerIn }>,
+) =>
+  useMutation({
+    mutationFn: async ({ triggerId, data }) =>
+      (await api.put<TriggerOut>(`/triggers/${encodeURIComponent(triggerId)}`, data)).data,
+    ...opts?.mutation,
+  });
+
+export const useDeleteTrigger = (opts?: Opts<{ deleted: string }, { triggerId: string }>) =>
+  useMutation({
+    mutationFn: async ({ triggerId }) =>
+      (await api.delete<{ deleted: string }>(`/triggers/${encodeURIComponent(triggerId)}`)).data,
+    ...opts?.mutation,
+  });
+
+export interface SequenceIn {
+  system_id: string;
+  schema_name: string;
+  technical_name: string;
+  logical_name?: string | null;
+  description_md?: string | null;
+  start_value?: number | null;
+  increment_by?: number | null;
+  min_value?: number | null;
+  max_value?: number | null;
+  cache_size?: number | null;
+  is_cycle?: boolean | null;
+  current_value?: number | null;
+  used_by_entity_ids?: string[];
+}
+export interface SequenceListOut {
+  sequence_id: string;
+  system_id: string;
+  system_name?: string | null;
+  schema_name: string;
+  technical_name: string;
+  logical_name?: string | null;
+  increment_by?: number | null;
+  current_value?: number | null;
+  updated_at: string;
+}
+export interface SequenceOut extends SequenceListOut {
+  description_md?: string | null;
+  start_value?: number | null;
+  min_value?: number | null;
+  max_value?: number | null;
+  cache_size?: number | null;
+  is_cycle?: boolean | null;
+  used_by_entity_ids: string[];
+  native_comment?: string | null;
+  created_at: string;
+  created_by: string;
+  updated_by: string;
+}
+
+export const useListSequencesSuspense = (systemId?: string, s?: Selector<SequenceListOut[]>) =>
+  useSuspenseQuery({
+    queryKey: ["listSequences", systemId ?? null],
+    queryFn: () => api.get<SequenceListOut[]>("/sequences", { params: { system_id: systemId } }),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useGetSequenceSuspense = (id: string, s?: Selector<SequenceOut>) =>
+  useSuspenseQuery({
+    queryKey: ["getSequence", id],
+    queryFn: () => api.get<SequenceOut>(`/sequences/${encodeURIComponent(id)}`),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useCreateSequence = (opts?: Opts<SequenceOut, { data: SequenceIn }>) =>
+  useMutation({
+    mutationFn: async ({ data }) => (await api.post<SequenceOut>("/sequences", data)).data,
+    ...opts?.mutation,
+  });
+
+export const useUpdateSequence = (
+  opts?: Opts<SequenceOut, { sequenceId: string; data: SequenceIn }>,
+) =>
+  useMutation({
+    mutationFn: async ({ sequenceId, data }) =>
+      (await api.put<SequenceOut>(`/sequences/${encodeURIComponent(sequenceId)}`, data)).data,
+    ...opts?.mutation,
+  });
+
+export const useDeleteSequence = (opts?: Opts<{ deleted: string }, { sequenceId: string }>) =>
+  useMutation({
+    mutationFn: async ({ sequenceId }) =>
+      (await api.delete<{ deleted: string }>(`/sequences/${encodeURIComponent(sequenceId)}`)).data,
+    ...opts?.mutation,
+  });
