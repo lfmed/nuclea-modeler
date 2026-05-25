@@ -1,4 +1,4 @@
-import { Outlet } from "@tanstack/react-router";
+import { Link, Outlet } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import {
   Sidebar,
@@ -13,6 +13,7 @@ import {
 import SidebarUserFooter from "@/components/apx/sidebar-user-footer";
 import { ModeToggle } from "@/components/apx/mode-toggle";
 import Logo from "@/components/apx/logo";
+import { HelpCircle } from "lucide-react";
 
 interface SidebarLayoutProps {
   children?: ReactNode;
@@ -37,6 +38,14 @@ function SidebarLayout({ children }: SidebarLayoutProps) {
         <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-sm border-b flex h-16 shrink-0 items-center gap-2 px-4">
           <SidebarTrigger className="-ml-1 cursor-pointer" />
           <div className="flex-1" />
+          <Link
+            to="/help"
+            title="Ajuda"
+            aria-label="Ajuda"
+            className="inline-flex items-center justify-center rounded-md size-9 text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+          >
+            <HelpCircle className="h-4 w-4" />
+          </Link>
           <ModeToggle />
         </header>
         <div className="flex flex-1 justify-center overflow-auto">
