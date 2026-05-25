@@ -18,6 +18,7 @@ import {
   User,
   Inbox,
   Shield,
+  HelpCircle,
 } from "lucide-react";
 import {
   SidebarGroup,
@@ -159,6 +160,12 @@ function Layout() {
     {
       label: "Conta",
       items: [
+        {
+          to: "/help",
+          label: "Ajuda",
+          icon: <HelpCircle size={16} />,
+          match: (p) => p.startsWith("/help"),
+        },
         {
           to: "/profile",
           label: "Perfil",
