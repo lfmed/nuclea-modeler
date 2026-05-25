@@ -493,6 +493,7 @@ def validate_source(
     system_id: str,
     sql: SqlDependency,
     user_ws: Dependencies.UserClient,
+    app_ws: Dependencies.Client,
     target_catalog: str | None = None,
     sandbox_id: str | None = None,
 ) -> SourceValidationOut:
@@ -561,13 +562,12 @@ def validate_source(
         )
         if not sb_row:
             raise HTTPException(404, f"sandbox '{sandbox_id}' not found")
-        try:
-            me = user_ws.current_user.me()
-            user_email = me.user_name or me.display_name
-        except Exception:
-            user_email = None
+        # Lakebase precisa do scope `postgres` no token OAuth, que só é concedido
+        # ao SP do app via resource declarado no app.yml. OBO do usuário não
+        # herda esse scope. Usamos o SP do app (`app_ws`) — o lakebase.service
+        # detecta automaticamente o pg_user a partir do client_id do SP.
         results = _validate_against_lakebase(
-            user_ws, sb_row[0], sb_row[1] or "databricks_postgres", user_email, entities,
+            app_ws, sb_row[0], sb_row[1] or "databricks_postgres", None, entities,
         )
     else:
         # No automated check for Oracle/SQL Server etc.

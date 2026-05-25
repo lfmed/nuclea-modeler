@@ -63,7 +63,23 @@ def open_connection(
     if not inst.read_write_dns:
         raise RuntimeError(f"instance {instance_name} has no read_write_dns")
     token = fetch_pg_token(ws, instance_name)
-    pg_user = user_email or (ws.current_user.me().user_name or ws.current_user.me().display_name or "nuclea_app")
+
+    # Resolve postgres role. For users it's the email; for app SPs (M2M OAuth)
+    # it's the OAuth client_id (= applicationId UUID), which is what Lakebase
+    # provisions automatically when the app has CAN_CONNECT_AND_CREATE.
+    pg_user = user_email
+    if not pg_user:
+        client_id = getattr(getattr(ws, "config", None), "client_id", None)
+        if client_id:
+            pg_user = client_id
+    if not pg_user:
+        try:
+            me = ws.current_user.me()
+            pg_user = me.user_name or me.display_name
+        except Exception:
+            pg_user = None
+    if not pg_user:
+        pg_user = "nuclea_app"
     conn = psycopg.connect(
         host=inst.read_write_dns,
         port=5432,

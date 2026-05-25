@@ -24,6 +24,12 @@ resources:
     sql_warehouse:
       id: b8e52268d9828bdd
       permission: CAN_USE
+  - name: nuclea-lakebase
+    description: Lakebase Postgres sandbox para validação dos diagramas vs DB real
+    database:
+      database_name: databricks_postgres
+      instance_name: JDBCTESTLAKEBASE
+      permission: CAN_CONNECT_AND_CREATE
 
 env:
   - name: PYTHONPATH
