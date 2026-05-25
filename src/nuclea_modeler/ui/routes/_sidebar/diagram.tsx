@@ -26,12 +26,18 @@ import {
   useCreateRelationship,
   useGetDiagramSuspense,
   useListSystemsSuspense,
+  useListSandboxesSuspense,
   useSaveLayout,
+  useQuickAddEntity,
+  useValidateSource,
+  useDeleteEntity,
   type Cardinality,
   type DiagramEntity,
   type DiagramRelationship,
   type DiagramView,
   type RelType,
+  type SourceCheckResult,
+  type SourceValidationOut,
 } from "@/lib/api";
 import selector from "@/lib/selector";
 
@@ -42,17 +48,22 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   AlertCircle,
+  CheckCircle2,
   Download,
   Eye,
   EyeOff,
   LayoutGrid,
   Network,
+  Plus,
   RefreshCw,
   Save,
   Search,
   FileJson,
   ShieldAlert,
+  ShieldCheck,
+  Trash2,
   X,
+  XCircle,
 } from "lucide-react";
 
 import { EntityNode } from "@/components/diagram/entity-node";
@@ -307,6 +318,71 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
     URL.revokeObjectURL(url);
   }, [systemId, view, nodes]);
 
+  // Quick add entity
+  const [showAddEntity, setShowAddEntity] = useState(false);
+  const quickAdd = useQuickAddEntity({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: ["getDiagram", systemId] });
+        qc.invalidateQueries({ queryKey: ["listEntities"] });
+        setShowAddEntity(false);
+        toast.success("Entidade adicionada");
+      },
+      onError: (e) => toast.error(String(e)),
+    },
+  });
+
+  // Delete entity
+  const deleteEntity = useDeleteEntity({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: ["getDiagram", systemId] });
+        qc.invalidateQueries({ queryKey: ["listEntities"] });
+        toast.success("Entidade removida");
+      },
+      onError: (e) => toast.error(String(e)),
+    },
+  });
+
+  // Validate against source
+  const [showValidation, setShowValidation] = useState(false);
+  const [validationResult, setValidationResult] = useState<SourceValidationOut | null>(null);
+  const { data: sandboxes } = useListSandboxesSuspense(selector());
+  const [validateSandboxId, setValidateSandboxId] = useState(sandboxes[0]?.sandbox_id || "");
+  const validate = useValidateSource({
+    mutation: {
+      onSuccess: (r) => {
+        setValidationResult(r);
+        setShowValidation(true);
+        if (r.missing_count === 0) {
+          toast.success(`Todas as ${r.found_count} entidades existem na fonte`);
+        } else {
+          toast.warning(`${r.found_count}/${r.total_entities} entidades encontradas`);
+        }
+      },
+      onError: (e) => toast.error(String(e)),
+    },
+  });
+
+  const onValidate = () => {
+    validate.mutate({
+      systemId,
+      sandboxId: validateSandboxId || undefined,
+    });
+  };
+
+  // Bind delete to React Flow node selection (Backspace/Delete keys)
+  const onNodesDelete = useCallback(
+    (deleted: Node[]) => {
+      for (const node of deleted) {
+        if (confirm(`Excluir entidade "${(node.data as any)?.entity?.technical_name}"? Atributos serão removidos junto.`)) {
+          deleteEntity.mutate({ entityId: node.id });
+        }
+      }
+    },
+    [deleteEntity],
+  );
+
   const domains = useMemo(() => {
     const set = new Set<string>();
     for (const e of view.entities) if (e.domain) set.add(e.domain);
@@ -318,10 +394,22 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
       <Card className="border-dashed">
         <CardContent className="pt-10 pb-10 text-center">
           <Network className="mx-auto h-10 w-10 text-muted-foreground/50 mb-3" />
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-muted-foreground mb-4">
             Este sistema ainda não tem entidades catalogadas.
           </p>
+          <Button onClick={() => setShowAddEntity(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Adicionar primeira tabela
+          </Button>
         </CardContent>
+        {showAddEntity && (
+          <QuickAddEntityDialog
+            systemId={systemId}
+            onClose={() => setShowAddEntity(false)}
+            onSubmit={(data) => quickAdd.mutate({ systemId, data })}
+            submitting={quickAdd.isPending}
+          />
+        )}
       </Card>
     );
   }
@@ -390,6 +478,20 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
               <FileJson className="mr-2 h-4 w-4" />
               JSON
             </Button>
+            <Button size="sm" onClick={() => setShowAddEntity(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              Adicionar tabela
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onValidate}
+              disabled={validate.isPending}
+              title="Verificar se as entidades existem na base de dados fonte"
+            >
+              <ShieldCheck className="mr-2 h-4 w-4" />
+              {validate.isPending ? "Validando..." : "Validar na fonte"}
+            </Button>
           </div>
         </div>
         <div className="flex flex-wrap gap-2 pt-2">
@@ -426,6 +528,8 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
+            onNodesDelete={onNodesDelete}
+            deleteKeyCode={["Backspace", "Delete"]}
             fitView
             fitViewOptions={{ padding: 0.15 }}
             minZoom={0.1}
@@ -466,7 +570,289 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
           }}
         />
       )}
+      {showAddEntity && (
+        <QuickAddEntityDialog
+          systemId={systemId}
+          onClose={() => setShowAddEntity(false)}
+          onSubmit={(data) => quickAdd.mutate({ systemId, data })}
+          submitting={quickAdd.isPending}
+        />
+      )}
+      {showValidation && validationResult && (
+        <ValidationDialog
+          result={validationResult}
+          sandboxes={sandboxes}
+          currentSandboxId={validateSandboxId}
+          onSandboxChange={setValidateSandboxId}
+          onClose={() => setShowValidation(false)}
+          onRerun={onValidate}
+          rerunning={validate.isPending}
+        />
+      )}
     </Card>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+
+function QuickAddEntityDialog({
+  systemId,
+  onClose,
+  onSubmit,
+  submitting,
+}: {
+  systemId: string;
+  onClose: () => void;
+  onSubmit: (data: import("@/lib/api").QuickEntityIn) => void;
+  submitting: boolean;
+}) {
+  const [schemaName, setSchemaName] = useState("public");
+  const [technicalName, setTechnicalName] = useState("");
+  const [logicalName, setLogicalName] = useState("");
+  const [entityType, setEntityType] = useState<"TABLE" | "VIEW">("TABLE");
+  const [attrsText, setAttrsText] = useState(
+    "id BIGINT PK\nnome VARCHAR(200)\ncriado_em TIMESTAMP",
+  );
+
+  const parseAttrs = () =>
+    attrsText
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        // Format: "<name> <type> [PK] [NULL|NOT NULL]"
+        const parts = line.split(/\s+/);
+        const name = parts[0];
+        const type = parts[1] || "STRING";
+        const upper = parts.map((p) => p.toUpperCase());
+        return {
+          technical_name: name,
+          native_data_type: type,
+          is_primary_key: upper.includes("PK") || upper.includes("PRIMARY"),
+          is_nullable: !upper.includes("NOT_NULL") && !(upper.includes("NOT") && upper.includes("NULL")),
+        };
+      });
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <Card className="w-full max-w-2xl" onClick={(e) => e.stopPropagation()}>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <Plus className="h-5 w-5 text-nuclea-primary" />
+              Adicionar tabela
+            </CardTitle>
+            <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <CardDescription>
+            Atalho para criar uma entidade direto no canvas. Para edição completa use{" "}
+            <Link to="/entities/$id" params={{ id: "x" }} className="underline text-nuclea-primary">
+              /entities
+            </Link>{" "}
+            depois.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid md:grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-medium block mb-1">Schema</label>
+              <Input value={schemaName} onChange={(e) => setSchemaName(e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs font-medium block mb-1">Tipo</label>
+              <select
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                value={entityType}
+                onChange={(e) => setEntityType(e.target.value as any)}
+              >
+                <option value="TABLE">TABLE</option>
+                <option value="VIEW">VIEW</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-medium block mb-1">Nome técnico *</label>
+              <Input
+                value={technicalName}
+                onChange={(e) => setTechnicalName(e.target.value)}
+                placeholder="cliente"
+                autoFocus
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium block mb-1">Nome lógico</label>
+              <Input
+                value={logicalName}
+                onChange={(e) => setLogicalName(e.target.value)}
+                placeholder="Cliente"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-medium block mb-1">
+              Atributos (formato: <code>nome tipo [PK]</code> uma por linha)
+            </label>
+            <textarea
+              value={attrsText}
+              onChange={(e) => setAttrsText(e.target.value)}
+              rows={6}
+              className="w-full rounded-md border bg-background px-3 py-2 text-xs font-mono"
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={onClose}>Cancelar</Button>
+            <Button
+              onClick={() =>
+                onSubmit({
+                  system_id: systemId,
+                  schema_name: schemaName,
+                  technical_name: technicalName,
+                  logical_name: logicalName || null,
+                  entity_type: entityType,
+                  initial_attributes: parseAttrs(),
+                })
+              }
+              disabled={submitting || !technicalName || !schemaName}
+            >
+              {submitting ? "Salvando..." : "Criar"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function ValidationDialog({
+  result,
+  sandboxes,
+  currentSandboxId,
+  onSandboxChange,
+  onClose,
+  onRerun,
+  rerunning,
+}: {
+  result: SourceValidationOut;
+  sandboxes: Array<{ sandbox_id: string; name: string; instance_name: string }>;
+  currentSandboxId: string;
+  onSandboxChange: (v: string) => void;
+  onClose: () => void;
+  onRerun: () => void;
+  rerunning: boolean;
+}) {
+  const isLakebase = result.source_kind === "LAKEBASE";
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <Card className="w-full max-w-3xl max-h-[80vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <CardHeader className="shrink-0">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <ShieldCheck className="h-5 w-5 text-nuclea-primary" />
+                Validação na fonte
+              </CardTitle>
+              <CardDescription>
+                Fonte: <Badge variant="outline">{result.source_kind}</Badge>{" "}
+                {result.target_catalog && (
+                  <code className="text-xs">{result.target_catalog}</code>
+                )}
+              </CardDescription>
+            </div>
+            <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          {isLakebase && sandboxes.length > 0 && (
+            <div className="flex items-end gap-2 pt-2">
+              <div className="flex-1">
+                <label className="text-xs font-medium block mb-1">Sandbox Lakebase</label>
+                <select
+                  value={currentSandboxId}
+                  onChange={(e) => onSandboxChange(e.target.value)}
+                  className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                >
+                  {sandboxes.map((s) => (
+                    <option key={s.sandbox_id} value={s.sandbox_id}>
+                      {s.name} ({s.instance_name})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <Button onClick={onRerun} disabled={rerunning} size="sm">
+                <RefreshCw className={`mr-2 h-4 w-4 ${rerunning ? "animate-spin" : ""}`} />
+                Revalidar
+              </Button>
+            </div>
+          )}
+          <div className="flex flex-wrap gap-3 pt-2 text-xs">
+            <Badge variant="outline">
+              {result.total_entities} entidades
+            </Badge>
+            <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              {result.found_count} encontradas
+            </span>
+            {result.missing_count > 0 && (
+              <span className="inline-flex items-center gap-1 text-destructive">
+                <XCircle className="h-3.5 w-3.5" />
+                {result.missing_count} ausentes
+              </span>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent className="overflow-y-auto flex-1">
+          <div className="space-y-2">
+            {result.results.map((r: SourceCheckResult) => (
+              <div
+                key={r.entity_id}
+                className={`rounded-md border p-3 ${
+                  r.exists_in_source
+                    ? "border-emerald-500/30 bg-emerald-500/5"
+                    : "border-destructive/30 bg-destructive/5"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <div className="flex items-center gap-2">
+                    {r.exists_in_source ? (
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                    ) : (
+                      <XCircle className="h-4 w-4 text-destructive" />
+                    )}
+                    <strong className="font-mono text-sm">
+                      {r.schema_name}.{r.technical_name}
+                    </strong>
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    {r.columns_in_catalog} cols catálogo
+                    {r.columns_in_source != null && ` · ${r.columns_in_source} cols fonte`}
+                  </span>
+                </div>
+                {r.error && (
+                  <p className="text-xs text-destructive font-mono">{r.error}</p>
+                )}
+                {r.missing_in_source.length > 0 && (
+                  <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
+                    Colunas no catálogo, ausentes na fonte:{" "}
+                    {r.missing_in_source.map((c) => (
+                      <code key={c} className="mx-0.5 px-1 bg-amber-500/10 rounded">{c}</code>
+                    ))}
+                  </p>
+                )}
+                {r.extra_in_source.length > 0 && (
+                  <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
+                    Colunas na fonte, ausentes do catálogo:{" "}
+                    {r.extra_in_source.map((c) => (
+                      <code key={c} className="mx-0.5 px-1 bg-blue-500/10 rounded">{c}</code>
+                    ))}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 

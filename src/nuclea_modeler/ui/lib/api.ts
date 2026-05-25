@@ -2238,3 +2238,75 @@ export const useAuditStatsSuspense = (days = 7, s?: Selector<AuditStats>) =>
     select: (r) => r.data,
     ...s?.query,
   });
+
+// ─── Diagram: quick-add entity + validate-source ─────────────────────────────
+
+export interface QuickEntityIn {
+  system_id: string;
+  schema_name: string;
+  technical_name: string;
+  logical_name?: string | null;
+  entity_type?: "TABLE" | "VIEW" | "MATERIALIZED_VIEW" | "EXTERNAL";
+  domain?: string | null;
+  initial_attributes?: Array<{
+    technical_name: string;
+    native_data_type?: string | null;
+    is_primary_key?: boolean;
+    is_nullable?: boolean;
+    logical_name?: string | null;
+    default_value?: string | null;
+  }>;
+}
+
+export interface SourceCheckResult {
+  entity_id: string;
+  schema_name: string;
+  technical_name: string;
+  exists_in_source: boolean;
+  source_kind: "UC_DELTA" | "LAKEBASE" | "UNKNOWN";
+  source_catalog?: string | null;
+  columns_in_source?: number | null;
+  columns_in_catalog: number;
+  missing_in_source: string[];
+  extra_in_source: string[];
+  error?: string | null;
+}
+
+export interface SourceValidationOut {
+  system_id: string;
+  system_name?: string | null;
+  source_kind: string;
+  target_catalog?: string | null;
+  results: SourceCheckResult[];
+  total_entities: number;
+  found_count: number;
+  missing_count: number;
+}
+
+export const useQuickAddEntity = (
+  opts?: Opts<DiagramEntity, { systemId: string; data: QuickEntityIn }>,
+) =>
+  useMutation({
+    mutationFn: async ({ systemId, data }) =>
+      (await api.post<DiagramEntity>(
+        `/diagram/${encodeURIComponent(systemId)}/entities`,
+        data,
+      )).data,
+    ...opts?.mutation,
+  });
+
+export const useValidateSource = (
+  opts?: Opts<
+    SourceValidationOut,
+    { systemId: string; targetCatalog?: string; sandboxId?: string }
+  >,
+) =>
+  useMutation({
+    mutationFn: async ({ systemId, targetCatalog, sandboxId }) =>
+      (await api.post<SourceValidationOut>(
+        `/diagram/${encodeURIComponent(systemId)}/validate-source`,
+        {},
+        { params: { target_catalog: targetCatalog, sandbox_id: sandboxId } },
+      )).data,
+    ...opts?.mutation,
+  });

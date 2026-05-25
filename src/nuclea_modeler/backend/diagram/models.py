@@ -71,3 +71,42 @@ class LayoutOut(BaseModel):
     created_by: str
     updated_at: datetime
     updated_by: str
+
+
+# ─── Source validation ──────────────────────────────────────────────────────
+
+class SourceCheckResult(BaseModel):
+    entity_id: str
+    schema_name: str
+    technical_name: str
+    exists_in_source: bool
+    source_kind: Literal["UC_DELTA", "LAKEBASE", "UNKNOWN"] = "UNKNOWN"
+    source_catalog: str | None = None
+    columns_in_source: int | None = None
+    columns_in_catalog: int = 0
+    missing_in_source: list[str] = Field(default_factory=list)
+    extra_in_source: list[str] = Field(default_factory=list)
+    error: str | None = None
+
+
+class SourceValidationOut(BaseModel):
+    system_id: str
+    system_name: str | None = None
+    source_kind: str
+    target_catalog: str | None = None
+    results: list[SourceCheckResult]
+    total_entities: int
+    found_count: int
+    missing_count: int
+
+
+class QuickEntityIn(BaseModel):
+    """Atalho para criar uma entidade diretamente do canvas DER."""
+
+    system_id: str
+    schema_name: str
+    technical_name: str
+    logical_name: str | None = None
+    entity_type: Literal["TABLE", "VIEW", "MATERIALIZED_VIEW", "EXTERNAL"] = "TABLE"
+    domain: str | None = None
+    initial_attributes: list[dict] = Field(default_factory=list)
