@@ -29,8 +29,13 @@ import {
   useListSandboxesSuspense,
   useSaveLayout,
   useQuickAddEntity,
+  useUpdateEntity,
   useValidateSource,
   useDeleteEntity,
+  useListAttributesSuspense,
+  useCreateAttribute,
+  useUpdateAttribute,
+  useDeleteAttribute,
   type Cardinality,
   type DiagramEntity,
   type DiagramRelationship,
@@ -269,6 +274,16 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
   );
   const onEdgesChange = useCallback(
     (changes: EdgeChange[]) => setEdges((eds) => applyEdgeChanges(changes, eds)),
+    [],
+  );
+
+  // Click on a node → open edit panel
+  const [editingEntity, setEditingEntity] = useState<DiagramEntity | null>(null);
+  const onNodeClick = useCallback(
+    (_evt: any, node: Node) => {
+      const ent = (node.data as any)?.entity as DiagramEntity | undefined;
+      if (ent) setEditingEntity(ent);
+    },
     [],
   );
 
@@ -529,6 +544,7 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
             onNodesDelete={onNodesDelete}
+            onNodeClick={onNodeClick}
             deleteKeyCode={["Backspace", "Delete"]}
             fitView
             fitViewOptions={{ padding: 0.15 }}
@@ -587,6 +603,17 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
           onClose={() => setShowValidation(false)}
           onRerun={onValidate}
           rerunning={validate.isPending}
+        />
+      )}
+      {editingEntity && (
+        <EditEntityDialog
+          entity={editingEntity}
+          onClose={() => setEditingEntity(null)}
+          onSaved={() => {
+            qc.invalidateQueries({ queryKey: ["getDiagram", systemId] });
+            qc.invalidateQueries({ queryKey: ["listEntities"] });
+            setEditingEntity(null);
+          }}
         />
       )}
     </Card>
@@ -1054,4 +1081,289 @@ function relationshipToEdge(r: DiagramRelationship): Edge {
     type: "smoothstep",
     markerEnd: { type: MarkerType.ArrowClosed, color: "#832ED9" },
   };
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// EditEntityDialog: side dialog to edit an entity's metadata + attributes.
+// ───────────────────────────────────────────────────────────────────────────
+
+function EditEntityDialog({
+  entity,
+  onClose,
+  onSaved,
+}: {
+  entity: DiagramEntity;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const qc = useQueryClient();
+  const [techName, setTechName] = useState(entity.technical_name);
+  const [logName, setLogName] = useState(entity.logical_name || "");
+  const [schema, setSchema] = useState(entity.schema_name);
+  const [domain, setDomain] = useState(entity.domain || "");
+  const [criticality, setCriticality] = useState(entity.criticality || "");
+
+  const updateEntity = useUpdateEntity({
+    mutation: {
+      onSuccess: () => {
+        toast.success("Entidade atualizada");
+        onSaved();
+      },
+      onError: (e) => toast.error(String(e)),
+    },
+  });
+
+  const onSave = () => {
+    updateEntity.mutate({
+      entityId: entity.entity_id,
+      data: {
+        system_id: entity.system_id,
+        schema_name: schema,
+        technical_name: techName,
+        logical_name: logName || null,
+        domain: domain || null,
+        criticality: (criticality || null) as any,
+        entity_type: entity.entity_type as any,
+        tags: [],
+      },
+    });
+  };
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-end p-4"
+      onClick={onClose}
+    >
+      <Card
+        className="w-full max-w-2xl h-full max-h-[90vh] overflow-hidden flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <CardHeader className="shrink-0 border-b">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="font-mono">
+                {entity.schema_name}.{entity.technical_name}
+              </CardTitle>
+              <CardDescription>
+                <Badge variant="outline" className="mr-2">{entity.entity_type}</Badge>
+                Editar metadados e atributos
+              </CardDescription>
+            </div>
+            <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </CardHeader>
+        <CardContent className="overflow-y-auto flex-1 space-y-4">
+          {/* Metadata form */}
+          <div className="space-y-3">
+            <h3 className="text-sm font-semibold">Metadados</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Schema">
+                <Input value={schema} onChange={(e) => setSchema(e.target.value)} />
+              </Field>
+              <Field label="Nome técnico">
+                <Input value={techName} onChange={(e) => setTechName(e.target.value)} />
+              </Field>
+              <Field label="Nome lógico">
+                <Input value={logName} onChange={(e) => setLogName(e.target.value)} />
+              </Field>
+              <Field label="Domínio">
+                <Input value={domain} onChange={(e) => setDomain(e.target.value)} />
+              </Field>
+              <Field label="Criticidade">
+                <select
+                  className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                  value={criticality}
+                  onChange={(e) => setCriticality(e.target.value)}
+                >
+                  <option value="">—</option>
+                  <option value="HIGH">Alta</option>
+                  <option value="MEDIUM">Média</option>
+                  <option value="LOW">Baixa</option>
+                </select>
+              </Field>
+            </div>
+            <div className="flex justify-end">
+              <Button onClick={onSave} disabled={updateEntity.isPending} size="sm">
+                <Save className="mr-2 h-4 w-4" />
+                {updateEntity.isPending ? "Salvando..." : "Salvar metadados"}
+              </Button>
+            </div>
+          </div>
+
+          {/* Attributes editor */}
+          <div className="space-y-3 pt-4 border-t">
+            <h3 className="text-sm font-semibold">Atributos</h3>
+            <AttributesEditor entityId={entity.entity_id} onChanged={() => qc.invalidateQueries({ queryKey: ["getDiagram"] })} />
+          </div>
+
+          <div className="pt-4 border-t text-xs text-muted-foreground">
+            Para editar descrição, owners, tags, flags LGPD e mais, abra a página completa em{" "}
+            <Link
+              to="/entities/$id"
+              params={{ id: entity.entity_id }}
+              className="text-nuclea-primary underline"
+            >
+              /entities/{entity.entity_id.slice(0, 12)}…
+            </Link>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function AttributesEditor({
+  entityId,
+  onChanged,
+}: {
+  entityId: string;
+  onChanged: () => void;
+}) {
+  const { data: attrs } = useListAttributesSuspense(entityId, selector());
+  const qc = useQueryClient();
+  const [newName, setNewName] = useState("");
+  const [newType, setNewType] = useState("STRING");
+  const [newPk, setNewPk] = useState(false);
+
+  const createAttr = useCreateAttribute({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: ["listAttributes", entityId] });
+        onChanged();
+        setNewName("");
+        toast.success("Atributo adicionado");
+      },
+      onError: (e) => toast.error(String(e)),
+    },
+  });
+  const updateAttr = useUpdateAttribute({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: ["listAttributes", entityId] });
+        onChanged();
+        toast.success("Atributo atualizado");
+      },
+    },
+  });
+  const deleteAttr = useDeleteAttribute({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: ["listAttributes", entityId] });
+        onChanged();
+      },
+    },
+  });
+
+  return (
+    <div className="space-y-2">
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b text-left text-muted-foreground">
+              <th className="py-1 pr-2 font-medium w-6"></th>
+              <th className="py-1 pr-2 font-medium">Nome</th>
+              <th className="py-1 pr-2 font-medium">Tipo</th>
+              <th className="py-1 pr-2 font-medium w-12">PK</th>
+              <th className="py-1 pr-2 w-8"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {attrs.map((a) => (
+              <tr key={a.attribute_id} className="border-b">
+                <td className="py-1 pr-2">{a.is_primary_key && "🔑"}</td>
+                <td className="py-1 pr-2 font-mono">{a.technical_name}</td>
+                <td className="py-1 pr-2 font-mono text-muted-foreground">{a.native_data_type || "—"}</td>
+                <td className="py-1 pr-2">
+                  <input
+                    type="checkbox"
+                    checked={a.is_primary_key}
+                    onChange={(e) =>
+                      updateAttr.mutate({
+                        entityId,
+                        attributeId: a.attribute_id,
+                        data: {
+                          entity_id: entityId,
+                          technical_name: a.technical_name,
+                          native_data_type: a.native_data_type || null,
+                          is_nullable: a.is_nullable,
+                          is_primary_key: e.target.checked,
+                        },
+                      })
+                    }
+                  />
+                </td>
+                <td className="py-1 pr-2">
+                  <button
+                    onClick={() => {
+                      if (confirm(`Remover ${a.technical_name}?`))
+                        deleteAttr.mutate({ entityId, attributeId: a.attribute_id });
+                    }}
+                    className="text-muted-foreground hover:text-destructive"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!newName.trim()) return;
+          createAttr.mutate({
+            entityId,
+            data: {
+              entity_id: entityId,
+              technical_name: newName.trim(),
+              native_data_type: newType.trim() || "STRING",
+              is_primary_key: newPk,
+              is_nullable: !newPk,
+            },
+          });
+        }}
+        className="flex flex-wrap gap-2 items-end pt-2"
+      >
+        <div className="flex-1 min-w-[140px]">
+          <label className="text-[10px] uppercase tracking-wider text-muted-foreground block">Nome</label>
+          <Input
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            placeholder="nova_coluna"
+            className="h-8 text-xs"
+          />
+        </div>
+        <div className="flex-1 min-w-[100px]">
+          <label className="text-[10px] uppercase tracking-wider text-muted-foreground block">Tipo</label>
+          <Input
+            value={newType}
+            onChange={(e) => setNewType(e.target.value)}
+            placeholder="STRING"
+            className="h-8 text-xs"
+          />
+        </div>
+        <label className="flex items-center gap-1 text-xs">
+          <input type="checkbox" checked={newPk} onChange={(e) => setNewPk(e.target.checked)} />
+          PK
+        </label>
+        <Button type="submit" size="sm" disabled={!newName.trim() || createAttr.isPending}>
+          <Plus className="h-3 w-3" />
+        </Button>
+      </form>
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1">
+      <label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+        {label}
+      </label>
+      {children}
+    </div>
+  );
 }

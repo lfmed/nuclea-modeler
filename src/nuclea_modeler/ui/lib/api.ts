@@ -250,6 +250,14 @@ export const useGetConnectionSuspense = (id: string, s?: Selector<ConnectionOut>
     ...s?.query,
   });
 
+// Non-suspense variant for routes that need to render even without data
+export const useGetConnection = (id: string | undefined) =>
+  useQuery({
+    queryKey: ["getConnection", id],
+    queryFn: () => api.get<ConnectionOut>(`/connections/${encodeURIComponent(id!)}`).then((r) => r.data),
+    enabled: !!id,
+  });
+
 export const useListEntitiesSuspense = (
   params: { systemId?: string; domain?: string } = {},
   s?: Selector<EntityListOut[]>,
@@ -326,6 +334,15 @@ export const useTestConnection = (
 export const useCreateEntity = (opts?: Opts<EntityOut, { data: EntityIn }>) =>
   useMutation({
     mutationFn: async ({ data }) => (await api.post<EntityOut>("/entities", data)).data,
+    ...opts?.mutation,
+  });
+
+export const useUpdateEntity = (
+  opts?: Opts<EntityOut, { entityId: string; data: EntityIn }>,
+) =>
+  useMutation({
+    mutationFn: async ({ entityId, data }) =>
+      (await api.put<EntityOut>(`/entities/${encodeURIComponent(entityId)}`, data)).data,
     ...opts?.mutation,
   });
 
@@ -1610,6 +1627,7 @@ export interface DiagramAttribute {
 
 export interface DiagramEntity {
   entity_id: string;
+  system_id: string;
   schema_name: string;
   technical_name: string;
   logical_name?: string | null;

@@ -55,7 +55,8 @@ def _build_diagram(sql, system_id: str, layout_name: str = "default") -> Diagram
     for r in ent_rows:
         eid = r[0]
         entities_by_id[eid] = DiagramEntity(
-            entity_id=eid, schema_name=r[1], technical_name=r[2], logical_name=r[3],
+            entity_id=eid, system_id=system_id,
+            schema_name=r[1], technical_name=r[2], logical_name=r[3],
             entity_type=r[4] or "TABLE", domain=r[5], criticality=r[6],
         )
 
@@ -337,6 +338,7 @@ def quick_add_entity(
         )
     return DiagramEntity(
         entity_id=eid,
+        system_id=system_id,
         schema_name=payload.schema_name,
         technical_name=payload.technical_name,
         logical_name=payload.logical_name,

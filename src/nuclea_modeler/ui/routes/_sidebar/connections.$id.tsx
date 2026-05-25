@@ -1,14 +1,12 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { Suspense } from "react";
-import { QueryErrorResetBoundary, useQueryClient } from "@tanstack/react-query";
-import { ErrorBoundary } from "react-error-boundary";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 import {
-  useGetConnectionSuspense,
+  useGetConnection,
   useTestConnection,
   useDeleteConnection,
 } from "@/lib/api";
-import selector from "@/lib/selector";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +22,32 @@ export const Route = createFileRoute("/_sidebar/connections/$id")({
 });
 
 function ConnectionDetailPage() {
+  const { id } = Route.useParams();
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const { data: conn, isLoading, isError, error, refetch } = useGetConnection(id);
+
+  const { mutate: test, isPending: testing } = useTestConnection({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: ["getConnection", id] });
+        qc.invalidateQueries({ queryKey: ["listConnections"] });
+        toast.success("Conexão testada");
+      },
+      onError: (e) => toast.error(String(e)),
+    },
+  });
+  const { mutate: del, isPending: deleting } = useDeleteConnection({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: ["listConnections"] });
+        toast.success("Conexão excluída");
+        navigate({ to: "/connections" });
+      },
+      onError: (e) => toast.error(String(e)),
+    },
+  });
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-2">
@@ -35,138 +59,135 @@ function ConnectionDetailPage() {
         </Button>
       </div>
 
-      <QueryErrorResetBoundary>
-        {({ reset }) => (
-          <ErrorBoundary
-            onReset={reset}
-            fallbackRender={({ resetErrorBoundary }) => (
-              <Card className="border-destructive/50">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-destructive">
-                    <AlertCircle className="h-5 w-5" />
-                    Erro ao carregar conexão
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <Button onClick={resetErrorBoundary}>Tentar novamente</Button>
-                </CardContent>
-              </Card>
-            )}
-          >
-            <Suspense fallback={<DetailSkeleton />}>
-              <ConnectionDetail />
-            </Suspense>
-          </ErrorBoundary>
-        )}
-      </QueryErrorResetBoundary>
+      {isLoading && <DetailSkeleton />}
+
+      {isError && (
+        <Card className="border-destructive/50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-destructive">
+              <AlertCircle className="h-5 w-5" />
+              Erro ao carregar conexão
+            </CardTitle>
+            <CardDescription>
+              {error instanceof Error ? error.message : "Erro desconhecido."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex gap-2">
+            <Button onClick={() => refetch()}>
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Tentar novamente
+            </Button>
+            <Button variant="outline" asChild>
+              <Link to="/connections">Voltar para Conexões</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {!isLoading && !isError && conn && (
+        <div className="space-y-6">
+          <div className="flex items-start justify-between flex-wrap gap-3">
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight">{conn.alias}</h1>
+              <div className="flex items-center gap-2 mt-2">
+                <EnvBadge env={conn.environment} />
+                <Badge variant="outline">{conn.connection_type}</Badge>
+                <span className="text-sm text-muted-foreground">·</span>
+                <span className="text-sm text-muted-foreground">
+                  {conn.system_name || conn.system_id}
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button onClick={() => test({ connectionId: id })} disabled={testing}>
+                <RefreshCw className={`mr-2 h-4 w-4 ${testing ? "animate-spin" : ""}`} />
+                Testar conexão
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (confirm(`Excluir conexão "${conn.alias}"?`)) del({ connectionId: id });
+                }}
+                disabled={deleting}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Excluir
+              </Button>
+            </div>
+          </div>
+
+          <div className="grid gap-6 md:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle>Último teste</CardTitle>
+                <CardDescription>Resultado da última validação de conectividade</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <TestStatusBlock
+                  status={conn.last_test_status}
+                  latency={conn.last_test_latency_ms}
+                  version={conn.last_test_db_version}
+                  error={conn.last_test_error}
+                  at={conn.last_test_at}
+                />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Configuração</CardTitle>
+                <CardDescription>Parâmetros de conexão (sem credenciais)</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <pre className="rounded-md bg-muted p-3 text-xs overflow-x-auto">
+                  {JSON.stringify(conn.config, null, 2)}
+                </pre>
+                <Separator className="my-4" />
+                <div className="space-y-2 text-sm">
+                  <KV label="Secrets scope" value={conn.secret_scope || "—"} />
+                  <KV label="Chave usuário" value={conn.secret_key_user || "—"} />
+                  <KV label="Chave senha" value={conn.secret_key_pass ? "•••••" : "—"} />
+                  <KV label="Chave token" value={conn.secret_key_token ? "•••••" : "—"} />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="md:col-span-2">
+              <CardHeader>
+                <CardTitle>Metadados</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-3 text-sm md:grid-cols-2">
+                <KV label="ID" value={conn.connection_id} mono />
+                <KV label="Sistema" value={conn.system_name || conn.system_id} />
+                <KV label="Criado por" value={conn.created_by} />
+                <KV label="Atualizado por" value={conn.updated_by} />
+                <KV label="Criado em" value={new Date(conn.created_at).toLocaleString("pt-BR")} />
+                <KV label="Atualizado em" value={new Date(conn.updated_at).toLocaleString("pt-BR")} />
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function ConnectionDetail() {
-  const { id } = Route.useParams();
-  const navigate = useNavigate();
-  const qc = useQueryClient();
-  const { data: conn } = useGetConnectionSuspense(id, selector());
-
-  const { mutate: test, isPending: testing } = useTestConnection({
-    mutation: {
-      onSuccess: () => {
-        qc.invalidateQueries({ queryKey: ["getConnection", id] });
-        qc.invalidateQueries({ queryKey: ["listConnections"] });
-      },
-    },
-  });
-  const { mutate: del, isPending: deleting } = useDeleteConnection({
-    mutation: {
-      onSuccess: () => {
-        qc.invalidateQueries({ queryKey: ["listConnections"] });
-        navigate({ to: "/connections" });
-      },
-    },
-  });
-
+function DetailSkeleton() {
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">{conn.alias}</h1>
-          <div className="flex items-center gap-2 mt-2">
-            <EnvBadge env={conn.environment} />
-            <Badge variant="outline">{conn.connection_type}</Badge>
-            <span className="text-sm text-muted-foreground">·</span>
-            <span className="text-sm text-muted-foreground">
-              {conn.system_name || conn.system_id}
-            </span>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button onClick={() => test({ connectionId: id })} disabled={testing}>
-            <RefreshCw className={`mr-2 h-4 w-4 ${testing ? "animate-spin" : ""}`} />
-            Testar conexão
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => {
-              if (confirm(`Excluir conexão "${conn.alias}"?`)) del({ connectionId: id });
-            }}
-            disabled={deleting}
-          >
-            <Trash2 className="mr-2 h-4 w-4" />
-            Excluir
-          </Button>
-        </div>
-      </div>
-
+      <Skeleton className="h-10 w-1/2" />
       <div className="grid gap-6 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Último teste</CardTitle>
-            <CardDescription>Resultado da última validação de conectividade</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <TestStatusBlock
-              status={conn.last_test_status}
-              latency={conn.last_test_latency_ms}
-              version={conn.last_test_db_version}
-              error={conn.last_test_error}
-              at={conn.last_test_at}
-            />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Configuração</CardTitle>
-            <CardDescription>Parâmetros de conexão (sem credenciais)</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <pre className="rounded-md bg-muted p-3 text-xs overflow-x-auto">
-              {JSON.stringify(conn.config, null, 2)}
-            </pre>
-            <Separator className="my-4" />
-            <div className="space-y-2 text-sm">
-              <KV label="Secrets scope" value={conn.secret_scope || "—"} />
-              <KV label="Chave usuário" value={conn.secret_key_user || "—"} />
-              <KV label="Chave senha" value={conn.secret_key_pass ? "•••••" : "—"} />
-              <KV label="Chave token" value={conn.secret_key_token ? "•••••" : "—"} />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="md:col-span-2">
-          <CardHeader>
-            <CardTitle>Metadados</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-3 text-sm md:grid-cols-2">
-            <KV label="ID" value={conn.connection_id} mono />
-            <KV label="Sistema" value={conn.system_name || conn.system_id} />
-            <KV label="Criado por" value={conn.created_by} />
-            <KV label="Atualizado por" value={conn.updated_by} />
-            <KV label="Criado em" value={new Date(conn.created_at).toLocaleString("pt-BR")} />
-            <KV label="Atualizado em" value={new Date(conn.updated_at).toLocaleString("pt-BR")} />
-          </CardContent>
-        </Card>
+        {[1, 2, 3].map((i) => (
+          <Card key={i}>
+            <CardHeader>
+              <Skeleton className="h-5 w-40" />
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-3/4" />
+            </CardContent>
+          </Card>
+        ))}
       </div>
     </div>
   );
@@ -232,27 +253,6 @@ function TestStatusBlock({
             {error}
           </pre>
         )}
-      </div>
-    </div>
-  );
-}
-
-function DetailSkeleton() {
-  return (
-    <div className="space-y-6">
-      <Skeleton className="h-10 w-1/2" />
-      <div className="grid gap-6 md:grid-cols-2">
-        {[1, 2, 3].map((i) => (
-          <Card key={i}>
-            <CardHeader>
-              <Skeleton className="h-5 w-40" />
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <Skeleton className="h-4 w-full" />
-              <Skeleton className="h-4 w-3/4" />
-            </CardContent>
-          </Card>
-        ))}
       </div>
     </div>
   );

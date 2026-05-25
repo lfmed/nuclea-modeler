@@ -20,6 +20,7 @@ class DiagramAttribute(BaseModel):
 
 class DiagramEntity(BaseModel):
     entity_id: str
+    system_id: str
     schema_name: str
     technical_name: str
     logical_name: str | None = None
