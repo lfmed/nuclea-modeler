@@ -7,6 +7,33 @@ import { routeTree } from "@/types/routeTree.gen";
 import { RouterProvider, createRouter } from "@tanstack/react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
+// ─── Auto-reload on stale chunk ────────────────────────────────────────────
+// When the user's tab has the old index.html in memory but the server has
+// deployed new chunks (with new hashes), dynamic imports fail with a
+// "Failed to fetch dynamically imported module" or similar. We catch that
+// and force-reload to fetch the fresh HTML.
+const STALE_CHUNK_MARKERS = [
+  "Failed to fetch dynamically imported module",
+  "error loading dynamically imported module",
+  "Importing a module script failed",
+  "ChunkLoadError",
+];
+function shouldReloadFromError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return STALE_CHUNK_MARKERS.some((m) => msg.includes(m));
+}
+function tryReloadIfStale(err: unknown) {
+  if (!shouldReloadFromError(err)) return;
+  // Guard against reload loops: only reload once per session
+  const flag = "__nuclea_reloaded_once__";
+  if (sessionStorage.getItem(flag)) return;
+  sessionStorage.setItem(flag, "1");
+  console.warn("[Núclea Modeler] Stale chunk detected, reloading…", err);
+  window.location.reload();
+}
+window.addEventListener("error", (e) => tryReloadIfStale(e.error || e.message));
+window.addEventListener("unhandledrejection", (e) => tryReloadIfStale(e.reason));
+
 // Create a new query client instance
 const queryClient = new QueryClient();
 

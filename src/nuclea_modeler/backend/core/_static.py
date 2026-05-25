@@ -36,7 +36,11 @@ class CachedStaticFiles(StaticFiles):
         if "/assets/" in str(full_path):
             response.headers["cache-control"] = "public, max-age=31536000, immutable"
         else:
-            response.headers["cache-control"] = "no-cache"
+            # index.html and friends must NEVER be cached — otherwise SPAs running
+            # off old chunk references break across deploys.
+            response.headers["cache-control"] = "no-store, no-cache, must-revalidate, max-age=0"
+            response.headers["pragma"] = "no-cache"
+            response.headers["expires"] = "0"
 
         if self.is_not_modified(response.headers, request_headers):
             return NotModifiedResponse(response.headers)
