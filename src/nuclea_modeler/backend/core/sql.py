@@ -14,7 +14,7 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from ._base import LifespanDependency
-from ._defaults import UserWorkspaceClientDependency
+from ._defaults import ClientDependency, UserWorkspaceClientDependency  # noqa: F401
 
 
 class SqlConfig(BaseSettings):
@@ -47,8 +47,12 @@ class _SqlDependency(LifespanDependency):
         yield
 
     @staticmethod
-    def __call__(request: Request, user_ws: UserWorkspaceClientDependency) -> Sql:
-        return Sql(config=request.app.state.sql_config, api=user_ws.statement_execution)
+    def __call__(request: Request, ws: ClientDependency) -> Sql:
+        """Use the APP service principal's WorkspaceClient (M2M auth) — its
+        OAuth token has the `sql` scope granted via the warehouse resource
+        declared in app.yml. The user OBO token typically does NOT include
+        `sql` scope without explicit user re-authorization."""
+        return Sql(config=request.app.state.sql_config, api=ws.statement_execution)
 
 
 SqlDependency: TypeAlias = Annotated[Sql, _SqlDependency.depends()]
