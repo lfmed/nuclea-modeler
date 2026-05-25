@@ -47,6 +47,40 @@ const router = createRouter({
   // This will ensure that the loader is always called when the route is preloaded or visited
   defaultPreloadStaleTime: 0,
   scrollRestoration: true,
+  defaultErrorComponent: ({ error, reset }) => {
+    console.error("[Núclea Modeler] Route error:", error);
+    return (
+      <div style={{ padding: "2rem", fontFamily: "system-ui" }}>
+        <h2 style={{ color: "#b91c1c", marginBottom: "1rem" }}>
+          Erro ao carregar a página
+        </h2>
+        <pre
+          style={{
+            background: "#fee2e2",
+            padding: "1rem",
+            borderRadius: 8,
+            overflow: "auto",
+            fontSize: 12,
+          }}
+        >
+          {error instanceof Error ? `${error.name}: ${error.message}\n${error.stack ?? ""}` : String(error)}
+        </pre>
+        <div style={{ marginTop: "1rem", display: "flex", gap: "0.5rem" }}>
+          <button onClick={() => reset()} style={{ padding: "0.5rem 1rem", border: "1px solid #ccc", borderRadius: 6 }}>
+            Tentar novamente
+          </button>
+          <button onClick={() => window.location.reload()} style={{ padding: "0.5rem 1rem", border: "1px solid #ccc", borderRadius: 6 }}>
+            Recarregar
+          </button>
+        </div>
+      </div>
+    );
+  },
+  defaultPendingComponent: () => (
+    <div style={{ padding: "2rem", textAlign: "center", color: "#6b7280" }}>
+      Carregando…
+    </div>
+  ),
 });
 
 // Register things for typesafety
