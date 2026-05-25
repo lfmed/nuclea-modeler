@@ -21,6 +21,7 @@ from ..core.sql import Sql
 from ..lakebase.service import open_connection
 from ..tickets.models import DiffEntity, TicketDiff
 from ..tickets.service import open_ticket
+from .embarcadero import parse_erx
 from .models import (
     ExtractedAttribute,
     ExtractedEntity,
@@ -670,4 +671,145 @@ def run_ddl_import(
             f"+{summary['new']} novos, ~{summary['changed']} alterados, -{summary['removed']} removidos."
         ),
         errors=errors,
+    )
+
+
+def run_embarcadero_import(
+    sql: Sql,
+    *,
+    system_id: str,
+    xml_text: str,
+    actor: str,
+    open_ticket_on_diff: bool,
+) -> ExtractionResult:
+    """Parse an Embarcadero ER/Studio .erx XML, diff against catalog, open ticket if needed."""
+    started = datetime.utcnow()
+    start_clock = time.monotonic()
+
+    try:
+        snapshot, parse_warnings = parse_erx(xml_text, system_id)
+    except Exception as exc:
+        return ExtractionResult(
+            extraction_id="",
+            status="FAILED",
+            objects_found=0,
+            objects_new=0,
+            objects_changed=0,
+            objects_removed=0,
+            duration_ms=int((time.monotonic() - start_clock) * 1000),
+            ticket_id=None,
+            summary_md=f"Falha ao processar arquivo .erx: {exc}",
+            errors=[str(exc)[:500]],
+        )
+
+    if not snapshot.entities:
+        ended = datetime.utcnow()
+        duration_ms = int((time.monotonic() - start_clock) * 1000)
+        error_msg = (
+            "Não foi possível identificar entidades no arquivo. "
+            "Formato suportado: Embarcadero ER/Studio .erx XML."
+        )
+        persist_extraction(
+            sql,
+            source_kind="EMBARCADERO",
+            system_id=system_id,
+            actor=actor,
+            requested_schemas=[],
+            requested_kinds=["TABLE"],
+            lakebase_sandbox_id=None,
+            connection_id=None,
+            status="FAILED",
+            started_at=started,
+            ended_at=ended,
+            objects_found=0,
+            objects_new=0,
+            objects_changed=0,
+            objects_removed=0,
+            snapshot=None,
+            diff_summary=None,
+            error_summary=error_msg,
+            ticket_id=None,
+        )
+        return ExtractionResult(
+            extraction_id="",
+            status="FAILED",
+            objects_found=0,
+            objects_new=0,
+            objects_changed=0,
+            objects_removed=0,
+            duration_ms=duration_ms,
+            ticket_id=None,
+            summary_md=error_msg,
+            errors=[error_msg] + parse_warnings,
+        )
+
+    diff, summary = compute_diff_against_catalog(sql, system_id, snapshot)
+    ended = datetime.utcnow()
+    duration_ms = int((time.monotonic() - start_clock) * 1000)
+    has_changes = summary["new"] + summary["changed"] + summary["removed"] > 0
+
+    ticket_id: str | None = None
+    if has_changes and open_ticket_on_diff:
+        warnings_block = (
+            "\n\n**Avisos do parser:**\n" + "\n".join(f"- {w}" for w in parse_warnings[:20])
+            if parse_warnings
+            else ""
+        )
+        ticket_id = open_ticket(
+            sql,
+            title=(
+                f"Reconciliação Embarcadero (.erx) — {summary['new']} novos, "
+                f"{summary['changed']} alterados, {summary['removed']} removidos"
+            ),
+            system_id=system_id,
+            source_type="REVERSE_ENG",
+            diff=diff,
+            extraction_id=None,
+            summary_md=(
+                f"Fonte: arquivo Embarcadero ER/Studio .erx\n"
+                f"Schemas detectados: {', '.join(snapshot.schemas) or '(nenhum)'}\n\n"
+                f"- **{summary['new']}** entidades novas\n"
+                f"- **{summary['changed']}** entidades alteradas\n"
+                f"- **{summary['removed']}** entidades removidas\n"
+                f"{warnings_block}"
+            ),
+            created_by=actor,
+        )
+
+    ext_id = persist_extraction(
+        sql,
+        source_kind="EMBARCADERO",
+        system_id=system_id,
+        actor=actor,
+        requested_schemas=snapshot.schemas,
+        requested_kinds=["TABLE"],
+        lakebase_sandbox_id=None,
+        connection_id=None,
+        status="SUCCESS",
+        started_at=started,
+        ended_at=ended,
+        objects_found=summary["found"],
+        objects_new=summary["new"],
+        objects_changed=summary["changed"],
+        objects_removed=summary["removed"],
+        snapshot=snapshot,
+        diff_summary=summary,
+        error_summary="; ".join(parse_warnings)[:500] if parse_warnings else None,
+        ticket_id=ticket_id,
+    )
+
+    return ExtractionResult(
+        extraction_id=ext_id,
+        status="SUCCESS",
+        objects_found=summary["found"],
+        objects_new=summary["new"],
+        objects_changed=summary["changed"],
+        objects_removed=summary["removed"],
+        duration_ms=duration_ms,
+        ticket_id=ticket_id,
+        summary_md=(
+            f"Parseado {summary['found']} objetos do .erx. "
+            f"+{summary['new']} novos, ~{summary['changed']} alterados, -{summary['removed']} removidos."
+        ),
+        errors=parse_warnings,
     )

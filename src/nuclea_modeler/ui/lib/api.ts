@@ -1314,7 +1314,7 @@ export const useDeactivateSandbox = (
 
 // ─── Extractions (M2 — Reverse Engineering) ──────────────────────────────────
 
-export type SourceKind = "LAKEBASE" | "DDL_FILE" | "ODBC" | "REST";
+export type SourceKind = "LAKEBASE" | "DDL_FILE" | "EMBARCADERO" | "ODBC" | "REST";
 export type ExtractionStatus = "RUNNING" | "SUCCESS" | "PARTIAL" | "FAILED";
 
 export interface ExtractedAttribute {
@@ -1705,5 +1705,22 @@ export const useDeleteLayout = (
       (await api.delete<{ deleted: string }>(
         `/diagram/${encodeURIComponent(systemId)}/layouts/${encodeURIComponent(layoutName)}`,
       )).data,
+    ...opts?.mutation,
+  });
+
+// ─── Embarcadero ER/Studio (.erx) import ─────────────────────────────────────
+
+export interface EmbarcaderoImportIn {
+  system_id: string;
+  xml_text: string;
+  open_ticket: boolean;
+}
+
+export const useRunEmbarcaderoImport = (
+  opts?: Opts<ExtractionResult, { data: EmbarcaderoImportIn }>,
+) =>
+  useMutation({
+    mutationFn: async ({ data }) =>
+      (await api.post<ExtractionResult>("/extractions/embarcadero/run", data)).data,
     ...opts?.mutation,
   });

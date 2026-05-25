@@ -6,7 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-SourceKind = Literal["LAKEBASE", "DDL_FILE", "ODBC", "REST"]
+SourceKind = Literal["LAKEBASE", "DDL_FILE", "EMBARCADERO", "ODBC", "REST"]
 ExtractionStatus = Literal["RUNNING", "SUCCESS", "PARTIAL", "FAILED"]
 
 
@@ -26,6 +26,14 @@ class DDLImportIn(BaseModel):
     system_id: str
     dialect: str = "ANSI"
     ddl_text: str = Field(min_length=1)
+    open_ticket: bool = True
+
+
+class EmbarcaderoImportIn(BaseModel):
+    """Trigger an extraction from an Embarcadero ER/Studio .erx XML file."""
+
+    system_id: str
+    xml_text: str = Field(min_length=1)
     open_ticket: bool = True
 
 

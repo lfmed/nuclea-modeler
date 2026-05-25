@@ -9,6 +9,7 @@ import {
   useListSystemsSuspense,
   useRunLakebaseExtraction,
   useRunDDLImport,
+  useRunEmbarcaderoImport,
   type ExtractionResult,
 } from "@/lib/api";
 import selector from "@/lib/selector";
@@ -23,6 +24,7 @@ import {
   ScanSearch,
   Database,
   FileCode,
+  FileBox,
   Plus,
   Minus,
   RefreshCw,
@@ -30,6 +32,7 @@ import {
   Inbox,
   CheckCircle2,
   XCircle,
+  Upload,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_sidebar/extractions")({
@@ -84,7 +87,7 @@ function Header() {
 }
 
 function ExtractionsContent() {
-  const [tab, setTab] = useState<"lakebase" | "ddl" | "history">("lakebase");
+  const [tab, setTab] = useState<"lakebase" | "ddl" | "erx" | "history">("lakebase");
 
   return (
     <div className="space-y-4">
@@ -97,6 +100,10 @@ function ExtractionsContent() {
           <FileCode className="h-4 w-4 mr-2" />
           Import de DDL
         </TabButton>
+        <TabButton active={tab === "erx"} onClick={() => setTab("erx")}>
+          <FileBox className="h-4 w-4 mr-2" />
+          Embarcadero (.erx)
+        </TabButton>
         <TabButton active={tab === "history"} onClick={() => setTab("history")}>
           <Inbox className="h-4 w-4 mr-2" />
           Histórico
@@ -105,6 +112,7 @@ function ExtractionsContent() {
 
       {tab === "lakebase" && <LakebaseTab />}
       {tab === "ddl" && <DDLTab />}
+      {tab === "erx" && <EmbarcaderoTab />}
       {tab === "history" && <HistoryTab />}
     </div>
   );
@@ -367,6 +375,141 @@ function DDLTab() {
                 <>
                   <FileCode className="mr-2 h-4 w-4" />
                   Parsear e reconciliar
+                </>
+              )}
+            </Button>
+          </div>
+        </form>
+
+        {result && <ResultPanel result={result} />}
+      </CardContent>
+    </Card>
+  );
+}
+
+function EmbarcaderoTab() {
+  const { data: systems } = useListSystemsSuspense(selector());
+  const qc = useQueryClient();
+  const navigate = useNavigate();
+
+  const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
+
+  const { mutate: runImport, isPending, data: result } = useRunEmbarcaderoImport({
+    mutation: {
+      onSuccess: (r) => {
+        qc.invalidateQueries({ queryKey: ["listExtractions"] });
+        qc.invalidateQueries({ queryKey: ["listTickets"] });
+        if (r.ticket_id) {
+          setTimeout(() => navigate({ to: "/tickets/$id", params: { id: r.ticket_id! } }), 800);
+        }
+      },
+    },
+  });
+
+  const [systemId, setSystemId] = useState(systems[0]?.system_id || "");
+  const [fileName, setFileName] = useState<string>("");
+  const [fileSize, setFileSize] = useState<number>(0);
+  const [xmlText, setXmlText] = useState<string>("");
+  const [fileError, setFileError] = useState<string | null>(null);
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFileError(null);
+    setXmlText("");
+    setFileName("");
+    setFileSize(0);
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > MAX_FILE_BYTES) {
+      setFileError(
+        `Arquivo muito grande (${(file.size / 1024 / 1024).toFixed(1)} MB). Limite: 10 MB.`,
+      );
+      return;
+    }
+    try {
+      const text = await file.text();
+      setFileName(file.name);
+      setFileSize(file.size);
+      setXmlText(text);
+    } catch (err) {
+      setFileError(`Falha ao ler o arquivo: ${String(err)}`);
+    }
+  };
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!xmlText || !systemId) return;
+    runImport({
+      data: {
+        system_id: systemId,
+        xml_text: xmlText,
+        open_ticket: true,
+      },
+    });
+  };
+
+  if (systems.length === 0) {
+    return (
+      <Card className="border-dashed">
+        <CardContent className="pt-10 pb-10 text-center">
+          <FileBox className="mx-auto h-10 w-10 text-muted-foreground/50 mb-3" />
+          <p className="text-sm text-muted-foreground">
+            Cadastre um sistema antes de importar um modelo Embarcadero.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Importar modelo Embarcadero (.erx)</CardTitle>
+        <CardDescription>
+          Faça upload de um arquivo <code>.erx</code> exportado pelo Embarcadero ER/Studio.
+          O parser identifica entidades, atributos e tipos, e gera um ticket de reconciliação
+          contra o catálogo atual.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={submit} className="space-y-4">
+          <Field label="Sistema-alvo do diff" required>
+            <select
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+              value={systemId}
+              onChange={(e) => setSystemId(e.target.value)}
+              required
+            >
+              {systems.map((s) => (
+                <option key={s.system_id} value={s.system_id}>{s.system_name}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Arquivo .erx (máximo 10 MB)" required>
+            <Input
+              type="file"
+              accept=".erx,.xml,application/xml,text/xml"
+              onChange={handleFile}
+            />
+            {fileName && !fileError && (
+              <p className="text-xs text-muted-foreground mt-1">
+                <strong>{fileName}</strong> · {(fileSize / 1024).toFixed(1)} KB
+              </p>
+            )}
+            {fileError && (
+              <p className="text-xs text-destructive mt-1">{fileError}</p>
+            )}
+          </Field>
+          <div className="flex justify-end">
+            <Button type="submit" disabled={isPending || !xmlText || !systemId || !!fileError}>
+              {isPending ? (
+                <>
+                  <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                  Importando...
+                </>
+              ) : (
+                <>
+                  <Upload className="mr-2 h-4 w-4" />
+                  Importar
                 </>
               )}
             </Button>
