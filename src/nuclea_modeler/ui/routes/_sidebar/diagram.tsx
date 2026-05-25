@@ -859,20 +859,24 @@ function ValidationDialog({
                   <p className="text-xs text-destructive font-mono">{r.error}</p>
                 )}
                 {r.missing_in_source.length > 0 && (
-                  <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
-                    Colunas no catálogo, ausentes na fonte:{" "}
-                    {r.missing_in_source.map((c) => (
-                      <code key={c} className="mx-0.5 px-1 bg-amber-500/10 rounded">{c}</code>
-                    ))}
-                  </p>
+                  <div className="text-xs text-amber-700 dark:text-amber-300 mt-1">
+                    <span className="mr-1">Colunas no catálogo, ausentes na fonte:</span>
+                    <span className="inline-flex flex-wrap gap-1">
+                      {r.missing_in_source.map((c) => (
+                        <code key={c} className="px-1.5 py-0.5 bg-amber-500/10 rounded font-mono">{c}</code>
+                      ))}
+                    </span>
+                  </div>
                 )}
                 {r.extra_in_source.length > 0 && (
-                  <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
-                    Colunas na fonte, ausentes do catálogo:{" "}
-                    {r.extra_in_source.map((c) => (
-                      <code key={c} className="mx-0.5 px-1 bg-blue-500/10 rounded">{c}</code>
-                    ))}
-                  </p>
+                  <div className="text-xs text-blue-700 dark:text-blue-300 mt-1">
+                    <span className="mr-1">Colunas na fonte, ausentes do catálogo:</span>
+                    <span className="inline-flex flex-wrap gap-1">
+                      {r.extra_in_source.map((c) => (
+                        <code key={c} className="px-1.5 py-0.5 bg-blue-500/10 rounded font-mono">{c}</code>
+                      ))}
+                    </span>
+                  </div>
                 )}
               </div>
             ))}
