@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QueryErrorResetBoundary, useQueryClient } from "@tanstack/react-query";
 import { ErrorBoundary } from "react-error-boundary";
+import { toast } from "sonner";
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -182,8 +183,14 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
 
   const { mutate: saveLayout, isPending: saving } = useSaveLayout({
     mutation: {
-      onSuccess: () => {
+      onSuccess: (data) => {
         qc.invalidateQueries({ queryKey: ["getDiagram", systemId] });
+        toast.success(`Layout "${data.layout_name}" salvo`);
+      },
+      onError: (err) => {
+        toast.error("Erro ao salvar layout", {
+          description: err instanceof Error ? err.message : "Falha desconhecida",
+        });
       },
     },
   });

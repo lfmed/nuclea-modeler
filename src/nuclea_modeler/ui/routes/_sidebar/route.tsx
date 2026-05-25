@@ -20,6 +20,7 @@ import {
   Shield,
   HelpCircle,
   Code2,
+  Activity,
 } from "lucide-react";
 import {
   SidebarGroup,
@@ -184,6 +185,12 @@ function Layout() {
           label: "Papéis (RBAC)",
           icon: <Shield size={16} />,
           match: (p) => p.startsWith("/admin/roles"),
+        },
+        {
+          to: "/admin/audit",
+          label: "Auditoria",
+          icon: <Activity size={16} />,
+          match: (p) => p.startsWith("/admin/audit"),
         },
       ],
     },
