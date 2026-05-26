@@ -106,14 +106,15 @@ def list_connections(sql: SqlDependency) -> list[ConnectionListOut]:
 @router.get("/{connection_id}", response_model=ConnectionOut, operation_id="getConnection")
 def get_connection(connection_id: str, sql: SqlDependency) -> ConnectionOut:
     s = get_settings()
-    row = delta.fetch_one(
+    row = delta.fetch_one_params(
         sql,
         f"""
         SELECT {', '.join('c.'+c for c in _COLUMNS)}, s.system_name
         FROM {s.fq_table('connections')} c
         LEFT JOIN {s.fq_table('systems')} s ON s.system_id = c.system_id
-        WHERE c.connection_id = '{connection_id.replace("'", "''")}'
+        WHERE c.connection_id = :connection_id
         """,
+        [delta.param("connection_id", connection_id)],
     )
     if not row:
         raise HTTPException(404, f"connection '{connection_id}' not found")

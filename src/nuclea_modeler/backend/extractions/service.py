@@ -30,8 +30,12 @@ from .models import (
 )
 
 
-def _q(s: str) -> str:
-    return (s or "").replace("'", "''")
+def _quote_id(value: str) -> str:
+    """Quote a trusted ID (from a prior DB query) for inlining in an IN list.
+
+    Use ONLY with values that originated server-side, never with raw user input.
+    """
+    return "'" + (value or "").replace("'", "''") + "'"
 
 
 def extract_from_lakebase(
@@ -59,17 +63,16 @@ def extract_from_lakebase(
                 )
                 schemas = [r[0] for r in cur.fetchall()]
 
-    # Build sql-safe IN-list for schemas
-    schemas_sql = ", ".join(f"'{_q(s)}'" for s in schemas) if schemas else "''"
+    # psycopg supports binding tuples for `ANY(%s)` and `IN %s` — much safer
+    # than building the IN list as a string.
     kinds_set = set(k.upper() for k in object_kinds)
-    table_type_filter = []
+    table_types: list[str] = []
     if "TABLE" in kinds_set:
-        table_type_filter.append("'BASE TABLE'")
+        table_types.append("BASE TABLE")
     if "VIEW" in kinds_set:
-        table_type_filter.append("'VIEW'")
-    if not table_type_filter:
-        table_type_filter = ["'BASE TABLE'", "'VIEW'"]
-    table_types_sql = ", ".join(table_type_filter)
+        table_types.append("VIEW")
+    if not table_types:
+        table_types = ["BASE TABLE", "VIEW"]
 
     entities: list[ExtractedEntity] = []
 
@@ -77,23 +80,24 @@ def extract_from_lakebase(
         with conn.cursor() as cur:
             # 1) Tables/views in scope
             cur.execute(
-                f"""
+                """
                 SELECT t.table_schema, t.table_name, t.table_type,
                        obj_description(c.oid, 'pg_class') AS table_comment
                 FROM information_schema.tables t
                 LEFT JOIN pg_class c
                   ON c.relname = t.table_name
                  AND c.relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = t.table_schema)
-                WHERE t.table_schema IN ({schemas_sql})
-                  AND t.table_type IN ({table_types_sql})
+                WHERE t.table_schema = ANY(%s)
+                  AND t.table_type = ANY(%s)
                 ORDER BY t.table_schema, t.table_name
-                """
+                """,
+                (schemas, table_types),
             )
             tables = cur.fetchall()
 
             # 2) Columns for those tables
             cur.execute(
-                f"""
+                """
                 SELECT c.table_schema, c.table_name, c.column_name, c.ordinal_position,
                        c.udt_name,
                        COALESCE(c.character_maximum_length::text, c.numeric_precision::text || ',' || c.numeric_scale::text, '') AS extra,
@@ -105,34 +109,37 @@ def extract_from_lakebase(
                   ON st.schemaname = c.table_schema AND st.relname = c.table_name
                 LEFT JOIN pg_catalog.pg_description pgd
                   ON pgd.objoid = st.relid AND pgd.objsubid = c.ordinal_position
-                WHERE c.table_schema IN ({schemas_sql})
+                WHERE c.table_schema = ANY(%s)
                 ORDER BY c.table_schema, c.table_name, c.ordinal_position
-                """
+                """,
+                (schemas,),
             )
             columns = cur.fetchall()
 
             # 3) Primary keys
             cur.execute(
-                f"""
+                """
                 SELECT n.nspname AS schema_name, c.relname AS table_name, a.attname AS column_name
                 FROM pg_constraint con
                 JOIN pg_class c ON c.oid = con.conrelid
                 JOIN pg_namespace n ON n.oid = c.relnamespace
                 JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = ANY(con.conkey)
                 WHERE con.contype = 'p'
-                  AND n.nspname IN ({schemas_sql})
-                """
+                  AND n.nspname = ANY(%s)
+                """,
+                (schemas,),
             )
             pks = {(r[0], r[1], r[2]) for r in cur.fetchall()}
 
             # 4) Row counts (approximation, fast)
             cur.execute(
-                f"""
+                """
                 SELECT n.nspname, c.relname, c.reltuples::bigint
                 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-                WHERE n.nspname IN ({schemas_sql})
+                WHERE n.nspname = ANY(%s)
                   AND c.relkind IN ('r','v','m')
-                """
+                """,
+                (schemas,),
             )
             row_counts = {(r[0], r[1]): int(r[2]) if r[2] is not None else None for r in cur.fetchall()}
 
@@ -190,13 +197,14 @@ def compute_diff_against_catalog(
     """
     s = get_settings()
     # Fetch current catalog entities for this system
-    entity_rows = delta.fetch_all(
+    entity_rows = delta.fetch_all_params(
         sql,
         f"""
         SELECT entity_id, schema_name, technical_name, entity_type, native_comment, row_count_approx, logical_name, description_md
         FROM {s.fq_table('entities')}
-        WHERE system_id = '{_q(system_id)}'
+        WHERE system_id = :system_id
         """,
+        [delta.param("system_id", system_id)],
     )
     # Index by (schema, technical_name) for fast lookup
     catalog_index: dict[tuple[str, str], dict[str, Any]] = {}
@@ -213,7 +221,8 @@ def compute_diff_against_catalog(
     # Fetch attributes only for catalog entities (we'll compare per-entity that exists in both)
     attr_rows: list[list[Any]] = []
     if catalog_entity_ids_by_key:
-        ids_csv = ", ".join(f"'{eid}'" for eid in catalog_entity_ids_by_key.values())
+        # entity_ids come from the trusted DB query above — safe to inline.
+        ids_csv = ", ".join(_quote_id(eid) for eid in catalog_entity_ids_by_key.values())
         attr_rows = delta.fetch_all(
             sql,
             f"""
@@ -409,10 +418,11 @@ def run_lakebase_extraction(
     started = datetime.utcnow()
     start_clock = time.monotonic()
     # Resolve sandbox details
-    sb_row = delta.fetch_one(
+    sb_row = delta.fetch_one_params(
         sql,
         f"SELECT instance_name, database_name FROM {s.fq_table('lakebase_sandboxes')} "
-        f"WHERE sandbox_id = '{_q(sandbox_id)}'",
+        f"WHERE sandbox_id = :sandbox_id",
+        [delta.param("sandbox_id", sandbox_id)],
     )
     if not sb_row:
         raise ValueError(f"sandbox '{sandbox_id}' not found")

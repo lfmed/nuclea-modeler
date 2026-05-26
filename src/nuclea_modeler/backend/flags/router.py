@@ -48,11 +48,6 @@ _FLAG_COLS = [
 ]
 
 
-def _q(value: str) -> str:
-    """Escape single quotes for safe SQL string interpolation."""
-    return (value or "").replace("'", "''")
-
-
 def _flag_row_to_out(r: list) -> FlagOut:
     return FlagOut(
         flag_id=r[0],
@@ -70,10 +65,11 @@ def _flag_row_to_out(r: list) -> FlagOut:
 
 def _fetch_flag(sql: Sql, flag_id: str) -> FlagOut:
     s = get_settings()
-    row = delta.fetch_one(
+    row = delta.fetch_one_params(
         sql,
         f"SELECT {', '.join(_FLAG_COLS)} FROM {s.fq_table('flags')} "
-        f"WHERE flag_id = '{_q(flag_id)}'",
+        f"WHERE flag_id = :flag_id",
+        [delta.param("flag_id", flag_id)],
     )
     if not row:
         raise HTTPException(404, f"flag '{flag_id}' not found")
@@ -90,12 +86,15 @@ def list_flags(
 ) -> list[FlagOut]:
     s = get_settings()
     where: list[str] = []
+    params: list = []
     if category:
-        where.append(f"category = '{_q(category)}'")
+        where.append("category = :category")
+        params.append(delta.param("category", str(category)))
     if is_active is not None:
-        where.append(f"is_active = {'true' if is_active else 'false'}")
+        where.append("is_active = :is_active")
+        params.append(delta.param("is_active", is_active))
     where_clause = ("WHERE " + " AND ".join(where)) if where else ""
-    rows = delta.fetch_all(
+    rows = delta.fetch_all_params(
         sql,
         f"""
         SELECT {', '.join(_FLAG_COLS)}
@@ -106,6 +105,7 @@ def list_flags(
             WHEN 'QUALITY' THEN 2 WHEN 'CUSTOM' THEN 3 ELSE 4 END,
           display_name
         """,
+        params,
     )
     return [_flag_row_to_out(r) for r in rows]
 
@@ -207,15 +207,16 @@ def _entity_flag_row_to_out(r: list) -> EntityFlagOut:
 )
 def list_entity_flags(entity_id: str, sql: SqlDependency) -> list[EntityFlagOut]:
     s = get_settings()
-    rows = delta.fetch_all(
+    rows = delta.fetch_all_params(
         sql,
         f"""
         SELECT {_ENT_FLAG_SELECT}
         FROM {s.fq_table('entity_flags')} ef
         JOIN {s.fq_table('flags')} f ON f.flag_id = ef.flag_id
-        WHERE ef.entity_id = '{_q(entity_id)}'
+        WHERE ef.entity_id = :entity_id
         ORDER BY ef.applied_at DESC
         """,
+        [delta.param("entity_id", entity_id)],
     )
     return [_entity_flag_row_to_out(r) for r in rows]
 
@@ -244,10 +245,14 @@ def apply_entity_flag(
         )
     s = get_settings()
     # idempotent: skip if same flag already applied on entity
-    existing = delta.fetch_one(
+    existing = delta.fetch_one_params(
         sql,
         f"SELECT entity_flag_id FROM {s.fq_table('entity_flags')} "
-        f"WHERE entity_id = '{_q(entity_id)}' AND flag_id = '{_q(flag.flag_id)}'",
+        f"WHERE entity_id = :entity_id AND flag_id = :flag_id",
+        [
+            delta.param("entity_id", entity_id),
+            delta.param("flag_id", flag.flag_id),
+        ],
     )
     if existing:
         return _entity_flag_by_id(sql, existing[0])
@@ -272,14 +277,15 @@ def apply_entity_flag(
 
 def _entity_flag_by_id(sql: Sql, entity_flag_id: str) -> EntityFlagOut:
     s = get_settings()
-    row = delta.fetch_one(
+    row = delta.fetch_one_params(
         sql,
         f"""
         SELECT {_ENT_FLAG_SELECT}
         FROM {s.fq_table('entity_flags')} ef
         JOIN {s.fq_table('flags')} f ON f.flag_id = ef.flag_id
-        WHERE ef.entity_flag_id = '{_q(entity_flag_id)}'
+        WHERE ef.entity_flag_id = :entity_flag_id
         """,
+        [delta.param("entity_flag_id", entity_flag_id)],
     )
     if not row:
         raise HTTPException(404, f"entity_flag '{entity_flag_id}' not found")
@@ -300,11 +306,15 @@ def remove_entity_flag(
     if not actor:
         raise HTTPException(401, "authentication required")
     s = get_settings()
-    delta.run(
+    delta.run_params(
         sql,
         f"DELETE FROM {s.fq_table('entity_flags')} "
-        f"WHERE entity_flag_id = '{_q(entity_flag_id)}' "
-        f"AND entity_id = '{_q(entity_id)}'",
+        f"WHERE entity_flag_id = :entity_flag_id "
+        f"AND entity_id = :entity_id",
+        [
+            delta.param("entity_flag_id", entity_flag_id),
+            delta.param("entity_id", entity_id),
+        ],
     )
     return {"deleted": entity_flag_id}
 
@@ -335,14 +345,15 @@ def _attribute_flag_row_to_out(r: list) -> AttributeFlagOut:
 
 def _attribute_flag_by_id(sql: Sql, attribute_flag_id: str) -> AttributeFlagOut:
     s = get_settings()
-    row = delta.fetch_one(
+    row = delta.fetch_one_params(
         sql,
         f"""
         SELECT {_ATTR_FLAG_SELECT}
         FROM {s.fq_table('attribute_flags')} af
         JOIN {s.fq_table('flags')} f ON f.flag_id = af.flag_id
-        WHERE af.attribute_flag_id = '{_q(attribute_flag_id)}'
+        WHERE af.attribute_flag_id = :attribute_flag_id
         """,
+        [delta.param("attribute_flag_id", attribute_flag_id)],
     )
     if not row:
         raise HTTPException(404, f"attribute_flag '{attribute_flag_id}' not found")
@@ -351,10 +362,11 @@ def _attribute_flag_by_id(sql: Sql, attribute_flag_id: str) -> AttributeFlagOut:
 
 def _entity_id_for_attribute(sql: Sql, attribute_id: str) -> str | None:
     s = get_settings()
-    row = delta.fetch_one(
+    row = delta.fetch_one_params(
         sql,
         f"SELECT entity_id FROM {s.fq_table('attributes')} "
-        f"WHERE attribute_id = '{_q(attribute_id)}'",
+        f"WHERE attribute_id = :attribute_id",
+        [delta.param("attribute_id", attribute_id)],
     )
     return row[0] if row else None
 
@@ -365,10 +377,14 @@ def _propagate_lgpd_to_entity(
     """If the parent entity does not already have this LGPD flag, insert a
     propagated row (is_propagated=true). Idempotent."""
     s = get_settings()
-    existing = delta.fetch_one(
+    existing = delta.fetch_one_params(
         sql,
         f"SELECT entity_flag_id FROM {s.fq_table('entity_flags')} "
-        f"WHERE entity_id = '{_q(entity_id)}' AND flag_id = '{_q(flag_id)}'",
+        f"WHERE entity_id = :entity_id AND flag_id = :flag_id",
+        [
+            delta.param("entity_id", entity_id),
+            delta.param("flag_id", flag_id),
+        ],
     )
     if existing:
         return
@@ -394,25 +410,33 @@ def _cleanup_propagated_entity_flag(
     """Remove the propagated entity flag iff no other attribute of the same
     entity still carries the same LGPD flag."""
     s = get_settings()
-    still_used = delta.fetch_one(
+    still_used = delta.fetch_one_params(
         sql,
         f"""
         SELECT 1
         FROM {s.fq_table('attribute_flags')} af
         JOIN {s.fq_table('attributes')} a ON a.attribute_id = af.attribute_id
-        WHERE a.entity_id = '{_q(entity_id)}'
-          AND af.flag_id = '{_q(flag_id)}'
+        WHERE a.entity_id = :entity_id
+          AND af.flag_id = :flag_id
         LIMIT 1
         """,
+        [
+            delta.param("entity_id", entity_id),
+            delta.param("flag_id", flag_id),
+        ],
     )
     if still_used:
         return
-    delta.run(
+    delta.run_params(
         sql,
         f"DELETE FROM {s.fq_table('entity_flags')} "
-        f"WHERE entity_id = '{_q(entity_id)}' "
-        f"AND flag_id = '{_q(flag_id)}' "
+        f"WHERE entity_id = :entity_id "
+        f"AND flag_id = :flag_id "
         f"AND is_propagated = true",
+        [
+            delta.param("entity_id", entity_id),
+            delta.param("flag_id", flag_id),
+        ],
     )
 
 
@@ -425,15 +449,16 @@ def list_attribute_flags(
     attribute_id: str, sql: SqlDependency
 ) -> list[AttributeFlagOut]:
     s = get_settings()
-    rows = delta.fetch_all(
+    rows = delta.fetch_all_params(
         sql,
         f"""
         SELECT {_ATTR_FLAG_SELECT}
         FROM {s.fq_table('attribute_flags')} af
         JOIN {s.fq_table('flags')} f ON f.flag_id = af.flag_id
-        WHERE af.attribute_id = '{_q(attribute_id)}'
+        WHERE af.attribute_id = :attribute_id
         ORDER BY af.applied_at DESC
         """,
+        [delta.param("attribute_id", attribute_id)],
     )
     return [_attribute_flag_row_to_out(r) for r in rows]
 
@@ -461,10 +486,14 @@ def apply_attribute_flag(
             f"flag '{flag.flag_key}' requires a non-empty justification",
         )
     s = get_settings()
-    existing = delta.fetch_one(
+    existing = delta.fetch_one_params(
         sql,
         f"SELECT attribute_flag_id FROM {s.fq_table('attribute_flags')} "
-        f"WHERE attribute_id = '{_q(attribute_id)}' AND flag_id = '{_q(flag.flag_id)}'",
+        f"WHERE attribute_id = :attribute_id AND flag_id = :flag_id",
+        [
+            delta.param("attribute_id", attribute_id),
+            delta.param("flag_id", flag.flag_id),
+        ],
     )
     if existing:
         return _attribute_flag_by_id(sql, existing[0])
@@ -513,21 +542,29 @@ def remove_attribute_flag(
     s = get_settings()
     # Capture the flag (and category) before deletion so we can clean up
     # propagated entity flags afterwards.
-    row = delta.fetch_one(
+    row = delta.fetch_one_params(
         sql,
         f"""
         SELECT af.flag_id, f.category
         FROM {s.fq_table('attribute_flags')} af
         JOIN {s.fq_table('flags')} f ON f.flag_id = af.flag_id
-        WHERE af.attribute_flag_id = '{_q(attribute_flag_id)}'
-          AND af.attribute_id = '{_q(attribute_id)}'
+        WHERE af.attribute_flag_id = :attribute_flag_id
+          AND af.attribute_id = :attribute_id
         """,
+        [
+            delta.param("attribute_flag_id", attribute_flag_id),
+            delta.param("attribute_id", attribute_id),
+        ],
     )
-    delta.run(
+    delta.run_params(
         sql,
         f"DELETE FROM {s.fq_table('attribute_flags')} "
-        f"WHERE attribute_flag_id = '{_q(attribute_flag_id)}' "
-        f"AND attribute_id = '{_q(attribute_id)}'",
+        f"WHERE attribute_flag_id = :attribute_flag_id "
+        f"AND attribute_id = :attribute_id",
+        [
+            delta.param("attribute_flag_id", attribute_flag_id),
+            delta.param("attribute_id", attribute_id),
+        ],
     )
     if row and row[1] == "LGPD":
         entity_id = _entity_id_for_attribute(sql, attribute_id)

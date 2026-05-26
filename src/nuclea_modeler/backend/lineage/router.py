@@ -35,10 +35,6 @@ _DOWN_COLS = [
 ]
 
 
-def _q(s: str) -> str:
-    return (s or "").replace("'", "''")
-
-
 def _up_row_to_out(r: list) -> UpstreamOut:
     return UpstreamOut(
         lineage_id=r[0], entity_id=r[1], source_system=r[2],
@@ -71,10 +67,11 @@ def _down_row_to_out(r: list) -> DownstreamOut:
 )
 def list_upstream(entity_id: str, sql: SqlDependency) -> list[UpstreamOut]:
     s = get_settings()
-    rows = delta.fetch_all(
+    rows = delta.fetch_all_params(
         sql,
         f"SELECT {', '.join(_UP_COLS)} FROM {s.fq_table('lineage_upstream')} "
-        f"WHERE entity_id = '{_q(entity_id)}' ORDER BY source_system",
+        f"WHERE entity_id = :entity_id ORDER BY source_system",
+        [delta.param("entity_id", entity_id)],
     )
     return [_up_row_to_out(r) for r in rows]
 
@@ -112,10 +109,11 @@ def create_upstream(
             "updated_at": now, "updated_by": actor,
         },
     )
-    row = delta.fetch_one(
+    row = delta.fetch_one_params(
         sql,
         f"SELECT {', '.join(_UP_COLS)} FROM {s.fq_table('lineage_upstream')} "
-        f"WHERE lineage_id = '{lid}'",
+        f"WHERE lineage_id = :lineage_id",
+        [delta.param("lineage_id", lid)],
     )
     if not row:
         raise HTTPException(500, "upstream creation failed")
@@ -141,10 +139,11 @@ def delete_upstream(lineage_id: str, sql: SqlDependency) -> dict:
 )
 def list_downstream(entity_id: str, sql: SqlDependency) -> list[DownstreamOut]:
     s = get_settings()
-    rows = delta.fetch_all(
+    rows = delta.fetch_all_params(
         sql,
         f"SELECT {', '.join(_DOWN_COLS)} FROM {s.fq_table('lineage_downstream')} "
-        f"WHERE entity_id = '{_q(entity_id)}' ORDER BY consumer_system",
+        f"WHERE entity_id = :entity_id ORDER BY consumer_system",
+        [delta.param("entity_id", entity_id)],
     )
     return [_down_row_to_out(r) for r in rows]
 
@@ -181,10 +180,11 @@ def create_downstream(
             "updated_at": now, "updated_by": actor,
         },
     )
-    row = delta.fetch_one(
+    row = delta.fetch_one_params(
         sql,
         f"SELECT {', '.join(_DOWN_COLS)} FROM {s.fq_table('lineage_downstream')} "
-        f"WHERE consumer_id = '{cid}'",
+        f"WHERE consumer_id = :consumer_id",
+        [delta.param("consumer_id", cid)],
     )
     if not row:
         raise HTTPException(500, "downstream creation failed")
@@ -222,15 +222,16 @@ def get_graph(
     def add_entity_node(eid: str):
         if eid in nodes:
             return
-        row = delta.fetch_one(
+        row = delta.fetch_one_params(
             sql,
             f"""
             SELECT e.entity_id, e.schema_name, e.technical_name, e.entity_type, e.domain,
                    sys.system_name
             FROM {s.fq_table('entities')} e
             LEFT JOIN {s.fq_table('systems')} sys ON sys.system_id = e.system_id
-            WHERE e.entity_id = '{_q(eid)}'
+            WHERE e.entity_id = :entity_id
             """,
+            [delta.param("entity_id", eid)],
         )
         if not row:
             return
@@ -260,13 +261,14 @@ def get_graph(
         if remaining <= 0:
             return
         # Upstream
-        ups = delta.fetch_all(
+        ups = delta.fetch_all_params(
             sql,
             f"""
             SELECT source_system, source_entity, integration_type
             FROM {s.fq_table('lineage_upstream')}
-            WHERE entity_id = '{_q(eid)}'
+            WHERE entity_id = :entity_id
             """,
+            [delta.param("entity_id", eid)],
         )
         for u in ups:
             src_node = add_external_node("up", u[0], "upstream_system")
@@ -276,13 +278,14 @@ def get_graph(
                 label=u[2] if u[2] else (u[1] or None),
             ))
         # Downstream
-        downs = delta.fetch_all(
+        downs = delta.fetch_all_params(
             sql,
             f"""
             SELECT consumer_system, consumption_type, sla_dependency
             FROM {s.fq_table('lineage_downstream')}
-            WHERE entity_id = '{_q(eid)}'
+            WHERE entity_id = :entity_id
             """,
+            [delta.param("entity_id", eid)],
         )
         for d in downs:
             cons_node = add_external_node("down", d[0], "downstream_system")

@@ -35,11 +35,12 @@ def list_versions(
 ) -> list[VersionListOut]:
     s = get_settings()
     where = ""
+    params: list = []
     if system_id:
-        safe = system_id.replace("'", "''")
-        where = f"WHERE v.system_id = '{safe}'"
+        where = "WHERE v.system_id = :system_id"
+        params.append(delta.param("system_id", system_id))
 
-    rows = delta.fetch_all(
+    rows = delta.fetch_all_params(
         sql,
         f"""
         SELECT v.version_id, v.system_id, sys.system_name, v.version_number,
@@ -52,6 +53,7 @@ def list_versions(
                  v.created_at DESC
         LIMIT 100
         """,
+        params,
     )
     return [
         VersionListOut(

@@ -67,13 +67,16 @@ def list_tickets(
     system_id: str | None = Query(None),
 ) -> list[TicketListOut]:
     s = get_settings()
-    where = []
+    where: list[str] = []
+    params: list = []
     if status:
-        where.append(f"t.status = '{status}'")
+        where.append("t.status = :status")
+        params.append(delta.param("status", str(status)))
     if system_id:
-        where.append(f"t.system_id = '{system_id.replace(chr(39), chr(39)*2)}'")
+        where.append("t.system_id = :system_id")
+        params.append(delta.param("system_id", system_id))
     where_clause = ("WHERE " + " AND ".join(where)) if where else ""
-    rows = delta.fetch_all(
+    rows = delta.fetch_all_params(
         sql,
         f"""
         SELECT t.ticket_id, t.title, t.system_id, sys.system_name,
@@ -89,6 +92,7 @@ def list_tickets(
             WHEN 'APPLIED' THEN 2 ELSE 3 END,
           t.created_at DESC
         """,
+        params,
     )
     return [
         TicketListOut(
@@ -108,14 +112,15 @@ def list_tickets(
 @router.get("/{ticket_id}", response_model=TicketOut, operation_id="getTicket")
 def get_ticket(ticket_id: str, sql: SqlDependency) -> TicketOut:
     s = get_settings()
-    row = delta.fetch_one(
+    row = delta.fetch_one_params(
         sql,
         f"""
         SELECT {', '.join('t.'+c for c in _COLS)}, sys.system_name
         FROM {s.fq_table('reconciliation_tickets')} t
         LEFT JOIN {s.fq_table('systems')} sys ON sys.system_id = t.system_id
-        WHERE t.ticket_id = '{ticket_id.replace(chr(39), chr(39)*2)}'
+        WHERE t.ticket_id = :ticket_id
         """,
+        [delta.param("ticket_id", ticket_id)],
     )
     if not row:
         raise HTTPException(404, f"ticket '{ticket_id}' not found")

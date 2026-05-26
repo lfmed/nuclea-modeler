@@ -36,11 +36,11 @@ def get_user_roles(sql: Sql, user_email: str) -> list[str]:
     if not user_email:
         return []
     s = get_settings()
-    safe = user_email.replace("'", "''")
-    rows = delta.fetch_all(
+    rows = delta.fetch_all_params(
         sql,
         f"SELECT role_name FROM {s.fq_table('user_roles')} "
-        f"WHERE user_email = '{safe}' AND is_active = true",
+        f"WHERE user_email = :user_email AND is_active = true",
+        [delta.param("user_email", user_email)],
     )
     return [r[0] for r in rows]
 

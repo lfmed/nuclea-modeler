@@ -14,9 +14,12 @@ ERROR, the rest of the run continues. Results are persisted to
 from __future__ import annotations
 
 import json
+import re
 import time
 from datetime import datetime
 from typing import Any
+
+from fastapi import HTTPException
 
 from ..core import delta
 from ..core._nuclea_config import get_settings
@@ -29,8 +32,21 @@ from .models import (
 )
 
 
-def _q(value: str | None) -> str:
-    """Escape a value for safe inlining inside a SQL single-quoted literal."""
+# Identifier validator for catalog/schema/table/column names. UC accepts a
+# wider grammar with backticks, but we restrict the app to ASCII identifiers
+# so we can safely interpolate without quoting.
+_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
+
+
+def _require_ident(value: str, field: str) -> str:
+    if not _IDENT_RE.match(value or ""):
+        raise HTTPException(400, f"invalid {field}: must match {_IDENT_RE.pattern}")
+    return value
+
+
+def _esc(value: str | None) -> str:
+    """Last-resort SQL-literal escape for places where parameters cannot be
+    used. Only used for trusted internal values."""
     return (value or "").replace("'", "''")
 
 
@@ -59,7 +75,11 @@ def _build_column_comment(logical_name: str | None, description_md: str | None,
 
 
 def _target_table_exists(sql: Sql, target_table: str) -> bool:
-    """Cheap existence check via DESCRIBE TABLE EXTENDED."""
+    """Cheap existence check via DESCRIBE TABLE EXTENDED.
+
+    `target_table` is built from validated identifiers (catalog.schema.table),
+    so direct interpolation is safe.
+    """
     try:
         delta.run(sql, f"DESCRIBE TABLE EXTENDED {target_table}")
         return True
@@ -89,19 +109,22 @@ def run_sync(
     t0 = time.perf_counter()
     sync_id = delta.new_id("sync-")
 
+    # Validate the catalog name once — it goes into every DDL we emit.
+    _require_ident(payload.target_catalog, "target_catalog")
     schema_map: dict[str, str] = dict(payload.target_schema_map or {})
 
     # 1) Pull entities for the system
-    ent_rows = delta.fetch_all(
+    ent_rows = delta.fetch_all_params(
         sql,
         f"""
         SELECT entity_id, schema_name, technical_name, logical_name,
                description_md, native_comment, domain, criticality,
                business_owner
         FROM {s.fq_table('entities')}
-        WHERE system_id = '{_q(payload.system_id)}'
+        WHERE system_id = :system_id
         ORDER BY schema_name, technical_name
         """,
+        [delta.param("system_id", payload.system_id)],
     )
 
     objects: list[SyncObjectResult] = []
@@ -123,6 +146,24 @@ def run_sync(
         ) = r
 
         target_schema = schema_map.get(schema_name, schema_name)
+        # Validate identifiers from the catalog before composing DDL. Entities
+        # whose names violate the grammar are surfaced as ERROR.
+        try:
+            _require_ident(target_schema, "target_schema")
+            _require_ident(technical_name, "technical_name")
+        except HTTPException as exc:
+            objects.append(
+                SyncObjectResult(
+                    schema_name=schema_name,
+                    technical_name=technical_name,
+                    target_table=f"{payload.target_catalog}.{target_schema}.{technical_name}",
+                    status="ERROR",
+                    message=exc.detail,
+                )
+            )
+            objects_failed += 1
+            continue
+
         target_table = f"{payload.target_catalog}.{target_schema}.{technical_name}"
 
         try:
@@ -140,29 +181,38 @@ def run_sync(
                     )
                     continue
 
-                # 2a) Table COMMENT
+                # 2a) Table COMMENT — parameterise the body so quotes never break us
                 tbl_comment = _trim(
                     _build_table_comment(logical_name, description_md, native_comment),
                     1000,
                 )
                 if tbl_comment:
-                    delta.run(
+                    delta.run_params(
                         sql,
-                        f"COMMENT ON TABLE {target_table} IS '{_q(tbl_comment)}'",
+                        f"COMMENT ON TABLE {target_table} IS :comment_body",
+                        [delta.param("comment_body", tbl_comment)],
                     )
 
                 # 2b) Column COMMENTs
-                attr_rows = delta.fetch_all(
+                attr_rows = delta.fetch_all_params(
                     sql,
                     f"""
                     SELECT technical_name, logical_name, description_md, native_comment
                     FROM {s.fq_table('attributes')}
-                    WHERE entity_id = '{_q(entity_id)}'
+                    WHERE entity_id = :entity_id
                     """,
+                    [delta.param("entity_id", entity_id)],
                 )
                 for ar in attr_rows:
                     col_name, col_logical, col_desc, col_native = ar
                     if not col_name:
+                        continue
+                    # Column name is an identifier — validate, don't quote.
+                    if not _IDENT_RE.match(col_name):
+                        errors.append(
+                            f"{schema_name}.{technical_name}.{col_name}: "
+                            "invalid column identifier; skipped"
+                        )
                         continue
                     col_comment = _trim(
                         _build_column_comment(col_logical, col_desc, col_native),
@@ -171,10 +221,11 @@ def run_sync(
                     if not col_comment:
                         continue
                     try:
-                        delta.run(
+                        delta.run_params(
                             sql,
                             f"ALTER TABLE {target_table} ALTER COLUMN "
-                            f"{col_name} COMMENT '{_q(col_comment)}'",
+                            f"{col_name} COMMENT :col_comment",
+                            [delta.param("col_comment", col_comment)],
                         )
                     except Exception as col_exc:
                         # column-level errors don't fail the whole entity
@@ -182,7 +233,10 @@ def run_sync(
                             f"{schema_name}.{technical_name}.{col_name}: {col_exc}"
                         )
 
-                # 2c) TAGS — only set the ones with a value
+                # 2c) TAGS — only set the ones with a value. SET TAGS requires
+                # literal map syntax: ALTER TABLE x SET TAGS ('k' = 'v', ...).
+                # Tag keys are constants we control; values may contain quotes
+                # so we escape defensively.
                 tag_kv: dict[str, str] = {}
                 if domain:
                     tag_kv["uc.tag.domain"] = str(domain)
@@ -192,7 +246,7 @@ def run_sync(
                     tag_kv["uc.tag.business_owner"] = str(business_owner)
                 if tag_kv:
                     pairs = ", ".join(
-                        f"'{_q(k)}' = '{_q(v)}'" for k, v in tag_kv.items()
+                        f"'{_esc(k)}' = '{_esc(v)}'" for k, v in tag_kv.items()
                     )
                     try:
                         delta.run(
@@ -293,6 +347,7 @@ def run_sync(
 
 def list_runs(sql: Sql, limit: int = 50) -> list[dict[str, Any]]:
     s = get_settings()
+    safe_limit = max(1, min(int(limit), 500))
     rows = delta.fetch_all(
         sql,
         f"""
@@ -301,7 +356,7 @@ def list_runs(sql: Sql, limit: int = 50) -> list[dict[str, Any]]:
                duration_ms, target_catalog, triggered_by, error_summary
         FROM {s.fq_table('sync_log')}
         ORDER BY started_at DESC
-        LIMIT {int(limit)}
+        LIMIT {safe_limit}
         """,
     )
     return [
@@ -325,7 +380,7 @@ def list_runs(sql: Sql, limit: int = 50) -> list[dict[str, Any]]:
 
 def get_run(sql: Sql, sync_id: str) -> dict[str, Any] | None:
     s = get_settings()
-    row = delta.fetch_one(
+    row = delta.fetch_one_params(
         sql,
         f"""
         SELECT sync_id, version_id, system_id, started_at, ended_at, status,
@@ -333,8 +388,9 @@ def get_run(sql: Sql, sync_id: str) -> dict[str, Any] | None:
                duration_ms, target_catalog, triggered_by, error_summary,
                details_json
         FROM {s.fq_table('sync_log')}
-        WHERE sync_id = '{_q(sync_id)}'
+        WHERE sync_id = :sync_id
         """,
+        [delta.param("sync_id", sync_id)],
     )
     if not row:
         return None

@@ -48,10 +48,6 @@ APPROVERS = (ROLE_DATA_ARCHITECT, ROLE_DATA_STEWARD, ROLE_ADMIN)
 ARCHITECT_OR_ADMIN = (ROLE_DATA_ARCHITECT, ROLE_ADMIN)
 
 
-def _q(s: str) -> str:
-    return (s or "").replace("'", "''")
-
-
 def _term_row_to_out(r: list, mappings_count: int = 0) -> TermOut:
     return TermOut(
         term_id=r[0],
@@ -84,19 +80,23 @@ def list_terms(
     q: str | None = Query(None, description="Full-text search on canonical_name + definition"),
 ) -> list[TermListOut]:
     s = get_settings()
-    where = []
+    where: list[str] = []
+    params: list = []
     if status:
-        where.append(f"t.status = '{status}'")
+        where.append("t.status = :status")
+        params.append(delta.param("status", str(status)))
     if domain:
-        where.append(f"t.domain = '{_q(domain)}'")
+        where.append("t.domain = :domain")
+        params.append(delta.param("domain", domain))
     if q:
-        safe = _q(q.lower())
+        # LIKE pattern with bound parameter — :q already contains the %wildcards%
         where.append(
-            f"(lower(t.canonical_name) LIKE '%{safe}%' OR lower(t.definition) LIKE '%{safe}%')"
+            "(lower(t.canonical_name) LIKE :q OR lower(t.definition) LIKE :q)"
         )
+        params.append(delta.param("q", f"%{q.lower()}%"))
     where_clause = ("WHERE " + " AND ".join(where)) if where else ""
 
-    rows = delta.fetch_all(
+    rows = delta.fetch_all_params(
         sql,
         f"""
         SELECT t.term_id, t.canonical_name, t.domain, t.conceptual_type,
@@ -108,6 +108,7 @@ def list_terms(
         ORDER BY t.canonical_name ASC
         LIMIT 500
         """,
+        params,
     )
     return [
         TermListOut(
@@ -127,15 +128,16 @@ def list_terms(
 @router.get("/terms/{term_id}", response_model=TermOut, operation_id="getTerm")
 def get_term(term_id: str, sql: SqlDependency) -> TermOut:
     s = get_settings()
-    row = delta.fetch_one(
+    row = delta.fetch_one_params(
         sql,
         f"""
         SELECT {', '.join('t.'+c for c in _TERM_COLS)},
                (SELECT COUNT(*) FROM {s.fq_table('glossary_mappings')} m
                 WHERE m.term_id = t.term_id) AS mappings_count
         FROM {s.fq_table('glossary_terms')} t
-        WHERE t.term_id = '{_q(term_id)}'
+        WHERE t.term_id = :term_id
         """,
+        [delta.param("term_id", term_id)],
     )
     if not row:
         raise HTTPException(404, f"term '{term_id}' not found")
@@ -330,7 +332,7 @@ def _mapping_row_to_out(r: list) -> MappingOut:
 )
 def list_term_mappings(term_id: str, sql: SqlDependency) -> list[MappingOut]:
     s = get_settings()
-    rows = delta.fetch_all(
+    rows = delta.fetch_all_params(
         sql,
         f"""
         SELECT {_MAPPING_JOIN_SELECT}
@@ -339,9 +341,10 @@ def list_term_mappings(term_id: str, sql: SqlDependency) -> list[MappingOut]:
         LEFT JOIN {s.fq_table('attributes')} a ON a.attribute_id = m.attribute_id
         LEFT JOIN {s.fq_table('entities')} e ON e.entity_id = a.entity_id
         LEFT JOIN {s.fq_table('systems')} sys ON sys.system_id = e.system_id
-        WHERE m.term_id = '{_q(term_id)}'
+        WHERE m.term_id = :term_id
         ORDER BY sys.system_name, e.schema_name, e.technical_name, a.technical_name
         """,
+        [delta.param("term_id", term_id)],
     )
     return [_mapping_row_to_out(r) for r in rows]
 
@@ -363,22 +366,24 @@ def create_mapping(
     actor = _current_email(user_ws) or "unknown"
 
     # Validate target attribute exists and get its native data type
-    attr = delta.fetch_one(
+    attr = delta.fetch_one_params(
         sql,
         f"""
         SELECT a.attribute_id, a.native_data_type
         FROM {s.fq_table('attributes')} a
-        WHERE a.attribute_id = '{_q(payload.attribute_id)}'
+        WHERE a.attribute_id = :attribute_id
         """,
+        [delta.param("attribute_id", payload.attribute_id)],
     )
     if not attr:
         raise HTTPException(404, f"attribute '{payload.attribute_id}' not found")
 
     # Read term conceptual_type for type-compat check
-    term_row = delta.fetch_one(
+    term_row = delta.fetch_one_params(
         sql,
         f"SELECT conceptual_type FROM {s.fq_table('glossary_terms')} "
-        f"WHERE term_id = '{_q(term_id)}'",
+        f"WHERE term_id = :term_id",
+        [delta.param("term_id", term_id)],
     )
     if not term_row:
         raise HTTPException(404, f"term '{term_id}' not found")
@@ -389,13 +394,17 @@ def create_mapping(
     warning = not compatible
 
     # Reject duplicate mapping (same term + same attribute)
-    dup = delta.fetch_one(
+    dup = delta.fetch_one_params(
         sql,
         f"""
         SELECT mapping_id FROM {s.fq_table('glossary_mappings')}
-        WHERE term_id = '{_q(term_id)}'
-          AND attribute_id = '{_q(payload.attribute_id)}'
+        WHERE term_id = :term_id
+          AND attribute_id = :attribute_id
         """,
+        [
+            delta.param("term_id", term_id),
+            delta.param("attribute_id", payload.attribute_id),
+        ],
     )
     if dup:
         raise HTTPException(409, "mapping already exists for this term/attribute")
@@ -418,19 +427,24 @@ def create_mapping(
     )
 
     # If no glossary_term_id was set on the attribute, set this term as primary
-    delta.run(
+    delta.run_params(
         sql,
         f"""
         UPDATE {s.fq_table('attributes')}
-        SET glossary_term_id = '{_q(term_id)}',
+        SET glossary_term_id = :term_id,
             updated_at = current_timestamp(),
-            updated_by = '{_q(actor)}'
-        WHERE attribute_id = '{_q(payload.attribute_id)}'
+            updated_by = :actor
+        WHERE attribute_id = :attribute_id
           AND (glossary_term_id IS NULL OR glossary_term_id = '')
         """,
+        [
+            delta.param("term_id", term_id),
+            delta.param("actor", actor),
+            delta.param("attribute_id", payload.attribute_id),
+        ],
     )
 
-    row = delta.fetch_one(
+    row = delta.fetch_one_params(
         sql,
         f"""
         SELECT {_MAPPING_JOIN_SELECT}
@@ -439,8 +453,9 @@ def create_mapping(
         LEFT JOIN {s.fq_table('attributes')} a ON a.attribute_id = m.attribute_id
         LEFT JOIN {s.fq_table('entities')} e ON e.entity_id = a.entity_id
         LEFT JOIN {s.fq_table('systems')} sys ON sys.system_id = e.system_id
-        WHERE m.mapping_id = '{mid}'
+        WHERE m.mapping_id = :mapping_id
         """,
+        [delta.param("mapping_id", mid)],
     )
     if not row:
         raise HTTPException(500, "mapping create failed")
@@ -456,32 +471,41 @@ def delete_mapping(
     s = get_settings()
     # Discover the attribute_id and term_id before deleting so we can
     # un-pin the primary term reference on the attribute if it matches.
-    row = delta.fetch_one(
+    row = delta.fetch_one_params(
         sql,
         f"SELECT term_id, attribute_id FROM {s.fq_table('glossary_mappings')} "
-        f"WHERE mapping_id = '{_q(mapping_id)}'",
+        f"WHERE mapping_id = :mapping_id",
+        [delta.param("mapping_id", mapping_id)],
     )
     if not row:
         raise HTTPException(404, f"mapping '{mapping_id}' not found")
     term_id, attribute_id = row[0], row[1]
     delta.delete_by_id(sql, s.fq_table("glossary_mappings"), "mapping_id", mapping_id)
     # If this was the primary term reference and no other mapping exists, clear
-    remaining = delta.fetch_one(
+    remaining = delta.fetch_one_params(
         sql,
         f"SELECT mapping_id FROM {s.fq_table('glossary_mappings')} "
-        f"WHERE attribute_id = '{_q(attribute_id)}' "
-        f"AND term_id = '{_q(term_id)}'",
+        f"WHERE attribute_id = :attribute_id "
+        f"AND term_id = :term_id",
+        [
+            delta.param("attribute_id", attribute_id),
+            delta.param("term_id", term_id),
+        ],
     )
     if not remaining:
-        delta.run(
+        delta.run_params(
             sql,
             f"""
             UPDATE {s.fq_table('attributes')}
             SET glossary_term_id = NULL,
                 updated_at = current_timestamp()
-            WHERE attribute_id = '{_q(attribute_id)}'
-              AND glossary_term_id = '{_q(term_id)}'
+            WHERE attribute_id = :attribute_id
+              AND glossary_term_id = :term_id
             """,
+            [
+                delta.param("attribute_id", attribute_id),
+                delta.param("term_id", term_id),
+            ],
         )
     return {"deleted": mapping_id}
 
@@ -496,7 +520,7 @@ def delete_mapping(
 )
 def list_attribute_glossary(attribute_id: str, sql: SqlDependency) -> list[MappingOut]:
     s = get_settings()
-    rows = delta.fetch_all(
+    rows = delta.fetch_all_params(
         sql,
         f"""
         SELECT {_MAPPING_JOIN_SELECT}
@@ -505,8 +529,9 @@ def list_attribute_glossary(attribute_id: str, sql: SqlDependency) -> list[Mappi
         LEFT JOIN {s.fq_table('attributes')} a ON a.attribute_id = m.attribute_id
         LEFT JOIN {s.fq_table('entities')} e ON e.entity_id = a.entity_id
         LEFT JOIN {s.fq_table('systems')} sys ON sys.system_id = e.system_id
-        WHERE m.attribute_id = '{_q(attribute_id)}'
+        WHERE m.attribute_id = :attribute_id
         ORDER BY t.canonical_name
         """,
+        [delta.param("attribute_id", attribute_id)],
     )
     return [_mapping_row_to_out(r) for r in rows]

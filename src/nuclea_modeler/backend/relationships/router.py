@@ -24,10 +24,6 @@ _REL_COLS = [
 ]
 
 
-def _q(value: str) -> str:
-    return (value or "").replace("'", "''")
-
-
 def _entity_label(schema: str | None, technical: str | None) -> str | None:
     if not technical:
         return None
@@ -86,13 +82,17 @@ def _select_rel_query(where_clause: str = "") -> str:
 def _validate_entities(sql: SqlDependency, system_id: str,
                        source_entity_id: str, target_entity_id: str) -> None:
     s = get_settings()
-    rows = delta.fetch_all(
+    rows = delta.fetch_all_params(
         sql,
         f"""
         SELECT entity_id, system_id
         FROM {s.fq_table('entities')}
-        WHERE entity_id IN ('{_q(source_entity_id)}', '{_q(target_entity_id)}')
+        WHERE entity_id IN (:source_id, :target_id)
         """,
+        [
+            delta.param("source_id", source_entity_id),
+            delta.param("target_id", target_entity_id),
+        ],
     )
     found = {r[0]: r[1] for r in rows}
     if source_entity_id not in found:
@@ -119,11 +119,14 @@ def list_relationships(
     system_id: str | None = None,
 ) -> list[RelationshipListOut]:
     where = ""
+    params: list = []
     if system_id:
-        where = f"WHERE r.system_id = '{_q(system_id)}'"
-    rows = delta.fetch_all(
+        where = "WHERE r.system_id = :system_id"
+        params.append(delta.param("system_id", system_id))
+    rows = delta.fetch_all_params(
         sql,
         _select_rel_query(where) + "\nORDER BY r.updated_at DESC LIMIT 1000",
+        params,
     )
     return [
         RelationshipListOut(
@@ -147,9 +150,10 @@ def list_relationships(
 
 @router.get("/{relationship_id}", response_model=RelationshipOut, operation_id="getRelationship")
 def get_relationship(relationship_id: str, sql: SqlDependency) -> RelationshipOut:
-    row = delta.fetch_one(
+    row = delta.fetch_one_params(
         sql,
-        _select_rel_query(f"WHERE r.relationship_id = '{_q(relationship_id)}'"),
+        _select_rel_query("WHERE r.relationship_id = :relationship_id"),
+        [delta.param("relationship_id", relationship_id)],
     )
     if not row:
         raise HTTPException(404, f"relationship '{relationship_id}' not found")

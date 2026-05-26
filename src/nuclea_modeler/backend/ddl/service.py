@@ -45,14 +45,21 @@ def fetch_entities_with_attrs(
     Returns a list of (entity_dict, sorted_attrs).
     """
     s = get_settings()
-    sys_lit = "'" + system_id.replace("'", "''") + "'"
-    where = [f"e.system_id = {sys_lit}"]
+    where = ["e.system_id = :system_id"]
+    params: list = [delta.param("system_id", system_id)]
     if entity_ids:
-        ids = ", ".join("'" + i.replace("'", "''") + "'" for i in entity_ids)
-        where.append(f"e.entity_id IN ({ids})")
+        # Bind one parameter per id, then expand into a comma-list. The
+        # Statement Execution API doesn't accept array params, so we name
+        # them :eid_0, :eid_1, ... — fully safe since values are bound.
+        placeholders = []
+        for idx, eid in enumerate(entity_ids):
+            name = f"eid_{idx}"
+            placeholders.append(f":{name}")
+            params.append(delta.param(name, eid))
+        where.append(f"e.entity_id IN ({', '.join(placeholders)})")
     where_clause = " AND ".join(where)
 
-    ent_rows = delta.fetch_all(
+    ent_rows = delta.fetch_all_params(
         sql,
         f"""
         SELECT {', '.join('e.' + c for c in _ENT_COLS)}
@@ -60,20 +67,29 @@ def fetch_entities_with_attrs(
         WHERE {where_clause}
         ORDER BY e.schema_name, e.technical_name
         """,
+        params,
     )
     entities = [_entity_row_to_dict(r) for r in ent_rows]
     if not entities:
         return []
 
-    eids = ", ".join("'" + e["entity_id"].replace("'", "''") + "'" for e in entities)
-    attr_rows = delta.fetch_all(
+    # Attribute lookup: entity_ids come from the trusted DB query above. Same
+    # bind-by-name expansion as above.
+    placeholders = []
+    attr_params: list = []
+    for idx, ent in enumerate(entities):
+        name = f"aeid_{idx}"
+        placeholders.append(f":{name}")
+        attr_params.append(delta.param(name, ent["entity_id"]))
+    attr_rows = delta.fetch_all_params(
         sql,
         f"""
         SELECT {', '.join(_ATTR_COLS)}
         FROM {s.fq_table('attributes')}
-        WHERE entity_id IN ({eids})
+        WHERE entity_id IN ({', '.join(placeholders)})
         ORDER BY entity_id, COALESCE(ordinal_position, 999999), technical_name
         """,
+        attr_params,
     )
     by_entity: dict[str, list[dict[str, Any]]] = {}
     for r in attr_rows:

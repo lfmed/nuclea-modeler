@@ -77,14 +77,17 @@ def list_entities(
     domain: str | None = None,
 ) -> list[EntityListOut]:
     s = get_settings()
-    where = []
+    where: list[str] = []
+    params: list = []
     if system_id:
-        where.append(f"e.system_id = '{system_id.replace(chr(39), chr(39)*2)}'")
+        where.append("e.system_id = :system_id")
+        params.append(delta.param("system_id", system_id))
     if domain:
-        where.append(f"e.domain = '{domain.replace(chr(39), chr(39)*2)}'")
+        where.append("e.domain = :domain")
+        params.append(delta.param("domain", domain))
     where_clause = ("WHERE " + " AND ".join(where)) if where else ""
 
-    rows = delta.fetch_all(
+    rows = delta.fetch_all_params(
         sql,
         f"""
         SELECT e.entity_id, e.system_id, sys.system_name, e.schema_name,
@@ -97,6 +100,7 @@ def list_entities(
         ORDER BY e.updated_at DESC
         LIMIT 1000
         """,
+        params,
     )
     return [
         EntityListOut(
@@ -113,7 +117,7 @@ def list_entities(
 @router.get("/{entity_id}", response_model=EntityOut, operation_id="getEntity")
 def get_entity(entity_id: str, sql: SqlDependency) -> EntityOut:
     s = get_settings()
-    row = delta.fetch_one(
+    row = delta.fetch_one_params(
         sql,
         f"""
         SELECT {', '.join('e.'+c for c in _ENT_COLS)},
@@ -121,8 +125,9 @@ def get_entity(entity_id: str, sql: SqlDependency) -> EntityOut:
                (SELECT COUNT(*) FROM {s.fq_table('attributes')} a WHERE a.entity_id = e.entity_id) AS attrs
         FROM {s.fq_table('entities')} e
         LEFT JOIN {s.fq_table('systems')} sys ON sys.system_id = e.system_id
-        WHERE e.entity_id = '{entity_id.replace(chr(39), chr(39)*2)}'
+        WHERE e.entity_id = :entity_id
         """,
+        [delta.param("entity_id", entity_id)],
     )
     if not row:
         raise HTTPException(404, f"entity '{entity_id}' not found")
@@ -205,8 +210,11 @@ def update_entity(
 def delete_entity(entity_id: str, sql: SqlDependency) -> dict:
     s = get_settings()
     # cascade: delete attributes then entity
-    delta.run(sql, f"DELETE FROM {s.fq_table('attributes')} WHERE entity_id = "
-                   f"'{entity_id.replace(chr(39), chr(39)*2)}'")
+    delta.run_params(
+        sql,
+        f"DELETE FROM {s.fq_table('attributes')} WHERE entity_id = :entity_id",
+        [delta.param("entity_id", entity_id)],
+    )
     delta.delete_by_id(sql, s.fq_table("entities"), "entity_id", entity_id)
     return {"deleted": entity_id}
 
@@ -220,14 +228,15 @@ def delete_entity(entity_id: str, sql: SqlDependency) -> dict:
 )
 def list_attributes(entity_id: str, sql: SqlDependency) -> list[AttributeOut]:
     s = get_settings()
-    rows = delta.fetch_all(
+    rows = delta.fetch_all_params(
         sql,
         f"""
         SELECT {', '.join(_ATTR_COLS)}
         FROM {s.fq_table('attributes')}
-        WHERE entity_id = '{entity_id.replace(chr(39), chr(39)*2)}'
+        WHERE entity_id = :entity_id
         ORDER BY COALESCE(ordinal_position, 999999), technical_name
         """,
+        [delta.param("entity_id", entity_id)],
     )
     return [_attr_row_to_out(r) for r in rows]
 
@@ -271,10 +280,11 @@ def create_attribute(
             "updated_at": now, "updated_by": actor,
         },
     )
-    row = delta.fetch_one(
+    row = delta.fetch_one_params(
         sql,
         f"SELECT {', '.join(_ATTR_COLS)} FROM {s.fq_table('attributes')} "
-        f"WHERE attribute_id = '{aid}'",
+        f"WHERE attribute_id = :attribute_id",
+        [delta.param("attribute_id", aid)],
     )
     if not row:
         raise HTTPException(500, "attribute create failed")
@@ -317,10 +327,11 @@ def update_attribute(
             "updated_by": actor,
         },
     )
-    row = delta.fetch_one(
+    row = delta.fetch_one_params(
         sql,
         f"SELECT {', '.join(_ATTR_COLS)} FROM {s.fq_table('attributes')} "
-        f"WHERE attribute_id = '{attribute_id.replace(chr(39), chr(39)*2)}'",
+        f"WHERE attribute_id = :attribute_id",
+        [delta.param("attribute_id", attribute_id)],
     )
     if not row:
         raise HTTPException(404, f"attribute '{attribute_id}' not found")

@@ -95,10 +95,11 @@ def list_sandboxes(sql: SqlDependency) -> list[SandboxListOut]:
 @router.get("/sandboxes/{sandbox_id}", response_model=SandboxOut, operation_id="getSandbox")
 def get_sandbox(sandbox_id: str, sql: SqlDependency) -> SandboxOut:
     s = get_settings()
-    row = delta.fetch_one(
+    row = delta.fetch_one_params(
         sql,
         f"SELECT {', '.join(_COLS)} FROM {s.fq_table('lakebase_sandboxes')} "
-        f"WHERE sandbox_id = '{sandbox_id.replace(chr(39), chr(39)*2)}'",
+        f"WHERE sandbox_id = :sandbox_id",
+        [delta.param("sandbox_id", sandbox_id)],
     )
     if not row:
         raise HTTPException(404, f"sandbox '{sandbox_id}' not found")

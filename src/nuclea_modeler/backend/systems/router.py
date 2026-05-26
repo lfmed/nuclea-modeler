@@ -58,10 +58,11 @@ def list_systems(sql: SqlDependency) -> list[SystemListOut]:
 @router.get("/{system_id}", response_model=SystemOut, operation_id="getSystem")
 def get_system(system_id: str, sql: SqlDependency) -> SystemOut:
     s = get_settings()
-    row = delta.fetch_one(
+    row = delta.fetch_one_params(
         sql,
         f"SELECT {', '.join(_COLS)} FROM {s.fq_table('systems')} "
-        f"WHERE system_id = '{system_id.replace(chr(39), chr(39)*2)}'",
+        f"WHERE system_id = :system_id",
+        [delta.param("system_id", system_id)],
     )
     if not row:
         raise HTTPException(404, f"system '{system_id}' not found")

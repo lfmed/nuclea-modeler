@@ -55,10 +55,11 @@ def apply_ticket(sql: Sql, ticket_id: str, applied_by: str) -> TicketApplyResult
     schema_name, technical_name) are skipped on `add` ops.
     """
     s = get_settings()
-    row = delta.fetch_one(
+    row = delta.fetch_one_params(
         sql,
         f"SELECT diff_json, system_id, status FROM {s.fq_table('reconciliation_tickets')} "
-        f"WHERE ticket_id = '{ticket_id.replace(chr(39), chr(39)*2)}'",
+        f"WHERE ticket_id = :ticket_id",
+        [delta.param("ticket_id", ticket_id)],
     )
     if not row:
         return TicketApplyResult(ticket_id=ticket_id, status="OPEN",
@@ -88,12 +89,17 @@ def apply_ticket(sql: Sql, ticket_id: str, applied_by: str) -> TicketApplyResult
         try:
             if op == "add":
                 # Skip if an entity with same key already exists
-                existing = delta.fetch_one(
+                existing = delta.fetch_one_params(
                     sql,
                     f"SELECT entity_id FROM {s.fq_table('entities')} "
-                    f"WHERE system_id = '{system_id}' "
-                    f"AND schema_name = '{_q(schema_name)}' "
-                    f"AND technical_name = '{_q(technical_name)}'",
+                    f"WHERE system_id = :system_id "
+                    f"AND schema_name = :schema_name "
+                    f"AND technical_name = :technical_name",
+                    [
+                        delta.param("system_id", system_id),
+                        delta.param("schema_name", schema_name),
+                        delta.param("technical_name", technical_name),
+                    ],
                 )
                 if existing:
                     continue
@@ -151,12 +157,17 @@ def apply_ticket(sql: Sql, ticket_id: str, applied_by: str) -> TicketApplyResult
                 )
             elif op == "change":
                 # Apply field-level changes when target entity exists
-                existing = delta.fetch_one(
+                existing = delta.fetch_one_params(
                     sql,
                     f"SELECT entity_id FROM {s.fq_table('entities')} "
-                    f"WHERE system_id = '{system_id}' "
-                    f"AND schema_name = '{_q(schema_name)}' "
-                    f"AND technical_name = '{_q(technical_name)}'",
+                    f"WHERE system_id = :system_id "
+                    f"AND schema_name = :schema_name "
+                    f"AND technical_name = :technical_name",
+                    [
+                        delta.param("system_id", system_id),
+                        delta.param("schema_name", schema_name),
+                        delta.param("technical_name", technical_name),
+                    ],
                 )
                 if not existing:
                     errors.append(f"change target not found: {schema_name}.{technical_name}")
@@ -197,7 +208,3 @@ def apply_ticket(sql: Sql, ticket_id: str, applied_by: str) -> TicketApplyResult
         applied_attributes=applied_attributes,
         errors=errors,
     )
-
-
-def _q(s: str) -> str:
-    return (s or "").replace("'", "''")

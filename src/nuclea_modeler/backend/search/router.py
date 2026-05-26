@@ -46,12 +46,11 @@ router = APIRouter(prefix=f"{api_prefix}/search", tags=["search"])
 
 
 def _escape_like(q: str) -> str:
-    """Escape SQL LIKE wildcards (%, _) and single quotes."""
+    """Escape SQL LIKE wildcards (%, _, \\). Single quotes handled by params."""
     return (
         q.replace("\\", "\\\\")
         .replace("%", "\\%")
         .replace("_", "\\_")
-        .replace("'", "''")
     )
 
 
@@ -66,9 +65,8 @@ def global_search(
         return SearchResults(q=q, total=0, results=[])
 
     s = get_settings()
-    safe = _escape_like(q.lower())
-    pat = f"'%{safe}%'"
-    esc = " ESCAPE '\\\\'"
+    pat = f"%{_escape_like(q.lower())}%"
+    pat_param = [delta.param("pat", pat)]
     # Per-kind caps so a single table cannot dominate the result list.
     per_kind = max(2, min(limit, 8))
 
@@ -76,17 +74,18 @@ def global_search(
 
     # Entities ------------------------------------------------------------
     try:
-        rows = delta.fetch_all(
+        rows = delta.fetch_all_params(
             sql,
             f"""
             SELECT e.entity_id, e.technical_name, e.logical_name, e.domain, e.schema_name
             FROM {s.fq_table('entities')} e
-            WHERE LOWER(COALESCE(e.technical_name, '')) LIKE {pat}{esc}
-               OR LOWER(COALESCE(e.logical_name, '')) LIKE {pat}{esc}
-               OR LOWER(COALESCE(e.description_md, '')) LIKE {pat}{esc}
-               OR LOWER(COALESCE(e.domain, '')) LIKE {pat}{esc}
+            WHERE LOWER(COALESCE(e.technical_name, '')) LIKE :pat ESCAPE '\\\\'
+               OR LOWER(COALESCE(e.logical_name, '')) LIKE :pat ESCAPE '\\\\'
+               OR LOWER(COALESCE(e.description_md, '')) LIKE :pat ESCAPE '\\\\'
+               OR LOWER(COALESCE(e.domain, '')) LIKE :pat ESCAPE '\\\\'
             LIMIT {per_kind}
             """,
+            pat_param,
         )
         for r in rows:
             results.append(
@@ -103,17 +102,18 @@ def global_search(
 
     # Attributes ---------------------------------------------------------
     try:
-        rows = delta.fetch_all(
+        rows = delta.fetch_all_params(
             sql,
             f"""
             SELECT a.attribute_id, a.technical_name, a.logical_name, a.entity_id, e.technical_name
             FROM {s.fq_table('attributes')} a
             LEFT JOIN {s.fq_table('entities')} e ON e.entity_id = a.entity_id
-            WHERE LOWER(COALESCE(a.technical_name, '')) LIKE {pat}{esc}
-               OR LOWER(COALESCE(a.logical_name, '')) LIKE {pat}{esc}
-               OR LOWER(COALESCE(a.description_md, '')) LIKE {pat}{esc}
+            WHERE LOWER(COALESCE(a.technical_name, '')) LIKE :pat ESCAPE '\\\\'
+               OR LOWER(COALESCE(a.logical_name, '')) LIKE :pat ESCAPE '\\\\'
+               OR LOWER(COALESCE(a.description_md, '')) LIKE :pat ESCAPE '\\\\'
             LIMIT {per_kind}
             """,
+            pat_param,
         )
         for r in rows:
             results.append(
@@ -130,19 +130,20 @@ def global_search(
 
     # Glossary terms -----------------------------------------------------
     try:
-        rows = delta.fetch_all(
+        rows = delta.fetch_all_params(
             sql,
             f"""
             SELECT term_id, canonical_name, definition, domain
             FROM {s.fq_table('glossary_terms')}
-            WHERE LOWER(COALESCE(canonical_name, '')) LIKE {pat}{esc}
-               OR LOWER(COALESCE(definition, '')) LIKE {pat}{esc}
+            WHERE LOWER(COALESCE(canonical_name, '')) LIKE :pat ESCAPE '\\\\'
+               OR LOWER(COALESCE(definition, '')) LIKE :pat ESCAPE '\\\\'
                OR EXISTS (
                     SELECT 1 FROM (SELECT explode(COALESCE(synonyms, array())) AS syn) syns
-                    WHERE LOWER(syns.syn) LIKE {pat}{esc}
+                    WHERE LOWER(syns.syn) LIKE :pat ESCAPE '\\\\'
                )
             LIMIT {per_kind}
             """,
+            pat_param,
         )
         for r in rows:
             results.append(
@@ -159,18 +160,19 @@ def global_search(
 
     # Flags --------------------------------------------------------------
     try:
-        rows = delta.fetch_all(
+        rows = delta.fetch_all_params(
             sql,
             f"""
             SELECT flag_id, flag_key, display_name, category
             FROM {s.fq_table('flags')}
             WHERE is_active = true AND (
-                LOWER(COALESCE(flag_key, '')) LIKE {pat}{esc}
-                OR LOWER(COALESCE(display_name, '')) LIKE {pat}{esc}
-                OR LOWER(COALESCE(description, '')) LIKE {pat}{esc}
+                LOWER(COALESCE(flag_key, '')) LIKE :pat ESCAPE '\\\\'
+                OR LOWER(COALESCE(display_name, '')) LIKE :pat ESCAPE '\\\\'
+                OR LOWER(COALESCE(description, '')) LIKE :pat ESCAPE '\\\\'
             )
             LIMIT {per_kind}
             """,
+            pat_param,
         )
         for r in rows:
             results.append(
@@ -187,14 +189,15 @@ def global_search(
 
     # Tickets ------------------------------------------------------------
     try:
-        rows = delta.fetch_all(
+        rows = delta.fetch_all_params(
             sql,
             f"""
             SELECT ticket_id, title, status
             FROM {s.fq_table('reconciliation_tickets')}
-            WHERE LOWER(COALESCE(title, '')) LIKE {pat}{esc}
+            WHERE LOWER(COALESCE(title, '')) LIKE :pat ESCAPE '\\\\'
             LIMIT {per_kind}
             """,
+            pat_param,
         )
         for r in rows:
             results.append(
@@ -211,14 +214,15 @@ def global_search(
 
     # Connections --------------------------------------------------------
     try:
-        rows = delta.fetch_all(
+        rows = delta.fetch_all_params(
             sql,
             f"""
             SELECT connection_id, alias, environment, connection_type
             FROM {s.fq_table('connections')}
-            WHERE LOWER(COALESCE(alias, '')) LIKE {pat}{esc}
+            WHERE LOWER(COALESCE(alias, '')) LIKE :pat ESCAPE '\\\\'
             LIMIT {per_kind}
             """,
+            pat_param,
         )
         for r in rows:
             results.append(
@@ -235,15 +239,16 @@ def global_search(
 
     # Systems ------------------------------------------------------------
     try:
-        rows = delta.fetch_all(
+        rows = delta.fetch_all_params(
             sql,
             f"""
             SELECT system_id, system_name, description, domain
             FROM {s.fq_table('systems')}
-            WHERE LOWER(COALESCE(system_name, '')) LIKE {pat}{esc}
-               OR LOWER(COALESCE(description, '')) LIKE {pat}{esc}
+            WHERE LOWER(COALESCE(system_name, '')) LIKE :pat ESCAPE '\\\\'
+               OR LOWER(COALESCE(description, '')) LIKE :pat ESCAPE '\\\\'
             LIMIT {per_kind}
             """,
+            pat_param,
         )
         for r in rows:
             results.append(

@@ -35,8 +35,9 @@ _ATTR_DIFF_FIELDS = (
 )
 
 
-def _q(s: str) -> str:
-    return (s or "").replace("'", "''")
+def _quote_id(value: str) -> str:
+    """Quote a trusted ID (from a prior DB query) for inlining in an IN list."""
+    return "'" + (value or "").replace("'", "''") + "'"
 
 
 # ---------------------------------------------------------------------------
@@ -50,9 +51,8 @@ def build_snapshot(sql: Sql, system_id: str) -> dict[str, Any]:
     that two equivalent snapshots compare equal.
     """
     s = get_settings()
-    sid_q = _q(system_id)
 
-    ent_rows = delta.fetch_all(
+    ent_rows = delta.fetch_all_params(
         sql,
         f"""
         SELECT entity_id, system_id, schema_name, technical_name, logical_name,
@@ -60,9 +60,10 @@ def build_snapshot(sql: Sql, system_id: str) -> dict[str, Any]:
                criticality, tags, notes, entity_type, native_comment,
                row_count_approx
         FROM {s.fq_table('entities')}
-        WHERE system_id = '{sid_q}'
+        WHERE system_id = :system_id
         ORDER BY schema_name, technical_name
         """,
+        [delta.param("system_id", system_id)],
     )
     entities = []
     entity_ids: list[str] = []
@@ -88,7 +89,8 @@ def build_snapshot(sql: Sql, system_id: str) -> dict[str, Any]:
 
     attributes_by_entity: dict[str, list[dict[str, Any]]] = {}
     if entity_ids:
-        ids_in = ", ".join(f"'{_q(eid)}'" for eid in entity_ids)
+        # entity_ids come from the trusted DB query above — safe to inline.
+        ids_in = ", ".join(_quote_id(eid) for eid in entity_ids)
         attr_rows = delta.fetch_all(
             sql,
             f"""
@@ -120,16 +122,17 @@ def build_snapshot(sql: Sql, system_id: str) -> dict[str, Any]:
                 "native_comment": r[13],
             })
 
-    rel_rows = delta.fetch_all(
+    rel_rows = delta.fetch_all_params(
         sql,
         f"""
         SELECT relationship_id, system_id, source_entity_id, target_entity_id,
                source_attr_ids, target_attr_ids, rel_type, source_cardinality,
                target_cardinality, description, origin
         FROM {s.fq_table('relationships')}
-        WHERE system_id = '{sid_q}'
+        WHERE system_id = :system_id
         ORDER BY relationship_id
         """,
+        [delta.param("system_id", system_id)],
     )
     relationships = [
         {
@@ -150,7 +153,7 @@ def build_snapshot(sql: Sql, system_id: str) -> dict[str, Any]:
 
     views_rows: list[list[Any]] = []
     if entity_ids:
-        ids_in = ", ".join(f"'{_q(eid)}'" for eid in entity_ids)
+        ids_in = ", ".join(_quote_id(eid) for eid in entity_ids)
         views_rows = delta.fetch_all(
             sql,
             f"""
@@ -187,14 +190,14 @@ def build_snapshot(sql: Sql, system_id: str) -> dict[str, Any]:
 def next_version_number(sql: Sql, system_id: str) -> str:
     """Compute the next vMAJOR.MINOR number for the given system."""
     s = get_settings()
-    sid_q = _q(system_id)
-    rows = delta.fetch_all(
+    rows = delta.fetch_all_params(
         sql,
         f"""
         SELECT version_number
         FROM {s.fq_table('model_versions')}
-        WHERE system_id = '{sid_q}'
+        WHERE system_id = :system_id
         """,
+        [delta.param("system_id", system_id)],
     )
     best_major = 0
     best_minor = -1
@@ -232,10 +235,11 @@ def publish_version(
     s = get_settings()
 
     # Ensure the system exists (better error than a silent insert)
-    sys_row = delta.fetch_one(
+    sys_row = delta.fetch_one_params(
         sql,
         f"SELECT system_id FROM {s.fq_table('systems')} "
-        f"WHERE system_id = '{_q(system_id)}'",
+        f"WHERE system_id = :system_id",
+        [delta.param("system_id", system_id)],
     )
     if not sys_row:
         raise HTTPException(404, f"system '{system_id}' not found")
@@ -247,12 +251,16 @@ def publish_version(
 
     if make_active:
         # Demote any ACTIVE version of this system to PUBLISHED.
-        delta.run(
+        delta.run_params(
             sql,
             f"UPDATE {s.fq_table('model_versions')} "
             f"SET status = 'PUBLISHED', updated_at = current_timestamp(), "
-            f"    updated_by = '{_q(actor)}' "
-            f"WHERE system_id = '{_q(system_id)}' AND status = 'ACTIVE'",
+            f"    updated_by = :actor "
+            f"WHERE system_id = :system_id AND status = 'ACTIVE'",
+            [
+                delta.param("actor", actor),
+                delta.param("system_id", system_id),
+            ],
         )
 
     status = "ACTIVE" if make_active else "PUBLISHED"
@@ -420,11 +428,12 @@ def restore_version(sql: Sql, version_id: str, actor: str) -> VersionOut:
     is purely a placeholder for the architect to work on.
     """
     s = get_settings()
-    src = delta.fetch_one(
+    src = delta.fetch_one_params(
         sql,
         f"SELECT version_id, system_id, version_number, snapshot_json "
         f"FROM {s.fq_table('model_versions')} "
-        f"WHERE version_id = '{_q(version_id)}'",
+        f"WHERE version_id = :version_id",
+        [delta.param("version_id", version_id)],
     )
     if not src:
         raise HTTPException(404, f"version '{version_id}' not found")
@@ -463,10 +472,11 @@ def restore_version(sql: Sql, version_id: str, actor: str) -> VersionOut:
 def deprecate_version(sql: Sql, version_id: str, actor: str) -> VersionOut:
     """Soft-mark a version as DEPRECATED. Rejects ACTIVE versions."""
     s = get_settings()
-    row = delta.fetch_one(
+    row = delta.fetch_one_params(
         sql,
         f"SELECT status FROM {s.fq_table('model_versions')} "
-        f"WHERE version_id = '{_q(version_id)}'",
+        f"WHERE version_id = :version_id",
+        [delta.param("version_id", version_id)],
     )
     if not row:
         raise HTTPException(404, f"version '{version_id}' not found")
@@ -498,10 +508,11 @@ def deprecate_version(sql: Sql, version_id: str, actor: str) -> VersionOut:
 
 def _load_snapshot(sql: Sql, version_id: str) -> dict[str, Any]:
     s = get_settings()
-    row = delta.fetch_one(
+    row = delta.fetch_one_params(
         sql,
         f"SELECT snapshot_json FROM {s.fq_table('model_versions')} "
-        f"WHERE version_id = '{_q(version_id)}'",
+        f"WHERE version_id = :version_id",
+        [delta.param("version_id", version_id)],
     )
     if not row:
         raise HTTPException(404, f"version '{version_id}' not found")
@@ -514,7 +525,7 @@ def _load_snapshot(sql: Sql, version_id: str) -> dict[str, Any]:
 
 def _get_version(sql: Sql, version_id: str) -> VersionOut:
     s = get_settings()
-    row = delta.fetch_one(
+    row = delta.fetch_one_params(
         sql,
         f"""
         SELECT v.version_id, v.system_id, sys.system_name, v.version_number,
@@ -523,8 +534,9 @@ def _get_version(sql: Sql, version_id: str) -> VersionOut:
                v.created_at, v.created_by, v.updated_at, v.updated_by
         FROM {s.fq_table('model_versions')} v
         LEFT JOIN {s.fq_table('systems')} sys ON sys.system_id = v.system_id
-        WHERE v.version_id = '{_q(version_id)}'
+        WHERE v.version_id = :version_id
         """,
+        [delta.param("version_id", version_id)],
     )
     if not row:
         raise HTTPException(404, f"version '{version_id}' not found")

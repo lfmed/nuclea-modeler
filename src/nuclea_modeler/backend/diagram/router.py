@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
 from typing import Any
 
@@ -27,29 +28,38 @@ from .models import (
 
 router = APIRouter(prefix=f"{api_prefix}/diagram", tags=["diagram"])
 
+# Identifier validator for SQL object names (catalog/schema/table). Used where
+# user input must be interpolated as an identifier — parameters cannot bind to
+# identifiers in Databricks SQL, so we lock the shape down hard instead.
+_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
 
-def _q(s: str) -> str:
-    return (s or "").replace("'", "''")
+
+def _require_ident(value: str, field: str) -> str:
+    if not _IDENT_RE.match(value or ""):
+        raise HTTPException(400, f"invalid {field}: must match {_IDENT_RE.pattern}")
+    return value
 
 
 def _build_diagram(sql, system_id: str, layout_name: str = "default") -> DiagramView:
     s = get_settings()
-    sys_row = delta.fetch_one(
+    sys_row = delta.fetch_one_params(
         sql,
         f"SELECT system_name FROM {s.fq_table('systems')} "
-        f"WHERE system_id = '{_q(system_id)}'",
+        f"WHERE system_id = :system_id",
+        [delta.param("system_id", system_id)],
     )
     system_name = sys_row[0] if sys_row else None
 
-    ent_rows = delta.fetch_all(
+    ent_rows = delta.fetch_all_params(
         sql,
         f"""
         SELECT entity_id, schema_name, technical_name, logical_name,
                entity_type, domain, criticality
         FROM {s.fq_table('entities')}
-        WHERE system_id = '{_q(system_id)}'
+        WHERE system_id = :system_id
         ORDER BY schema_name, technical_name
         """,
+        [delta.param("system_id", system_id)],
     )
     entities_by_id: dict[str, DiagramEntity] = {}
     for r in ent_rows:
@@ -61,7 +71,10 @@ def _build_diagram(sql, system_id: str, layout_name: str = "default") -> Diagram
         )
 
     if entities_by_id:
-        ids_csv = ", ".join(f"'{eid}'" for eid in entities_by_id)
+        # entity_ids come from a prior trusted query — safe to inline as IN
+        # values. Parametrising an IN list of variable length isn't supported
+        # by the Statement Execution API, so we list-quote.
+        ids_csv = ", ".join(_quote_id(eid) for eid in entities_by_id)
         attr_rows = delta.fetch_all(
             sql,
             f"""
@@ -75,7 +88,7 @@ def _build_diagram(sql, system_id: str, layout_name: str = "default") -> Diagram
         # Mark LGPD flagged attributes
         lgpd_attr_ids: set[str] = set()
         if attr_rows:
-            attr_ids_csv = ", ".join(f"'{r[0]}'" for r in attr_rows)
+            attr_ids_csv = ", ".join(_quote_id(r[0]) for r in attr_rows)
             flagged_rows = delta.fetch_all(
                 sql,
                 f"""
@@ -122,15 +135,16 @@ def _build_diagram(sql, system_id: str, layout_name: str = "default") -> Diagram
             if ent:
                 ent.has_lgpd_flag = True
 
-    rel_rows = delta.fetch_all(
+    rel_rows = delta.fetch_all_params(
         sql,
         f"""
         SELECT relationship_id, source_entity_id, target_entity_id,
                rel_type, source_cardinality, target_cardinality,
                source_attr_ids, target_attr_ids, description, origin
         FROM {s.fq_table('relationships')}
-        WHERE system_id = '{_q(system_id)}'
+        WHERE system_id = :system_id
         """,
+        [delta.param("system_id", system_id)],
     )
     relationships: list[DiagramRelationship] = []
     for r in rel_rows:
@@ -155,15 +169,27 @@ def _build_diagram(sql, system_id: str, layout_name: str = "default") -> Diagram
     )
 
 
+def _quote_id(value: str) -> str:
+    """Quote a trusted ID (from a prior DB query) for inlining in an IN list.
+
+    Use ONLY with values that originated server-side, never with raw user input.
+    """
+    return "'" + (value or "").replace("'", "''") + "'"
+
+
 def _load_layout_dict(sql, system_id: str, layout_name: str) -> dict[str, dict[str, Any]] | None:
     s = get_settings()
-    row = delta.fetch_one(
+    row = delta.fetch_one_params(
         sql,
         f"""
         SELECT layout_json FROM {s.fq_table('der_layouts')}
-        WHERE system_id = '{_q(system_id)}' AND layout_name = '{_q(layout_name)}'
+        WHERE system_id = :system_id AND layout_name = :layout_name
         ORDER BY updated_at DESC LIMIT 1
         """,
+        [
+            delta.param("system_id", system_id),
+            delta.param("layout_name", layout_name),
+        ],
     )
     if not row or not row[0]:
         return None
@@ -200,12 +226,16 @@ def save_layout(
         ensure_ascii=False,
     )
     # Upsert by (system_id, layout_name): delete then insert (simple).
-    delta.run(
+    delta.run_params(
         sql,
         f"""
         DELETE FROM {s.fq_table('der_layouts')}
-        WHERE system_id = '{_q(system_id)}' AND layout_name = '{_q(payload.layout_name)}'
+        WHERE system_id = :system_id AND layout_name = :layout_name
         """,
+        [
+            delta.param("system_id", system_id),
+            delta.param("layout_name", payload.layout_name),
+        ],
     )
     lid = delta.new_id("layout-")
     now = datetime.utcnow()
@@ -238,10 +268,11 @@ def save_layout(
 )
 def list_layouts(system_id: str, sql: SqlDependency) -> list[str]:
     s = get_settings()
-    rows = delta.fetch_all(
+    rows = delta.fetch_all_params(
         sql,
         f"SELECT DISTINCT layout_name FROM {s.fq_table('der_layouts')} "
-        f"WHERE system_id = '{_q(system_id)}' ORDER BY layout_name",
+        f"WHERE system_id = :system_id ORDER BY layout_name",
+        [delta.param("system_id", system_id)],
     )
     return [r[0] for r in rows]
 
@@ -252,12 +283,16 @@ def list_layouts(system_id: str, sql: SqlDependency) -> list[str]:
 )
 def delete_layout(system_id: str, layout_name: str, sql: SqlDependency) -> dict:
     s = get_settings()
-    delta.run(
+    delta.run_params(
         sql,
         f"""
         DELETE FROM {s.fq_table('der_layouts')}
-        WHERE system_id = '{_q(system_id)}' AND layout_name = '{_q(layout_name)}'
+        WHERE system_id = :system_id AND layout_name = :layout_name
         """,
+        [
+            delta.param("system_id", system_id),
+            delta.param("layout_name", layout_name),
+        ],
     )
     return {"deleted": layout_name}
 
@@ -366,23 +401,26 @@ def _validate_against_uc(
     sql, entities: list[dict], target_catalog: str
 ) -> list[SourceCheckResult]:
     """For each entity, check existence in {target_catalog}.<schema>.<technical_name>."""
+    # target_catalog is a SQL identifier — cannot bind via parameter. Validate
+    # against a strict identifier regex so it cannot smuggle SQL.
+    _require_ident(target_catalog, "target_catalog")
     results: list[SourceCheckResult] = []
-    # Group by schema for efficiency
     schemas = sorted({e["schema_name"] for e in entities if e["schema_name"]})
-    catalog_safe = target_catalog.replace("'", "''")
 
     # Fetch all tables in those schemas in one query
     tables_in_source: dict[tuple[str, str], int] = {}  # (schema, table) -> column count
     columns_in_source: dict[tuple[str, str], list[str]] = {}
     if schemas:
-        schemas_csv = ", ".join(f"'{s}'" for s in schemas)
+        # schemas come from a prior DB query — safe to inline. We still
+        # _quote_id them to handle any stray apostrophes defensively.
+        schemas_csv = ", ".join(_quote_id(s) for s in schemas)
         rows = delta.fetch_all(
             sql,
             f"""
             SELECT table_schema, table_name,
-                   (SELECT COUNT(*) FROM {catalog_safe}.information_schema.columns c
+                   (SELECT COUNT(*) FROM {target_catalog}.information_schema.columns c
                     WHERE c.table_schema = t.table_schema AND c.table_name = t.table_name) AS col_count
-            FROM {catalog_safe}.information_schema.tables t
+            FROM {target_catalog}.information_schema.tables t
             WHERE t.table_schema IN ({schemas_csv})
             """,
         )
@@ -394,7 +432,7 @@ def _validate_against_uc(
             sql,
             f"""
             SELECT table_schema, table_name, column_name
-            FROM {catalog_safe}.information_schema.columns
+            FROM {target_catalog}.information_schema.columns
             WHERE table_schema IN ({schemas_csv})
             """,
         )
@@ -435,19 +473,17 @@ def _validate_against_lakebase(
             ws, instance_name=sandbox_instance, database=sandbox_database, user_email=user_email
         ) as conn:
             with conn.cursor() as cur:
-                schemas_csv = ", ".join(f"'{s}'" for s in schemas)
+                # psycopg supports binding tuples for IN — much cleaner.
                 cur.execute(
-                    f"""
-                    SELECT table_schema, table_name FROM information_schema.tables
-                    WHERE table_schema IN ({schemas_csv})
-                    """
+                    "SELECT table_schema, table_name FROM information_schema.tables "
+                    "WHERE table_schema = ANY(%s)",
+                    (schemas,),
                 )
                 tables_in = {(r[0], r[1]) for r in cur.fetchall()}
                 cur.execute(
-                    f"""
-                    SELECT table_schema, table_name, column_name FROM information_schema.columns
-                    WHERE table_schema IN ({schemas_csv})
-                    """
+                    "SELECT table_schema, table_name, column_name FROM information_schema.columns "
+                    "WHERE table_schema = ANY(%s)",
+                    (schemas,),
                 )
                 cols_in: dict[tuple[str, str], list[str]] = {}
                 for r in cur.fetchall():
@@ -504,24 +540,26 @@ def validate_source(
     """
     s = get_settings()
     # Load system + entities + their columns
-    sys_row = delta.fetch_one(
+    sys_row = delta.fetch_one_params(
         sql,
         f"SELECT system_name, technology FROM {s.fq_table('systems')} "
-        f"WHERE system_id = '{_q(system_id)}'",
+        f"WHERE system_id = :system_id",
+        [delta.param("system_id", system_id)],
     )
     if not sys_row:
         raise HTTPException(404, f"system '{system_id}' not found")
     system_name, technology = sys_row[0], sys_row[1]
     source_kind = _detect_source_kind(technology)
 
-    ent_rows = delta.fetch_all(
+    ent_rows = delta.fetch_all_params(
         sql,
         f"""
         SELECT entity_id, schema_name, technical_name
         FROM {s.fq_table('entities')}
-        WHERE system_id = '{_q(system_id)}'
+        WHERE system_id = :system_id
         ORDER BY schema_name, technical_name
         """,
+        [delta.param("system_id", system_id)],
     )
     if not ent_rows:
         return SourceValidationOut(
@@ -529,7 +567,8 @@ def validate_source(
             source_kind=source_kind, target_catalog=target_catalog,
             results=[], total_entities=0, found_count=0, missing_count=0,
         )
-    ids_csv = ", ".join(f"'{r[0]}'" for r in ent_rows)
+    # ent_rows[i][0] are entity_ids from the trusted DB — safe to inline.
+    ids_csv = ", ".join(_quote_id(r[0]) for r in ent_rows)
     attr_rows = delta.fetch_all(
         sql,
         f"""
@@ -555,10 +594,11 @@ def validate_source(
     elif source_kind == "LAKEBASE":
         if not sandbox_id:
             raise HTTPException(400, "sandbox_id é obrigatório para validar contra Lakebase")
-        sb_row = delta.fetch_one(
+        sb_row = delta.fetch_one_params(
             sql,
             f"SELECT instance_name, database_name FROM {s.fq_table('lakebase_sandboxes')} "
-            f"WHERE sandbox_id = '{_q(sandbox_id)}'",
+            f"WHERE sandbox_id = :sandbox_id",
+            [delta.param("sandbox_id", sandbox_id)],
         )
         if not sb_row:
             raise HTTPException(404, f"sandbox '{sandbox_id}' not found")

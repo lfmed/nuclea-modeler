@@ -29,9 +29,11 @@ router = APIRouter(prefix=f"{api_prefix}/extractions", tags=["extractions"])
 def list_extractions(sql: SqlDependency, system_id: str | None = None) -> list[ExtractionListOut]:
     s = get_settings()
     where = ""
+    params: list = []
     if system_id:
-        where = f"WHERE e.system_id = '{system_id.replace(chr(39), chr(39)*2)}'"
-    rows = delta.fetch_all(
+        where = "WHERE e.system_id = :system_id"
+        params.append(delta.param("system_id", system_id))
+    rows = delta.fetch_all_params(
         sql,
         f"""
         SELECT e.extraction_id, e.source_kind, e.system_id, sys.system_name, e.status,
@@ -44,6 +46,7 @@ def list_extractions(sql: SqlDependency, system_id: str | None = None) -> list[E
         ORDER BY e.started_at DESC
         LIMIT 100
         """,
+        params,
     )
     return [
         ExtractionListOut(
@@ -68,7 +71,7 @@ def list_extractions(sql: SqlDependency, system_id: str | None = None) -> list[E
 @router.get("/{extraction_id}", response_model=ExtractionOut, operation_id="getExtraction")
 def get_extraction(extraction_id: str, sql: SqlDependency) -> ExtractionOut:
     s = get_settings()
-    row = delta.fetch_one(
+    row = delta.fetch_one_params(
         sql,
         f"""
         SELECT e.extraction_id, e.source_kind, e.system_id, sys.system_name, e.status,
@@ -80,8 +83,9 @@ def get_extraction(extraction_id: str, sql: SqlDependency) -> ExtractionOut:
                e.error_summary, e.snapshot_json, e.diff_summary_json
         FROM {s.fq_table('extractions')} e
         LEFT JOIN {s.fq_table('systems')} sys ON sys.system_id = e.system_id
-        WHERE e.extraction_id = '{extraction_id.replace(chr(39), chr(39)*2)}'
+        WHERE e.extraction_id = :extraction_id
         """,
+        [delta.param("extraction_id", extraction_id)],
     )
     if not row:
         raise HTTPException(404, f"extraction '{extraction_id}' not found")

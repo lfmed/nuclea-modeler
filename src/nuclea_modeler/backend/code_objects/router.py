@@ -28,10 +28,6 @@ from .models import (
 )
 
 
-def _q(s: str) -> str:
-    return (s or "").replace("'", "''")
-
-
 # =============================================================================
 # Views (rich detail on top of an existing entity with entity_type=VIEW)
 # =============================================================================
@@ -43,9 +39,11 @@ views_router = APIRouter(prefix=f"{api_prefix}/views", tags=["views"])
 def list_views(sql: SqlDependency, system_id: str | None = None) -> list[ViewOut]:
     s = get_settings()
     where = "WHERE e.entity_type = 'VIEW'"
+    params: list = []
     if system_id:
-        where += f" AND e.system_id = '{_q(system_id)}'"
-    rows = delta.fetch_all(
+        where += " AND e.system_id = :system_id"
+        params.append(delta.param("system_id", system_id))
+    rows = delta.fetch_all_params(
         sql,
         f"""
         SELECT e.entity_id, e.schema_name, e.technical_name, e.system_id,
@@ -58,6 +56,7 @@ def list_views(sql: SqlDependency, system_id: str | None = None) -> list[ViewOut
         {where}
         ORDER BY e.schema_name, e.technical_name
         """,
+        params,
     )
     return [
         ViewOut(
@@ -80,7 +79,7 @@ def list_views(sql: SqlDependency, system_id: str | None = None) -> list[ViewOut
 )
 def get_view(view_entity_id: str, sql: SqlDependency) -> ViewOut:
     s = get_settings()
-    row = delta.fetch_one(
+    row = delta.fetch_one_params(
         sql,
         f"""
         SELECT e.entity_id, e.schema_name, e.technical_name, e.system_id,
@@ -90,8 +89,9 @@ def get_view(view_entity_id: str, sql: SqlDependency) -> ViewOut:
         FROM {s.fq_table('entities')} e
         LEFT JOIN {s.fq_table('views_catalog')} v ON v.view_entity_id = e.entity_id
         LEFT JOIN {s.fq_table('systems')} sys ON sys.system_id = e.system_id
-        WHERE e.entity_id = '{_q(view_entity_id)}'
+        WHERE e.entity_id = :entity_id
         """,
+        [delta.param("entity_id", view_entity_id)],
     )
     if not row:
         raise HTTPException(404, f"view '{view_entity_id}' not found")
@@ -120,10 +120,11 @@ def upsert_view(
     """Upsert view metadata. The entity itself must already exist with entity_type=VIEW."""
     s = get_settings()
     # Verify entity exists and is a view
-    ent = delta.fetch_one(
+    ent = delta.fetch_one_params(
         sql,
         f"SELECT entity_id, entity_type FROM {s.fq_table('entities')} "
-        f"WHERE entity_id = '{_q(view_entity_id)}'",
+        f"WHERE entity_id = :entity_id",
+        [delta.param("entity_id", view_entity_id)],
     )
     if not ent:
         raise HTTPException(404, f"entity '{view_entity_id}' not found — crie a entidade primeiro com entity_type=VIEW")
@@ -132,10 +133,11 @@ def upsert_view(
     actor = _current_email(user_ws)
     now = datetime.utcnow()
     # Delete + insert (simple upsert)
-    delta.run(
+    delta.run_params(
         sql,
         f"DELETE FROM {s.fq_table('views_catalog')} "
-        f"WHERE view_entity_id = '{_q(view_entity_id)}'",
+        f"WHERE view_entity_id = :view_entity_id",
+        [delta.param("view_entity_id", view_entity_id)],
     )
     delta.insert(
         sql,
@@ -159,10 +161,11 @@ def upsert_view(
 def clear_view(view_entity_id: str, sql: SqlDependency) -> dict:
     """Clear the views_catalog row (the underlying entity is preserved)."""
     s = get_settings()
-    delta.run(
+    delta.run_params(
         sql,
         f"DELETE FROM {s.fq_table('views_catalog')} "
-        f"WHERE view_entity_id = '{_q(view_entity_id)}'",
+        f"WHERE view_entity_id = :view_entity_id",
+        [delta.param("view_entity_id", view_entity_id)],
     )
     return {"cleared": view_entity_id}
 
@@ -208,9 +211,11 @@ def list_procedures(
 ) -> list[ProcedureListOut]:
     s = get_settings()
     where = ""
+    params: list = []
     if system_id:
-        where = f"WHERE p.system_id = '{_q(system_id)}'"
-    rows = delta.fetch_all(
+        where = "WHERE p.system_id = :system_id"
+        params.append(delta.param("system_id", system_id))
+    rows = delta.fetch_all_params(
         sql,
         f"""
         SELECT p.procedure_id, p.system_id, sys.system_name,
@@ -221,6 +226,7 @@ def list_procedures(
         {where}
         ORDER BY p.schema_name, p.technical_name
         """,
+        params,
     )
     return [
         ProcedureListOut(
@@ -240,14 +246,15 @@ def list_procedures(
 )
 def get_procedure(procedure_id: str, sql: SqlDependency) -> ProcedureOut:
     s = get_settings()
-    row = delta.fetch_one(
+    row = delta.fetch_one_params(
         sql,
         f"""
         SELECT {', '.join('p.'+c for c in _PROC_COLS)}, sys.system_name
         FROM {s.fq_table('procedures_catalog')} p
         LEFT JOIN {s.fq_table('systems')} sys ON sys.system_id = p.system_id
-        WHERE p.procedure_id = '{_q(procedure_id)}'
+        WHERE p.procedure_id = :procedure_id
         """,
+        [delta.param("procedure_id", procedure_id)],
     )
     if not row:
         raise HTTPException(404, f"procedure '{procedure_id}' not found")
@@ -379,9 +386,11 @@ def _trg_row_to_out(
 def list_triggers(sql: SqlDependency, system_id: str | None = None) -> list[TriggerListOut]:
     s = get_settings()
     where = ""
+    params: list = []
     if system_id:
-        where = f"WHERE t.system_id = '{_q(system_id)}'"
-    rows = delta.fetch_all(
+        where = "WHERE t.system_id = :system_id"
+        params.append(delta.param("system_id", system_id))
+    rows = delta.fetch_all_params(
         sql,
         f"""
         SELECT t.trigger_id, t.system_id, sys.system_name,
@@ -394,6 +403,7 @@ def list_triggers(sql: SqlDependency, system_id: str | None = None) -> list[Trig
         {where}
         ORDER BY t.schema_name, t.technical_name
         """,
+        params,
     )
     return [
         TriggerListOut(
@@ -417,7 +427,7 @@ def list_triggers(sql: SqlDependency, system_id: str | None = None) -> list[Trig
 )
 def get_trigger(trigger_id: str, sql: SqlDependency) -> TriggerOut:
     s = get_settings()
-    row = delta.fetch_one(
+    row = delta.fetch_one_params(
         sql,
         f"""
         SELECT {', '.join('t.'+c for c in _TRG_COLS)},
@@ -426,8 +436,9 @@ def get_trigger(trigger_id: str, sql: SqlDependency) -> TriggerOut:
         FROM {s.fq_table('triggers_catalog')} t
         LEFT JOIN {s.fq_table('systems')} sys ON sys.system_id = t.system_id
         LEFT JOIN {s.fq_table('entities')} e ON e.entity_id = t.associated_entity_id
-        WHERE t.trigger_id = '{_q(trigger_id)}'
+        WHERE t.trigger_id = :trigger_id
         """,
+        [delta.param("trigger_id", trigger_id)],
     )
     if not row:
         raise HTTPException(404, f"trigger '{trigger_id}' not found")
@@ -555,9 +566,11 @@ def _seq_row_to_out(r: list, system_name: str | None = None) -> SequenceOut:
 def list_sequences(sql: SqlDependency, system_id: str | None = None) -> list[SequenceListOut]:
     s = get_settings()
     where = ""
+    params: list = []
     if system_id:
-        where = f"WHERE q.system_id = '{_q(system_id)}'"
-    rows = delta.fetch_all(
+        where = "WHERE q.system_id = :system_id"
+        params.append(delta.param("system_id", system_id))
+    rows = delta.fetch_all_params(
         sql,
         f"""
         SELECT q.sequence_id, q.system_id, sys.system_name,
@@ -568,6 +581,7 @@ def list_sequences(sql: SqlDependency, system_id: str | None = None) -> list[Seq
         {where}
         ORDER BY q.schema_name, q.technical_name
         """,
+        params,
     )
     return [
         SequenceListOut(
@@ -588,14 +602,15 @@ def list_sequences(sql: SqlDependency, system_id: str | None = None) -> list[Seq
 )
 def get_sequence(sequence_id: str, sql: SqlDependency) -> SequenceOut:
     s = get_settings()
-    row = delta.fetch_one(
+    row = delta.fetch_one_params(
         sql,
         f"""
         SELECT {', '.join('q.'+c for c in _SEQ_COLS)}, sys.system_name
         FROM {s.fq_table('sequences_catalog')} q
         LEFT JOIN {s.fq_table('systems')} sys ON sys.system_id = q.system_id
-        WHERE q.sequence_id = '{_q(sequence_id)}'
+        WHERE q.sequence_id = :sequence_id
         """,
+        [delta.param("sequence_id", sequence_id)],
     )
     if not row:
         raise HTTPException(404, f"sequence '{sequence_id}' not found")
