@@ -29,8 +29,7 @@ def test_ddl_import_accepts_small_payload():
 
 def test_ddl_import_accepts_payload_at_limit():
     """5 MB exato deve passar."""
-    huge = "-- " + ("a" * (5_000_000 - 4))  # exactly 5_000_000 chars
-    assert len(huge) == 5_000_000
+    huge = "a" * 5_000_000
     payload = DDLImportIn(system_id="sys-1", ddl_text=huge)
     assert len(payload.ddl_text) == 5_000_000
 
