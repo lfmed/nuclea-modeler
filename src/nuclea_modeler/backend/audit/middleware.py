@@ -135,7 +135,14 @@ class AuditMiddleware(BaseHTTPMiddleware):
 
         # actor
         actor_email = request.headers.get("X-Forwarded-Email") or "anonymous"
-        request_id = request.headers.get("X-Request-Id") or uuid.uuid4().hex
+        # Prefer the request id stamped by RequestIdMiddleware (kept in a
+        # contextvar), then the inbound header, finally a fresh UUID. This keeps
+        # logs and audit rows aligned for the same request.
+        try:
+            from ..core.logging import get_request_id
+            request_id = get_request_id() or request.headers.get("X-Request-Id") or uuid.uuid4().hex
+        except Exception:
+            request_id = request.headers.get("X-Request-Id") or uuid.uuid4().hex
         client_ip = _extract_client_ip(request)
         user_agent = (request.headers.get("user-agent") or "")[:512]
 

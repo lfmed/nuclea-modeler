@@ -27,8 +27,12 @@ from .code_objects.router import (
 )
 from .audit.router import router as audit_router
 from .audit.middleware import AuditMiddleware
+from .core.logging import RequestIdMiddleware, configure_logging
 from .core.security import RateLimitMiddleware, SecurityHeadersMiddleware
 from .search.router import router as search_router
+
+# Install logging FIRST so every other module's logger inherits the config.
+configure_logging()
 
 app = create_app(
     routers=[
@@ -62,11 +66,11 @@ app = create_app(
 
 # Middleware order matters: Starlette executes them in REVERSE add order, so
 # add the outermost-first. We want:
-#   request  →  SecurityHeaders → RateLimit → Audit → app
-#   response ←  SecurityHeaders ← RateLimit ← Audit ← app
-# This means SecurityHeaders is added LAST so it runs first on the way in
-# and last on the way out (stamping headers on the final response, including
-# 429s from RateLimit).
+#   request  →  RequestId → SecurityHeaders → RateLimit → Audit → app
+#   response ←  RequestId ← SecurityHeaders ← RateLimit ← Audit ← app
+# RequestIdMiddleware is added LAST so it runs FIRST on the way in: every
+# downstream middleware and handler sees the request_id in the contextvar.
 app.add_middleware(AuditMiddleware)
 app.add_middleware(RateLimitMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(RequestIdMiddleware)

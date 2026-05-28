@@ -46,6 +46,43 @@ export default defineConfig({
     outDir: distDir,
     emptyOutDir: true,
     sourcemap: false,
+    // Split heavy/independent vendor bundles so the initial route doesn't have
+    // to download Monaco (used only on Code Objects) or XYFlow (only on DER).
+    // TanStack Router already does per-route code splitting via the
+    // autoCodeSplitting plugin option above.
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return;
+          if (id.includes("monaco-editor") || id.includes("@monaco-editor")) {
+            return "vendor-monaco";
+          }
+          if (id.includes("@xyflow") || id.includes("@dagrejs/dagre")) {
+            return "vendor-diagram";
+          }
+          if (id.includes("@tanstack/react-query") || id.includes("@tanstack/react-router")) {
+            return "vendor-tanstack";
+          }
+          if (
+            id.includes("/react/") ||
+            id.includes("/react-dom/") ||
+            id.includes("scheduler") ||
+            id.includes("react-error-boundary")
+          ) {
+            return "vendor-react";
+          }
+          if (id.includes("@radix-ui/") || id.includes("lucide-react") || id.includes("class-variance-authority")) {
+            return "vendor-ui";
+          }
+          if (id.includes("motion") || id.includes("html-to-image") || id.includes("sonner")) {
+            return "vendor-misc";
+          }
+        },
+      },
+    },
+    // Warn (don't fail) when an individual chunk goes over 600KB — gives a
+    // visible signal during local builds.
+    chunkSizeWarningLimit: 600,
   },
   server: {
     port: 5173,

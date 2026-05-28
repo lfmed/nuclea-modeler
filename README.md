@@ -2,6 +2,8 @@
 
 > Catálogo e modelagem de dados corporativa — Databricks App nativo para a **Núclea**.
 
+[![CI](https://github.com/lfmed/nuclea-modeler/actions/workflows/ci.yml/badge.svg)](https://github.com/lfmed/nuclea-modeler/actions/workflows/ci.yml)
+
 Aplicação full-stack (FastAPI + React, via [APX](https://github.com/databricks-solutions/apx)) que centraliza o ciclo de vida dos modelos de dados — da engenharia reversa dos ambientes **HINT/HEXT/PROD** até o espelhamento automático no **Unity Catalog**.
 
 | | |
@@ -11,7 +13,7 @@ Aplicação full-stack (FastAPI + React, via [APX](https://github.com/databricks
 | **Plataforma** | Databricks Apps + Unity Catalog + Delta Lake |
 | **Stack** | Python 3.11+ · FastAPI · React 19 · TanStack Router · shadcn/ui · Tailwind 4 |
 | **Persistência** | 100% Delta Lake no Unity Catalog (sem Postgres operacional) |
-| **Status** | 🟢 Spec 100% + extras (Tickets, Lakebase, Code Objects, Audit, Busca, Embarcadero, Home, Help) |
+| **Status** | 🟢 Spec 100% + extras (Tickets, Lakebase, Code Objects, Audit, Busca, Embarcadero, Home, Help) + Production hardening (migrations, security, rate-limit, paginação, ODBC/REST real, livez/readyz, JSON logs, bundle splitting) |
 | **URL live** | https://nuclea-modeler-7474646973581105.aws.databricksapps.com |
 
 ## Módulos funcionais
@@ -85,12 +87,77 @@ Paleta Núclea (placeholder, validar visualmente após primeiro deploy):
 - Acento: amarelo `oklch(0.83 0.17 90)` (~#FFC72C)
 - Tipografia: stack do sistema com features OpenType (`cv11`, `ss01`, `ss03`)
 
+## Endpoints operacionais
+
+| Endpoint | Quem usa | O que retorna |
+|---|---|---|
+| `GET /api/livez` | k8s/Apps probe de restart | 200 imediato, sem deps · uptime + version |
+| `GET /api/readyz` | k8s/Apps probe de tráfego | Verifica `SELECT 1` no warehouse (cache 5s) |
+| `GET /api/health` | UI + monitoramento | Reachability + counts (cache 30s) |
+| `GET /api/version` | Build pipeline | Versão semântica do package |
+| `GET /api/entities/page?page=1&page_size=50` | UI listas grandes | `PaginatedEntities` |
+| `GET /api/audit/page?page=1&page_size=50` | Admin audit | `PaginatedAudit` |
+| `X-Request-ID` (header) | Toda response | Correlation id curto (12 chars) ou inbound sanitizado (64) |
+| `Retry-After` (header) | Quando 429 | Segundos até retry (rate limit por rota/IP) |
+
+## Migrations
+
+Schema do app vive em `databricks/sql/*.sql` (numeradas, idempotentes).
+
+```bash
+# Aplicar manualmente (workspace novo, debug):
+python -m nuclea_modeler.backend.core.migrations
+
+# Auto-aplicação no startup (default):
+# Controlada por NUCLEA_MIGRATIONS_AUTO_APPLY=true (false desabilita)
+```
+
+Tracking via `schema_migrations` Delta com SHA-256. Drift detectado mas não re-aplicado — investigação manual.
+
+## Runbook
+
+### Cenários comuns
+
+**App não sobe**
+1. `databricks apps logs nuclea-modeler` → procure `[migrations]` no log de startup
+2. Se "DRIFT detected": migração foi editada após aplicar. Reverter o arquivo OU criar nova migration corrigindo
+3. Se falha em statement específico: rodar o SQL manual no SQL Editor para entender. Migrations runner é fail-fast — fix e re-deploy
+
+**Performance degradada**
+1. Verificar `/api/readyz` → latência do warehouse
+2. Verificar `/api/health` → `delta_tables_count` cresceu muito? Trocar listagem por `/page`
+3. Logs com `NUCLEA_LOG_JSON=true` permitem filtrar por `request_id` para rastrear request lento
+
+**Restauração**
+- Delta Time Travel: `SELECT * FROM table TIMESTAMP AS OF '2026-05-01'`
+- Versões publicadas: aba `/versions` → "Restaurar" cria DRAFT a partir do snapshot
+- Tickets: histórico permanente em `reconciliation_tickets`
+
+**Secrets rotacionados**
+- Atualizar valor em Databricks Secrets (scope = `NUCLEA_SECRETS_SCOPE`)
+- Re-testar conexão em `/connections/{id}/test`
+- App lê secret a cada teste (sem cache) — efeito imediato
+
+### Variáveis de ambiente
+
+| Var | Default | Descrição |
+|---|---|---|
+| `NUCLEA_CATALOG` | `stable_classic_pg4xe1_catalog` | UC catalog do app state |
+| `NUCLEA_SCHEMA` | `data_catalog_app` | Schema do app |
+| `NUCLEA_WAREHOUSE_ID` | (config) | SQL Warehouse para queries |
+| `NUCLEA_SECRETS_SCOPE` | `nuclea-modeler` | Secrets default das conexões |
+| `NUCLEA_MIGRATIONS_AUTO_APPLY` | `true` | Aplica migrations no startup |
+| `NUCLEA_MIGRATIONS_DIR` | (auto) | Override do path de `databricks/sql/` |
+| `NUCLEA_LOG_JSON` | `false` | Emite logs em JSON single-line |
+| `NUCLEA_LOG_LEVEL` | `INFO` | Nível raiz de logging |
+
 ## Documentação
 
 - 📋 Spec funcional: [`docs/spec/`](docs/spec/)
 - 🛠️ Plano de execução: [`docs/prompts/01-plano-militar.md`](docs/prompts/01-plano-militar.md)
 - 🗒️ Prompt registry: [`docs/prompts/`](docs/prompts/)
 - 🏛️ Decisões: [`docs/adr/`](docs/adr/)
+- 🎯 Roteiro de demo para arquiteto: [`docs/demo/jornada-arquiteto-de-dados.html`](docs/demo/jornada-arquiteto-de-dados.html)
 
 ## Licença
 
