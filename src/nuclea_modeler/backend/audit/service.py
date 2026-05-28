@@ -47,6 +47,7 @@ def list_audit(
     object_id: str | None = None,
     since: datetime | None = None,
     limit: int = 200,
+    offset: int = 0,
 ) -> list[AuditEntry]:
     s = get_settings()
     where: list[str] = []
@@ -68,8 +69,9 @@ def list_audit(
         params.append(delta.param("since", since))
     where_sql = ("WHERE " + " AND ".join(where)) if where else ""
     cols = ", ".join(_COLS_SHORT)
-    # LIMIT is clamped to a constant — bare integer, no need to parametrise.
+    # LIMIT/OFFSET clamped — bare integers, no need to parametrise.
     safe_limit = max(1, min(int(limit), 1000))
+    safe_offset = max(0, int(offset))
     rows = delta.fetch_all_params(
         sql,
         f"""
@@ -77,11 +79,48 @@ def list_audit(
         FROM {s.fq_table('audit_log')}
         {where_sql}
         ORDER BY occurred_at DESC
-        LIMIT {safe_limit}
+        LIMIT {safe_limit} OFFSET {safe_offset}
         """,
         params,
     )
     return [_row_short(r) for r in rows]
+
+
+def count_audit(
+    sql: Sql,
+    *,
+    actor_email: str | None = None,
+    action: str | None = None,
+    object_type: str | None = None,
+    object_id: str | None = None,
+    since: datetime | None = None,
+) -> int:
+    """Count rows matching the same filters as list_audit. Used by paginator."""
+    s = get_settings()
+    where: list[str] = []
+    params: list = []
+    if actor_email:
+        where.append("actor_email = :actor_email")
+        params.append(delta.param("actor_email", actor_email))
+    if action:
+        where.append("action = :action")
+        params.append(delta.param("action", action))
+    if object_type:
+        where.append("object_type = :object_type")
+        params.append(delta.param("object_type", object_type))
+    if object_id:
+        where.append("object_id = :object_id")
+        params.append(delta.param("object_id", object_id))
+    if since:
+        where.append("occurred_at >= :since")
+        params.append(delta.param("since", since))
+    where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+    row = delta.fetch_one_params(
+        sql,
+        f"SELECT COUNT(*) FROM {s.fq_table('audit_log')} {where_sql}",
+        params,
+    )
+    return int(row[0]) if row and row[0] is not None else 0
 
 
 def get_audit(sql: Sql, audit_id: str) -> AuditDetailEntry | None:

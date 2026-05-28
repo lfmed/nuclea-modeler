@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Cancel in-flight runs when a new commit lands on the same ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python (ruff + pytest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.10.7"
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install dependencies
+        run: |
+          uv venv
+          uv pip install -e ".[dev]"
+          # psycopg used by extractions/lakebase service is optional at module load
+          # but required for full test coverage. Install the binary wheel.
+          uv pip install "psycopg[binary]>=3.1"
+
+      - name: Lint (ruff)
+        run: uv run ruff check src/ tests/
+
+      - name: Format check (ruff)
+        run: uv run ruff format --check src/ tests/
+        continue-on-error: true  # warn-only; turn off once code is formatted
+
+      - name: Run tests
+        run: uv run pytest tests/ -q --tb=short
+
+  frontend:
+    name: Frontend (tsc + bundle size)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.10"
+
+      - name: Install deps
+        run: bun install --frozen-lockfile
+        continue-on-error: true  # lockfile may not exist on first run
+
+      - name: TypeScript type check
+        run: bun run tsc
+
+      - name: Production build
+        run: bun run build
+
+      - name: Bundle size budget (warn if > 2 MB total JS)
+        run: |
+          set -e
+          DIST="src/nuclea_modeler/__dist__"
+          if [ ! -d "$DIST/assets" ]; then
+            echo "::warning::No build output found at $DIST/assets"
+            exit 0
+          fi
+          TOTAL=$(find "$DIST/assets" -name "*.js" -type f -exec wc -c {} + | tail -1 | awk '{print $1}')
+          BUDGET=$((2 * 1024 * 1024))
+          echo "JS bundle total: ${TOTAL} bytes (budget: ${BUDGET})"
+          if [ "$TOTAL" -gt "$BUDGET" ]; then
+            echo "::warning::JS bundle ${TOTAL}B exceeds 2MB budget"
+          fi
+
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: TruffleHog
+        uses: trufflesecurity/trufflehog@v3.82.13
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --only-verified

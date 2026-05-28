@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from functools import lru_cache
@@ -60,6 +61,7 @@ def create_app(
     @asynccontextmanager
     async def _composed_lifespan(app: FastAPI):
         async with _chain_dep_lifespans(all_deps, app):
+            _maybe_run_startup_migrations(app)
             yield
 
     app = FastAPI(title=app_name, lifespan=_composed_lifespan)
@@ -88,3 +90,39 @@ def create_app(
 def create_router() -> APIRouter:
     """Return the singleton APIRouter with the application's API prefix."""
     return APIRouter(prefix=api_prefix)
+
+
+def _maybe_run_startup_migrations(app: FastAPI) -> None:
+    """Apply pending schema migrations during startup, when enabled.
+
+    Controlled by NUCLEA_MIGRATIONS_AUTO_APPLY (default: "true"). Set to "false"
+    in environments where DDL is managed by another process. Failures are logged
+    but NEVER abort the app boot — operators can investigate and re-run via the
+    CLI: `python -m nuclea_modeler.backend.core.migrations`.
+    """
+    flag = os.getenv("NUCLEA_MIGRATIONS_AUTO_APPLY", "true").lower()
+    if flag not in ("true", "1", "yes"):
+        logger.info("[migrations] Auto-apply disabled (NUCLEA_MIGRATIONS_AUTO_APPLY != true)")
+        return
+
+    try:
+        from databricks.sdk import WorkspaceClient
+        from .migrations import apply_migrations, find_migrations_dir
+        from ._nuclea_config import get_settings
+        from .sql import Sql
+
+        migrations_dir = find_migrations_dir()
+        if not migrations_dir.exists():
+            logger.warning(f"[migrations] Directory not found, skipping: {migrations_dir}")
+            return
+
+        settings = get_settings()
+        ws = WorkspaceClient()
+        sql_dep = Sql(
+            config=type("_Cfg", (), {"warehouse_id": settings.warehouse_id})(),
+            api=ws.statement_execution,
+        )
+        summary = apply_migrations(sql_dep, migrations_dir, actor="startup")
+        logger.info(f"[migrations] Startup summary: {summary}")
+    except Exception as exc:  # never abort boot
+        logger.error(f"[migrations] Startup runner failed (app continues): {exc}")

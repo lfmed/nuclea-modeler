@@ -1,7 +1,6 @@
 """Module 1 — Connections CRUD + test endpoints."""
 from __future__ import annotations
 
-import time
 from datetime import datetime
 from typing import cast
 
@@ -11,6 +10,7 @@ from ..core import Dependencies
 from ..core._nuclea_config import get_settings
 from ..core import delta
 from ..core.sql import SqlDependency
+from . import testers
 from .models import (
     ConnectionIn,
     ConnectionListOut,
@@ -204,24 +204,53 @@ def test_connection(
     connection_id: str,
     sql: SqlDependency,
     user_ws: Dependencies.UserClient,
+    app_ws: Dependencies.Client,
 ) -> ConnectionTestResult:
-    """Test a connection.
+    """Test a connection by actually probing the target.
 
-    NOTE: real ODBC/REST connectivity from the Databricks Apps runtime requires
-    proper drivers + network reachability. For now this endpoint persists the
-    test attempt and returns a simulated result so the UI flow can be exercised.
-    Real test logic will be added in Phase 1 wrap-up.
+    - ODBC: opens a pyodbc connection with a 10s login timeout, runs a version
+      probe and closes the connection.
+    - REST: issues a single GET to `config.base_url` with timeout=10s. 2xx/3xx
+      = success. Credentials read from Databricks Secrets.
+    - DDL_IMPORT: trivially successful — no remote target.
+
+    Uses the APP service principal (`app_ws`) to read secrets, because user OBO
+    tokens typically lack the `secrets` scope.
     """
     conn = get_connection(connection_id, sql)
     s = get_settings()
     actor = _actor(user_ws)
-    started = time.monotonic()
-    status: TestStatus = "success"
-    db_version: str | None = "simulated"
-    error: str | None = None
-    # TODO: real per-type test (ODBC pyodbc.connect; REST httpx GET; DDL parse)
-    elapsed_ms = int((time.monotonic() - started) * 1000) or 1
+    # Resolve secret_scope: per-connection override → app-wide default.
+    scope = conn.secret_scope or s.secrets_scope
+
+    if conn.connection_type == "ODBC":
+        outcome = testers.test_odbc(
+            ws=app_ws,
+            config=conn.config or {},
+            secret_scope=scope,
+            secret_key_user=conn.secret_key_user,
+            secret_key_pass=conn.secret_key_pass,
+        )
+    elif conn.connection_type == "REST":
+        outcome = testers.test_rest(
+            ws=app_ws,
+            config=conn.config or {},
+            secret_scope=scope,
+            secret_key_token=conn.secret_key_token,
+            secret_key_user=conn.secret_key_user,
+            secret_key_pass=conn.secret_key_pass,
+        )
+    elif conn.connection_type == "DDL_IMPORT":
+        outcome = testers.test_ddl_import()
+    else:
+        outcome = testers.TesterOutcome(
+            status="failure",
+            latency_ms=1,
+            error=f"unsupported connection_type: {conn.connection_type}",
+        )
+
     now = datetime.utcnow()
+    status: TestStatus = outcome.status  # type: ignore[assignment]
     delta.update_by_id(
         sql,
         s.fq_table("connections"),
@@ -230,17 +259,17 @@ def test_connection(
         {
             "last_test_status": status,
             "last_test_at": now,
-            "last_test_latency_ms": elapsed_ms,
-            "last_test_db_version": db_version,
-            "last_test_error": error,
+            "last_test_latency_ms": outcome.latency_ms,
+            "last_test_db_version": outcome.db_version,
+            "last_test_error": outcome.error,
             "updated_at": now,
             "updated_by": actor,
         },
     )
     return ConnectionTestResult(
         status=status,
-        latency_ms=elapsed_ms,
-        db_version=db_version,
-        error=error,
+        latency_ms=outcome.latency_ms,
+        db_version=outcome.db_version,
+        error=outcome.error,
         tested_at=now,
     )

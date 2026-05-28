@@ -70,6 +70,16 @@ class EntityListOut(BaseModel):
     updated_at: datetime
 
 
+class PaginatedEntities(BaseModel):
+    """Paginated entity listing — preferred for systems with many tables."""
+
+    items: list[EntityListOut]
+    total: int
+    page: int = Field(ge=1)
+    page_size: int = Field(ge=1, le=200)
+    has_more: bool
+
+
 # -------------------- Attributes --------------------
 
 class AttributeIn(BaseModel):

@@ -12,7 +12,7 @@ from ..core.sql import SqlDependency
 from ..._metadata import api_prefix
 from .models import (
     AttributeIn, AttributeOut,
-    EntityIn, EntityListOut, EntityOut,
+    EntityIn, EntityListOut, EntityOut, PaginatedEntities,
 )
 
 router = APIRouter(prefix=f"{api_prefix}/entities", tags=["entities"])
@@ -112,6 +112,79 @@ def list_entities(
         )
         for r in rows
     ]
+
+
+@router.get(
+    "/page",
+    response_model=PaginatedEntities,
+    operation_id="listEntitiesPaginated",
+)
+def list_entities_paginated(
+    sql: SqlDependency,
+    system_id: str | None = None,
+    domain: str | None = None,
+    page: int = 1,
+    page_size: int = 50,
+) -> PaginatedEntities:
+    """Listagem paginada — preferida para sistemas com muitas tabelas.
+
+    - `page` é 1-indexed.
+    - `page_size` é clamped em [1, 200].
+    """
+    s = get_settings()
+    page = max(1, int(page))
+    page_size = max(1, min(int(page_size), 200))
+    offset = (page - 1) * page_size
+
+    where: list[str] = []
+    params: list = []
+    if system_id:
+        where.append("e.system_id = :system_id")
+        params.append(delta.param("system_id", system_id))
+    if domain:
+        where.append("e.domain = :domain")
+        params.append(delta.param("domain", domain))
+    where_clause = ("WHERE " + " AND ".join(where)) if where else ""
+
+    total_row = delta.fetch_one_params(
+        sql,
+        f"SELECT COUNT(*) FROM {s.fq_table('entities')} e {where_clause}",
+        params,
+    )
+    total = int(total_row[0]) if total_row and total_row[0] is not None else 0
+
+    rows = delta.fetch_all_params(
+        sql,
+        f"""
+        SELECT e.entity_id, e.system_id, sys.system_name, e.schema_name,
+               e.technical_name, e.logical_name, e.entity_type, e.domain,
+               e.criticality, e.updated_at,
+               (SELECT COUNT(*) FROM {s.fq_table('attributes')} a WHERE a.entity_id = e.entity_id) AS attrs
+        FROM {s.fq_table('entities')} e
+        LEFT JOIN {s.fq_table('systems')} sys ON sys.system_id = e.system_id
+        {where_clause}
+        ORDER BY e.updated_at DESC
+        LIMIT {page_size} OFFSET {offset}
+        """,
+        params,
+    )
+    items = [
+        EntityListOut(
+            entity_id=r[0], system_id=r[1], system_name=r[2], schema_name=r[3],
+            technical_name=r[4], logical_name=r[5], entity_type=r[6] or "TABLE",
+            domain=r[7], criticality=r[8] or None,
+            attributes_count=int(r[10]) if r[10] is not None else 0,
+            updated_at=r[9],
+        )
+        for r in rows
+    ]
+    return PaginatedEntities(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        has_more=(offset + len(items)) < total,
+    )
 
 
 @router.get("/{entity_id}", response_model=EntityOut, operation_id="getEntity")

@@ -10,8 +10,20 @@ from ..core import Dependencies
 from ..core.sql import SqlDependency
 from ..rbac.router import _current_email
 from ..rbac.service import ROLE_ADMIN, require_role
+from pydantic import BaseModel, Field
+
 from .models import AuditDetailEntry, AuditEntry, AuditStats
-from .service import get_audit, list_audit, stats_last_n_days
+from .service import count_audit, get_audit, list_audit, stats_last_n_days
+
+
+class PaginatedAudit(BaseModel):
+    """Paginated audit log response."""
+
+    items: list[AuditEntry]
+    total: int
+    page: int = Field(ge=1)
+    page_size: int = Field(ge=1, le=200)
+    has_more: bool
 
 router = APIRouter(prefix=f"{api_prefix}/audit", tags=["audit"])
 
@@ -46,6 +58,39 @@ def list_audit_endpoint(
         object_id=object_id,
         since=since,
         limit=limit,
+    )
+
+
+@router.get("/page", response_model=PaginatedAudit, operation_id="listAuditPaginated")
+def list_audit_paginated(
+    sql: SqlDependency,
+    user_ws: Dependencies.UserClient,
+    actor_email: str | None = Query(None),
+    action: str | None = Query(None),
+    object_type: str | None = Query(None),
+    object_id: str | None = Query(None),
+    since: datetime | None = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+) -> PaginatedAudit:
+    """Audit log paginado — preferido para análise histórica longa."""
+    require_role(sql, _current_email(user_ws), ROLE_ADMIN)
+    offset = (page - 1) * page_size
+    filters = {
+        "actor_email": actor_email,
+        "action": action,
+        "object_type": object_type,
+        "object_id": object_id,
+        "since": since,
+    }
+    total = count_audit(sql, **filters)
+    items = list_audit(sql, **filters, limit=page_size, offset=offset)
+    return PaginatedAudit(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        has_more=(offset + len(items)) < total,
     )
 
 

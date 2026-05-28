@@ -1,0 +1,14 @@
+# Default owner for everything in the repo.
+*       @lfmed
+
+# Backend
+/src/nuclea_modeler/backend/    @lfmed
+
+# Frontend
+/src/nuclea_modeler/ui/         @lfmed
+
+# Infra & schema
+/databricks/                    @lfmed
+/.github/                       @lfmed
+/databricks.yml                 @lfmed
+/app.yml                        @lfmed

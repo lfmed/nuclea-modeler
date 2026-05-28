@@ -27,6 +27,7 @@ from .code_objects.router import (
 )
 from .audit.router import router as audit_router
 from .audit.middleware import AuditMiddleware
+from .core.security import RateLimitMiddleware, SecurityHeadersMiddleware
 from .search.router import router as search_router
 
 app = create_app(
@@ -59,6 +60,13 @@ app = create_app(
     ]
 )
 
-# Audit middleware: captures non-GET /api/* requests and persists rows to the
-# audit_log Delta table. Failures are logged to stderr — never break the chain.
+# Middleware order matters: Starlette executes them in REVERSE add order, so
+# add the outermost-first. We want:
+#   request  →  SecurityHeaders → RateLimit → Audit → app
+#   response ←  SecurityHeaders ← RateLimit ← Audit ← app
+# This means SecurityHeaders is added LAST so it runs first on the way in
+# and last on the way out (stamping headers on the final response, including
+# 429s from RateLimit).
 app.add_middleware(AuditMiddleware)
+app.add_middleware(RateLimitMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
