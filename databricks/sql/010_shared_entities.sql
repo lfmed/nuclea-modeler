@@ -8,6 +8,9 @@
 USE CATALOG stable_classic_pg4xe1_catalog;
 USE SCHEMA data_catalog_app;
 
-ALTER TABLE entities
-ADD COLUMN IF NOT EXISTS is_shared BOOLEAN DEFAULT false
-COMMENT 'Quando true, esta entidade aparece como referenciável em DERs de outros sistemas';
+-- Databricks SQL não suporta IF NOT EXISTS em ALTER ADD COLUMN; o tracking
+-- de migrations (schema_migrations.checksum) garante que esta roda exatamente
+-- uma vez. Em caso de reaplicação manual, drop a coluna primeiro.
+ALTER TABLE entities ADD COLUMNS (
+    is_shared BOOLEAN COMMENT 'Quando true, esta entidade aparece como referenciável em DERs de outros sistemas'
+);
