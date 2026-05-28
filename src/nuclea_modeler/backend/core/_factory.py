@@ -64,7 +64,36 @@ def create_app(
             _maybe_run_startup_migrations(app)
             yield
 
-    app = FastAPI(title=app_name, lifespan=_composed_lifespan)
+    app = FastAPI(
+        title=app_name,
+        version=__import__("nuclea_modeler").__version__,
+        description=(
+            "Núclea Modeler — catálogo e modelagem de dados corporativa "
+            "Databricks-native. Cobre 10 módulos da spec + extras (tickets de "
+            "reconciliação, Lakebase sandbox, code objects, audit log, busca "
+            "global, importer Embarcadero)."
+        ),
+        contact={"name": "Tribo de Dados Núclea", "url": "https://github.com/lfmed/nuclea-modeler"},
+        license_info={"name": "Privado · Núclea S.A."},
+        openapi_tags=[
+            {"name": "systems", "description": "Sistemas de origem catalogados (M1 contexto)"},
+            {"name": "connections", "description": "Conexões ODBC/REST/DDL (M1)"},
+            {"name": "extractions", "description": "Engenharia reversa (M2): Lakebase, DDL, .erx"},
+            {"name": "entities", "description": "Entidades + atributos (M3)"},
+            {"name": "diagram", "description": "Diagrama Entidade-Relacionamento (M4)"},
+            {"name": "flags", "description": "Flagueamento + propagação LGPD (M5)"},
+            {"name": "glossary", "description": "Dicionário corporativo (M6)"},
+            {"name": "lineage", "description": "Linhagem upstream/downstream (M7)"},
+            {"name": "versions", "description": "Versionamento de modelos (M8)"},
+            {"name": "sync", "description": "Sincronização Unity Catalog (M9)"},
+            {"name": "ddl", "description": "Exportação DDL multi-dialect (M10)"},
+            {"name": "lakebase", "description": "Lakebase Sandbox (validação round-trip)"},
+            {"name": "tickets", "description": "Tickets de Reconciliação"},
+            {"name": "rbac", "description": "Roles e permissões"},
+            {"name": "audit", "description": "Audit log (admin)"},
+        ],
+        lifespan=_composed_lifespan,
+    )
 
     api_router: APIRouter = create_router()
     for dep in all_deps:

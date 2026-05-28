@@ -881,15 +881,37 @@ function About() {
                 v0.1.0
               </Badge>
             </div>
-            <a
-              href="https://github.com/lfmed/nuclea-modeler"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-            >
-              <Github className="h-4 w-4" />
-              github.com/lfmed/nuclea-modeler
-            </a>
+            <div className="flex items-center gap-4 flex-wrap">
+              <a
+                href="/docs"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+                title="Swagger UI — explorar e testar endpoints"
+              >
+                <BookOpen className="h-4 w-4" aria-hidden="true" />
+                Swagger
+              </a>
+              <a
+                href="/redoc"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+                title="ReDoc — documentação navegável"
+              >
+                <BookOpen className="h-4 w-4" aria-hidden="true" />
+                ReDoc
+              </a>
+              <a
+                href="https://github.com/lfmed/nuclea-modeler"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+              >
+                <Github className="h-4 w-4" aria-hidden="true" />
+                Código-fonte
+              </a>
+            </div>
           </div>
 
           <Separator />

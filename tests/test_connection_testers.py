@@ -62,7 +62,8 @@ def test_rest_2xx_is_success():
         return httpx.Response(200, text="ok")
 
     transport = httpx.MockTransport(handler)
-    with patch.object(httpx, "Client", lambda *a, **kw: httpx.Client(transport=transport, **kw)):
+    real_client = httpx.Client  # capture BEFORE patching to avoid recursion
+    with patch.object(httpx, "Client", lambda *a, **kw: real_client(transport=transport, **kw)):
         out = testers.test_rest(
             ws=_mock_ws(),
             config={"base_url": "https://api.example.com"},
@@ -80,7 +81,8 @@ def test_rest_5xx_is_failure():
         return httpx.Response(503, text="down")
 
     transport = httpx.MockTransport(handler)
-    with patch.object(httpx, "Client", lambda *a, **kw: httpx.Client(transport=transport, **kw)):
+    real_client = httpx.Client  # capture BEFORE patching to avoid recursion
+    with patch.object(httpx, "Client", lambda *a, **kw: real_client(transport=transport, **kw)):
         out = testers.test_rest(
             ws=_mock_ws(),
             config={"base_url": "https://api.example.com"},
@@ -114,7 +116,8 @@ def test_rest_bearer_sends_authorization_header():
         return httpx.Response(200)
 
     transport = httpx.MockTransport(handler)
-    with patch.object(httpx, "Client", lambda *a, **kw: httpx.Client(transport=transport, **kw)):
+    real_client = httpx.Client  # capture BEFORE patching to avoid recursion
+    with patch.object(httpx, "Client", lambda *a, **kw: real_client(transport=transport, **kw)):
         out = testers.test_rest(
             ws=_mock_ws({"myscope/api_token": "abc123"}),
             config={"base_url": "https://api.example.com", "auth_type": "BEARER"},
