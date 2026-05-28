@@ -59,8 +59,9 @@ def test_percentile_rounds_to_2_decimals():
 def test_percentile_unsorted_input_handled():
     """Função deve aceitar valores em qualquer ordem."""
     assert _percentile([3.0, 1.0, 2.0], 50) == 2.0  # median funciona unsorted
-    # Para p95 (não median), a função sorta internamente
-    assert _percentile([10.0, 1.0, 5.0, 3.0, 8.0], 95) == 10.0
+    # Para p95 (não median), a função sorta + indexa.
+    # 5 valores: k = 0.95 * 4 = 3.8 → int(3.8) = 3 → sorted=[1,3,5,8,10][3] = 8.0
+    assert _percentile([10.0, 1.0, 5.0, 3.0, 8.0], 95) == 8.0
 
 
 def test_percentile_max_pct_returns_max():
