@@ -50,6 +50,18 @@ const router = createRouter({
   scrollRestoration: true,
   defaultErrorComponent: ({ error, reset }) => {
     console.error("[Núclea Modeler] Route error:", error);
+    // Quando o usuário tem o index.html antigo em cache mas o servidor
+    // já entregou chunks com hashes novos, o lazy-import via Link cai aqui
+    // como erro de route loading (não chega ao listener window.error).
+    // Detectamos e forçamos reload aqui também.
+    if (shouldReloadFromError(error)) {
+      tryReloadIfStale(error);
+      return (
+        <div style={{ padding: "2rem", textAlign: "center", color: "#6b7280" }}>
+          Atualizando para a versão mais recente…
+        </div>
+      );
+    }
     return (
       <div style={{ padding: "2rem", fontFamily: "system-ui" }}>
         <h2 style={{ color: "#b91c1c", marginBottom: "1rem" }}>

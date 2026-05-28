@@ -38,6 +38,8 @@ from .sql import Sql
 # literals. Sufficient for our DDL/INSERT files which never embed `;` inside
 # strings.
 _STMT_SPLIT_RE = re.compile(r";\s*\n|;\s*$")
+_USE_CATALOG_RE = re.compile(r"^\s*USE\s+CATALOG\s+(\S+)\s*$", re.IGNORECASE)
+_USE_SCHEMA_RE = re.compile(r"^\s*USE\s+SCHEMA\s+(\S+)\s*$", re.IGNORECASE)
 
 
 def _statements(sql_text: str) -> list[str]:
@@ -176,8 +178,26 @@ def apply_migrations(
         logger.info(f"[migrations] Applying {filename}...")
         started = datetime.utcnow()
         try:
+            # execute_statement é stateless — `USE CATALOG/SCHEMA` no início do
+            # arquivo não persiste entre statements. Capturamos esses comandos
+            # e passamos `catalog=` / `schema=` explicitamente nos próximos.
+            current_catalog: str | None = None
+            current_schema: str | None = None
             for stmt in _statements(content):
-                resp = sql_dep.execute_statement(statement=stmt, wait_timeout="50s")
+                m_cat = _USE_CATALOG_RE.match(stmt)
+                m_sch = _USE_SCHEMA_RE.match(stmt)
+                if m_cat:
+                    current_catalog = m_cat.group(1).strip("`")
+                    continue
+                if m_sch:
+                    current_schema = m_sch.group(1).strip("`")
+                    continue
+                kwargs: dict = {"statement": stmt, "wait_timeout": "50s"}
+                if current_catalog:
+                    kwargs["catalog"] = current_catalog
+                if current_schema:
+                    kwargs["schema"] = current_schema
+                resp = sql_dep.execute_statement(**kwargs)
                 state = resp.status.state if resp.status else None
                 if state != StatementState.SUCCEEDED:
                     err = (

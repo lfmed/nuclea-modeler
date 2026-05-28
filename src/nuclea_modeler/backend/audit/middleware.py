@@ -11,6 +11,7 @@ import re
 import sys
 import time
 import uuid
+from datetime import datetime
 from typing import Any
 
 from databricks.sdk import WorkspaceClient
@@ -177,7 +178,10 @@ class AuditMiddleware(BaseHTTPMiddleware):
             s.fq_table("audit_log"),
             {
                 "audit_id": delta.new_id("audit-"),
-                # occurred_at has a default of current_timestamp() in the DDL
+                # Delta sem `allowColumnDefaults` exige todas as colunas NOT NULL
+                # no INSERT, então passamos explicitamente (DDL tem default mas
+                # ele só vale se a feature está habilitada na tabela).
+                "occurred_at": datetime.utcnow(),
                 "actor_email": actor_email,
                 "actor_role": None,
                 "action": action,
