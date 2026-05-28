@@ -39,7 +39,6 @@ import {
   type Cardinality,
   type DiagramEntity,
   type DiagramRelationship,
-  type DiagramView,
   type RelType,
   type SourceCheckResult,
   type SourceValidationOut,

@@ -34,6 +34,27 @@ python -m scripts.backup --volume /Volumes/... --label pre-migration-010
 
 **Auth:** lê `DATABRICKS_HOST` + `DATABRICKS_TOKEN` ou usa default auth do SDK.
 
+## `perf_smoke.py`
+
+Smoke de latência: dispara N requests concorrentes contra endpoints públicos
+e reporta p50/p95/p99/max + error rate. Exit code 2 se p95 > 2s ou error rate > 5%.
+
+```bash
+# Baseline contra produção
+python -m scripts.perf_smoke \
+  --base https://nuclea-modeler-7474646973581105.aws.databricksapps.com \
+  --concurrency 10 --total 100
+
+# Contra dev local
+python -m scripts.perf_smoke --base http://localhost:8000
+
+# Endpoints específicos
+python -m scripts.perf_smoke --base ... --endpoints /api/livez /api/version
+```
+
+Não é load test — use k6/Locust para isso. Aqui é só baseline rápido para spot
+regression entre deploys.
+
 ## Como agendar como Job
 
 ```python

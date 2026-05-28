@@ -208,21 +208,27 @@ export interface CurrentUser {
 
 // ─── Suspense queries ─────────────────────────────────────────────────────────
 
-function suspenseHook<T>(key: readonly unknown[], path: string) {
-  return (selector?: Selector<T>) =>
-    useSuspenseQuery({
-      queryKey: key,
-      queryFn: () => api.get<T>(path),
-      select: (resp) => resp.data,
-      ...selector?.query,
-    });
-}
-
 export const useCurrentUserSuspense = (s?: Selector<CurrentUser>) =>
   useSuspenseQuery({
     queryKey: ["currentUser"],
     queryFn: () => api.get<CurrentUser>("/current-user"),
     select: (r) => r.data,
+    ...s?.query,
+  });
+
+// ─── Feature flags ──────────────────────────────────────────────────────────
+
+export interface FeaturesOut {
+  features: Record<string, boolean>;
+}
+
+export const useGetFeaturesSuspense = (s?: Selector<FeaturesOut>) =>
+  useSuspenseQuery({
+    queryKey: ["features"],
+    queryFn: () => api.get<FeaturesOut>("/features"),
+    select: (r) => r.data,
+    // Feature flags resetam apenas no redeploy — cache infinito local é OK.
+    staleTime: Infinity,
     ...s?.query,
   });
 
@@ -1819,6 +1825,7 @@ export const useGetRelationshipSuspense = (
     queryFn: () =>
       api.get<RelationshipOut>(`/relationships/${encodeURIComponent(id)}`),
     select: (r) => r.data,
+    ...s?.query,
   });
 
 export const useCreateRelationship = (

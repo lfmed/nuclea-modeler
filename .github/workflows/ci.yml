@@ -69,7 +69,6 @@ jobs:
 
       - name: TypeScript type check
         run: bun run tsc
-        continue-on-error: true  # legacy errors — warn-only until cleanup pass
 
       - name: Bundle size budget (warn if > 2 MB total JS)
         run: |

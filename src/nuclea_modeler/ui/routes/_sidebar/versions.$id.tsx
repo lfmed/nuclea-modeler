@@ -502,7 +502,7 @@ export function DiffEntryRow({ entry }: { entry: DiffEntry }) {
           </span>
         </p>
       )}
-      {(isAdd || isRemove) && (entry.before || entry.after) && (
+      {(isAdd || isRemove) && Boolean(entry.before ?? entry.after) && (
         <pre className="text-[11px] font-mono text-muted-foreground bg-muted/40 rounded p-2 mt-1 overflow-x-auto">
           {JSON.stringify(isAdd ? entry.after : entry.before, null, 2)}
         </pre>

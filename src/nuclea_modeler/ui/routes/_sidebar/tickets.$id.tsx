@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { Suspense, useState } from "react";
 import { QueryErrorResetBoundary, useQueryClient } from "@tanstack/react-query";
 import { ErrorBoundary } from "react-error-boundary";
@@ -77,7 +77,6 @@ function TicketDetailPage() {
 
 function TicketDetail() {
   const { id } = Route.useParams();
-  const navigate = useNavigate();
   const qc = useQueryClient();
   const { data: ticket } = useGetTicketSuspense(id, selector());
   const { data: me } = useMyRolesSuspense(selector());
