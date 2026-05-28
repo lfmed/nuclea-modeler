@@ -364,6 +364,19 @@ function TicketDetail() {
                 tone="negative"
               />
             </div>
+            <div className="mb-3 rounded-md border bg-muted/30 p-3 text-xs space-y-1">
+              <p className="font-medium text-foreground">Como ler o diff:</p>
+              <p className="text-muted-foreground">
+                <span className="text-destructive font-medium">vermelho</span> = como está no <strong>catálogo</strong> (Núclea Modeler)
+                <span className="mx-2">·</span>
+                <span className="text-emerald-600 dark:text-emerald-400 font-medium">verde</span> = como está na <strong>fonte</strong> (base de dados real, ex: Lakebase)
+              </p>
+              <p className="text-muted-foreground">
+                Cada linha tem 3 opções: <em>Aplicar</em> faz o catálogo seguir a fonte (verde).
+                <em> Reverter</em> propaga a mudança do catálogo (vermelho) <strong>de volta</strong> pra fonte via DDL.
+                <em> Ignorar</em> não muda nada.
+              </p>
+            </div>
             <DiffList
               entities={ticket.diff?.entities || []}
               decisions={decisions}
@@ -470,6 +483,63 @@ function CounterChip({
       <span>{label}</span>
     </span>
   );
+}
+
+// Traduz um field do diff (cru do backend) para uma descrição em PT-BR.
+// Inclui também uma frase explicando o que significa a mudança.
+function humanizeField(field: string): { label: string; hint: string } {
+  if (field.startsWith("attribute_add:")) {
+    const col = field.split(":", 2)[1];
+    return {
+      label: `coluna "${col}" só na fonte`,
+      hint: "Está na base de dados real, mas não no catálogo. Aplicar = adicionar ao catálogo.",
+    };
+  }
+  if (field.startsWith("attribute_remove:")) {
+    const col = field.split(":", 2)[1];
+    return {
+      label: `coluna "${col}" só no catálogo`,
+      hint: "Está no catálogo, mas não na base de dados real. Aplicar = remover do catálogo; Reverter = criar na base.",
+    };
+  }
+  if (field.startsWith("attribute:") && field.endsWith(".native_data_type")) {
+    const col = field.slice("attribute:".length).split(".")[0];
+    return {
+      label: `tipo da coluna "${col}"`,
+      hint: "O tipo no catálogo e na base diferem. Aplicar = catálogo segue a base; Reverter = base recebe ALTER TYPE.",
+    };
+  }
+  if (field.startsWith("attribute:") && field.endsWith(".is_primary_key")) {
+    const col = field.slice("attribute:".length).split(".")[0];
+    return {
+      label: `chave primária "${col}"`,
+      hint: "A definição de PK no catálogo e na base diferem.",
+    };
+  }
+  // Campos de entity (top-level)
+  const map: Record<string, { label: string; hint: string }> = {
+    row_count_approx: {
+      label: "linhas (estimativa)",
+      hint: "Estimativa do Postgres (pg_class.reltuples) — atualizada por ANALYZE/autovacuum, não é COUNT(*). -1 significa tabela nunca analisada.",
+    },
+    native_comment: { label: "comentário (DB)", hint: "Comment SQL declarado na base." },
+    logical_name: { label: "nome lógico", hint: "Nome amigável da entidade no catálogo." },
+    description_md: { label: "descrição", hint: "Documentação Markdown da entidade." },
+    domain: { label: "domínio", hint: "Categoria de negócio (Cadastro, Comercial, etc.)." },
+    entity_type: { label: "tipo de entidade", hint: "TABLE, VIEW, etc." },
+  };
+  if (map[field]) return map[field];
+  return { label: field, hint: "" };
+}
+
+function humanizeValue(value: unknown, fieldHint?: string): string {
+  if (value === null || value === undefined || value === "") return "—";
+  if (typeof value === "boolean") return value ? "sim" : "não";
+  // row_count_approx = -1 quando o Postgres nunca rodou ANALYZE na tabela.
+  if (fieldHint === "row_count_approx" && (value === -1 || value === "-1")) {
+    return "sem stats";
+  }
+  return String(value);
 }
 
 type DiffListProps = {
@@ -590,19 +660,30 @@ function DiffRow({
             </p>
           )}
           {fcsCount > 0 && entity.field_changes && (
-            <ul className="text-xs text-muted-foreground mt-2 ml-2 space-y-1">
+            <ul className="text-xs text-muted-foreground mt-2 ml-2 space-y-1.5">
               {entity.field_changes.map((fc, i) => {
                 const fieldStr = String((fc as { field: string }).field);
                 const action = fieldActions.get(fieldStr) ?? "apply";
+                const h = humanizeField(fieldStr);
+                const before = (fc as { before: unknown }).before;
+                const after = (fc as { after: unknown }).after;
                 return (
-                  <li key={i} className="flex items-center justify-between gap-2">
-                    <span>
-                      <code>{fieldStr}</code>:{" "}
-                      <span className="text-destructive">{String((fc as { before: unknown }).before || "—")}</span> →{" "}
-                      <span className="text-emerald-600 dark:text-emerald-400">
-                        {String((fc as { after: unknown }).after || "—")}
-                      </span>
-                    </span>
+                  <li key={i} className="flex items-start justify-between gap-3" title={h.hint}>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-foreground font-medium">{h.label}</div>
+                      <div className="text-[11px]">
+                        <span className="text-destructive">catálogo: {humanizeValue(before, fieldStr)}</span>
+                        <span className="mx-2 text-muted-foreground">·</span>
+                        <span className="text-emerald-600 dark:text-emerald-400">
+                          fonte: {humanizeValue(after, fieldStr)}
+                        </span>
+                      </div>
+                      {h.hint && (
+                        <div className="text-[11px] text-muted-foreground/80 italic mt-0.5">
+                          {h.hint}
+                        </div>
+                      )}
+                    </div>
                     <DecisionSelect
                       value={action}
                       onChange={(a) => onFieldAction(fieldStr, a)}
