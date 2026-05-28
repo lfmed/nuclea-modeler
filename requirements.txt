@@ -11,4 +11,4 @@ psycopg[binary]>=3.2.0
 # Optional: ODBC connection tests (Módulo 1). Requires unixodbc on the runtime.
 # The connection tester handles ImportError gracefully — if pyodbc isn't
 # installed, ODBC tests return a friendly failure rather than crashing.
-pyodbc>=5.1
+pyodbc>=5.3.0
