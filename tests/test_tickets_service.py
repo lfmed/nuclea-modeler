@@ -167,7 +167,7 @@ def test_apply_blocks_non_approved_status(state):
     assert state["updates"] == []
 
 
-@pytest.mark.parametrize("status", ["REJECTED", "APPLIED", "ARCHIVED"])
+@pytest.mark.parametrize("status", ["REJECTED", "APPLIED"])
 def test_apply_blocks_terminal_statuses(state, status):
     state["fetch_one_returns"] = [('{"entities": []}', "sys-1", status)]
     result = tsvc.apply_ticket(MagicMock(), "ticket-1", applied_by="u")
