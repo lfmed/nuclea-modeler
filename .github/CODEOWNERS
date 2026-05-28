@@ -1,14 +1,82 @@
-# Default owner for everything in the repo.
+# CODEOWNERS — quem é tagueado automaticamente quando o PR toca o arquivo.
+#
+# Regras GitHub:
+# - A ÚLTIMA regra que casa é a vencedora (não a primeira).
+# - Múltiplos owners separados por espaço requerem aprovação de qualquer um.
+# - Branch protection deve estar configurada com "Require review from Code Owners"
+#   para que essas regras virem gate de merge.
+#
+# Status atual: solo (@lfmed). Quando time Núclea começar a contribuir,
+# adicionar @nuclea-tribo-dados em áreas relevantes. Sintaxe:
+#   /path/to/dir    @lfmed @nuclea-tribo-dados
+#                          └─ qualquer um aprova
+
+# ─── Fallback ────────────────────────────────────────────────────────────────
+
+# Default — qualquer arquivo não capturado por regra específica abaixo
 *       @lfmed
 
-# Backend
-/src/nuclea_modeler/backend/    @lfmed
+# ─── Backend (FastAPI + Python) ──────────────────────────────────────────────
 
-# Frontend
-/src/nuclea_modeler/ui/         @lfmed
+# Lógica de negócio + endpoints
+/src/nuclea_modeler/backend/                @lfmed
 
-# Infra & schema
-/databricks/                    @lfmed
-/.github/                       @lfmed
-/databricks.yml                 @lfmed
-/app.yml                        @lfmed
+# Core middleware/infra muda raramente — review extra-cauteloso
+/src/nuclea_modeler/backend/core/           @lfmed
+/src/nuclea_modeler/backend/app.py          @lfmed
+/src/nuclea_modeler/backend/router.py       @lfmed
+
+# Audit + security são sensíveis
+/src/nuclea_modeler/backend/audit/          @lfmed
+/src/nuclea_modeler/backend/rbac/           @lfmed
+/src/nuclea_modeler/backend/core/security.py        @lfmed
+/src/nuclea_modeler/backend/core/exceptions.py      @lfmed
+/src/nuclea_modeler/backend/core/logging.py         @lfmed
+
+# ─── Frontend (React + TypeScript) ───────────────────────────────────────────
+
+/src/nuclea_modeler/ui/                     @lfmed
+
+# API client gerado por Orval — mudança implica regenerar
+/src/nuclea_modeler/ui/lib/api.ts           @lfmed
+
+# ─── Schema & Migrations ─────────────────────────────────────────────────────
+
+# Migrations afetam estado de produção — extra cuidado
+/databricks/sql/                            @lfmed
+
+# ─── Infra & CI ──────────────────────────────────────────────────────────────
+
+# GitHub Actions, Dependabot, templates
+/.github/                                   @lfmed
+
+# Bundle config + app manifest
+/databricks.yml                             @lfmed
+/app.yml                                    @lfmed
+
+# Scripts ops (backup, migrations CLI, perf, openapi)
+/scripts/                                   @lfmed
+
+# Python project config + deps
+/pyproject.toml                             @lfmed
+/requirements.txt                           @lfmed
+/package.json                               @lfmed
+
+# ─── Docs ────────────────────────────────────────────────────────────────────
+
+# Documentação geral é mais tolerante a contribuições amplas
+/docs/                                      @lfmed
+/README.md                                  @lfmed
+/CONTRIBUTING.md                            @lfmed
+/CHANGELOG.md                               @lfmed
+/SECURITY.md                                @lfmed
+/ROADMAP.md                                 @lfmed
+
+# ADRs — decisões arquiteturais, ownership da spec/arquitetura
+/docs/adr/                                  @lfmed
+
+# ─── Não-bloqueante ──────────────────────────────────────────────────────────
+
+# Tests podem ser contribuídos amplamente (não bloqueia merge se quem
+# escreveu não tem aprovação especifica)
+/tests/                                     @lfmed
