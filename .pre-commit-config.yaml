@@ -1,0 +1,61 @@
+# pre-commit hooks for the Núclea Modeler.
+#
+# Install:
+#   uv tool install pre-commit
+#   pre-commit install
+#
+# Run manually:
+#   pre-commit run --all-files
+#
+# These run LOCALLY before each commit. CI re-runs them too — local hooks
+# just fail fast so you don't push something CI will reject.
+
+repos:
+  # Built-ins: file hygiene
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=500"]
+      - id: detect-private-key
+
+  # Ruff — Python linter (matches CI ruff config from pyproject.toml)
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.13.4
+    hooks:
+      - id: ruff
+        args: ["--fix", "--exit-non-zero-on-fix"]
+        files: ^(src/|tests/|scripts/)
+      - id: ruff-format
+        files: ^(src/|tests/|scripts/)
+
+  # TruffleHog — secret scan local (catches secrets BEFORE the pre-push hook
+  # of the Databricks runtime catches them — friendlier error message).
+  - repo: https://github.com/trufflesecurity/trufflehog
+    rev: v3.95.3
+    hooks:
+      - id: trufflehog
+        args:
+          - filesystem
+          - "."
+          - --only-verified
+          - --fail
+        # No `files:` filter — scan everything that's staged.
+
+  # Local TypeScript check — runs `bun run tsc` only when frontend files
+  # changed. Comment out if you don't have bun installed.
+  - repo: local
+    hooks:
+      - id: tsc
+        name: TypeScript type check
+        entry: bun run tsc
+        language: system
+        types: [ts]
+        pass_filenames: false
+        # Only fires when at least one .ts/.tsx file is in the staged diff.

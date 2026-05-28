@@ -97,6 +97,20 @@ function XContent() {
 - Listas grandes consomem o endpoint `/page` (paginado).
 - Feature flags: `const { isEnabled } = useFeatures();`.
 
+## Pre-commit hooks
+
+Recomendado: instale os hooks locais que rodam ruff + TruffleHog + tsc antes de cada commit. Evita push de algo que o CI vai rejeitar.
+
+```bash
+uv tool install pre-commit
+pre-commit install
+
+# Rodar manualmente em tudo
+pre-commit run --all-files
+```
+
+Config: [`.pre-commit-config.yaml`](.pre-commit-config.yaml).
+
 ## Fluxo de PR
 
 1. **Branch:** `feat/<slug>`, `fix/<slug>`, `refactor/<slug>`, `docs/<slug>`, `chore/<slug>`.
