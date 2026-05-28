@@ -7,7 +7,7 @@ sqlglot>=25.0.0
 httpx>=0.28.0
 python-multipart>=0.0.20
 python-dotenv>=1.0.0
-psycopg[binary]>=3.2.0
+psycopg[binary]>=3.3.4
 # Optional: ODBC connection tests (Módulo 1). Requires unixodbc on the runtime.
 # The connection tester handles ImportError gracefully — if pyodbc isn't
 # installed, ODBC tests return a friendly failure rather than crashing.
