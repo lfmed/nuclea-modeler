@@ -11,7 +11,7 @@ from databricks.sdk import WorkspaceClient
 from ..core import delta
 from ..core._nuclea_config import get_settings
 from ..core.sql import Sql
-from .models import EntityDecision, FieldDecision, TicketApplyResult, TicketDiff, TicketSource
+from .models import EntityDecision, TicketApplyResult, TicketDiff, TicketSource
 
 log = logging.getLogger(__name__)
 
