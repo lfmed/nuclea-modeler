@@ -45,6 +45,22 @@ Documentado em **commits Conventional Commits** + [**ADR-0003**](../adr/0003-pro
 | Community ready | Issue templates, SECURITY.md, ROADMAP.md, CONTRIBUTING.md, pre-commit, welcome+stale bots, LICENSE | Onboarding completo |
 | Docs | Getting Started, API Recipes, Architecture Mermaid, demo HTML, CHANGELOG, Makefile | 26 docs markdown |
 
+### Fase 4 — Security patch + quality hardening v0.2.1 (2026-05-28)
+
+Trigger inicial: usuário perguntou "vi vários errors de workflow, preciso me preocupar?".
+Investigação levou a tornar bandit hard-gate, descobriu **vulnerabilidade XXE real**.
+Documentado em [**ADR-0004**](../adr/0004-quality-gates-evolution.md).
+
+| Sprint | Entregas | Resultado |
+|---|---|---|
+| Triage workflow errors | Classificar cancelled (concurrency) / CodeQL (GHAS) / CI fail (bug meu) | 3 categorias claras |
+| 🔴 XXE security fix | bandit hard-gate descobriu B314 CWE-20 no parser .erx → defusedxml | **v0.2.1 security release** |
+| Quality gates promotion | bandit, OpenAPI drift, pytest-cov 60→75% como hard-gates | 6 quality gates ativos |
+| New gates | deps-sync (pyproject vs requirements), achou psycopg/pyodbc missing | 7º hard-gate ativo |
+| Size caps | DDL 5MB, .erx 10MB (DoS defense em parsers) | 7 tests size-cap |
+| DX | .editorconfig, .env.example, Makefile, pre-commit deps-sync hook | Onboarding < 5min |
+| Docs | ADR-0004 quality gates lifecycle, tutorial 20min, architecture Mermaid | 28 docs markdown |
+
 ### Como contribuir prompts novos
 
 Para um sprint novo significativo (>3h de trabalho, >5 commits, ou mudança arquitetural), crie um arquivo aqui com:
