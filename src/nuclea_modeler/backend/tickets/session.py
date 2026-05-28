@@ -141,7 +141,6 @@ def stage_entity_change(
     a, r, c = _recount(new_diff)
     new_diff["additions"], new_diff["removals"], new_diff["changes"] = a, r, c
 
-    now = datetime.utcnow()
     delta.update_by_id(
         sql,
         s.fq_table("reconciliation_tickets"),
