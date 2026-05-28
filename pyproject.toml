@@ -21,6 +21,7 @@ dev = [
     "pytest>=8.0.0",
     "pytest-cov>=5.0.0",
     "ruff>=0.6.0",
+    "bandit>=1.7.10",
     "starlette>=0.40.0",  # used by tests via TestClient (also a FastAPI dep)
     "httpx>=0.28.0",      # used by tests + REST tester
 ]
@@ -91,6 +92,20 @@ exclude_lines = [
 ]
 show_missing = true
 skip_covered = false
+
+[tool.bandit]
+# Bandit static security analyser. CI roda em warn-only inicialmente.
+# Skips são deliberados — não silenciamos achados reais, só ruído conhecido.
+exclude_dirs = [
+    "tests",           # asserts em test são esperados (B101)
+    "src/nuclea_modeler/__dist__",
+    ".venv",
+]
+skips = [
+    "B101",  # assert_used — em test code só, mas exclude_dirs já cobre
+    "B404",  # subprocess import (usamos em scripts/ legítimo)
+    "B603",  # subprocess sem shell=True (forma SEGURA, não warn)
+]
 
 # APX metadata retained for reference. Not used by the Databricks Apps runtime.
 [tool.apx.metadata]

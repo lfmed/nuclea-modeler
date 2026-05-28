@@ -42,6 +42,13 @@ jobs:
         run: uv run ruff format --check src/ tests/
         continue-on-error: true  # warn-only; turn off once code is formatted
 
+      # Bandit: static security analyser. Warn-only inicialmente para não
+      # bloquear PRs antes do triage inicial. Vira hard-gate quando tivermos
+      # a baseline de skips estabilizada.
+      - name: Bandit security scan
+        run: uv run bandit -c pyproject.toml -r src/ scripts/ -ll
+        continue-on-error: true
+
       - name: Run tests with coverage
         # pytest config (pyproject.toml) já passa --cov --cov-fail-under=60
         run: uv run pytest tests/
