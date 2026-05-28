@@ -32,6 +32,9 @@ def state(monkeypatch):
     def fake_update_by_id(sql, table, key, key_val, fields):
         captured["updates"].append((table, key, key_val, dict(fields)))
 
+    def fake_run_params(sql, query, params=None):
+        captured.setdefault("runs", []).append((query, list(params or [])))
+
     def fake_fetch_one_params(sql, query, params=None):
         if captured["fetch_one_returns"]:
             return captured["fetch_one_returns"].pop(0)
@@ -50,6 +53,7 @@ def state(monkeypatch):
     monkeypatch.setattr(delta, "fetch_one_params", fake_fetch_one_params)
     monkeypatch.setattr(delta, "new_id", fake_new_id)
     monkeypatch.setattr(delta, "param", fake_param)
+    monkeypatch.setattr(delta, "run_params", fake_run_params)
 
     fake_settings = type("S", (), {})()
     fake_settings.fq_table = lambda t: f"cat.sch.{t}"
@@ -265,20 +269,45 @@ def test_apply_add_with_attributes_inserts_both(state):
 # ─── apply_ticket — op=remove ───────────────────────────────────────────────
 
 
-def test_apply_remove_emits_error_not_implemented(state):
-    """op=remove é soft-delete ainda não suportado — vira warning."""
+def test_apply_remove_hard_deletes_entity(state):
+    """op=remove agora hard-deletes entity + attributes (modelo editorial)."""
     diff = {
         "entities": [
             {"op": "remove", "schema_name": "legado", "technical_name": "velha"}
         ]
     }
-    state["fetch_one_returns"] = [(json.dumps(diff), "sys-1", "APPROVED")]
+    state["fetch_one_returns"] = [
+        (json.dumps(diff), "sys-1", "APPROVED"),
+        ("ent-velha",),  # entity existe
+    ]
 
     result = tsvc.apply_ticket(MagicMock(), "ticket-1", applied_by="u")
-    # Ainda termina como APPLIED (op skipada), mas com erros listando
     assert result.status == "APPLIED"
-    assert any("not auto-applied" in e for e in result.errors)
-    assert not any(i[0] == "cat.sch.entities" for i in state["inserts"])
+    assert result.applied_entities == 1
+    # Foram disparados 2 DELETEs (attributes + entities)
+    runs = state.get("runs", [])
+    delete_queries = [q for q, _ in runs if "DELETE" in q]
+    assert any("attributes" in q for q in delete_queries)
+    assert any("entities" in q for q in delete_queries)
+
+
+def test_apply_remove_noop_when_entity_missing(state):
+    """Se entity não existe, op=remove é noop sem erro."""
+    diff = {
+        "entities": [
+            {"op": "remove", "schema_name": "legado", "technical_name": "fantasma"}
+        ]
+    }
+    state["fetch_one_returns"] = [
+        (json.dumps(diff), "sys-1", "APPROVED"),
+        None,  # entity não existe
+    ]
+
+    result = tsvc.apply_ticket(MagicMock(), "ticket-1", applied_by="u")
+    assert result.status == "APPLIED"
+    assert result.applied_entities == 0
+    runs = state.get("runs", [])
+    assert not any("DELETE" in q for q, _ in runs)
 
 
 # ─── apply_ticket — op=change ───────────────────────────────────────────────
