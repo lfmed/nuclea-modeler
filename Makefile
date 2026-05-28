@@ -28,6 +28,9 @@ help: ## Lista todos os alvos disponíveis
 
 # ─── Setup ──────────────────────────────────────────────────────────────────
 
+setup: ## Setup completo onboarding (verifica ferramentas + cria .env + install)
+	bash scripts/setup.sh
+
 install: ## Instala todas as dependências (Python + frontend)
 	$(UV) venv
 	$(UV) pip install -e ".[dev]"

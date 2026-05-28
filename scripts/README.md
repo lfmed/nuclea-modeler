@@ -3,6 +3,20 @@
 Utilitários administrativos do Núclea Modeler. Não fazem parte do runtime do app
 — são CLIs autônomos para operações ocasionais.
 
+## `setup.sh`
+
+Setup idempotente para dev novo. Verifica ferramentas (uv, bun, git,
+databricks CLI), cria `.env` a partir de `.env.example`, instala deps
+Python + frontend, opcionalmente instala pre-commit hooks.
+
+```bash
+bash scripts/setup.sh
+# ou via Makefile:
+make setup
+```
+
+Rodar várias vezes não quebra nada (idempotente).
+
 ## `backup.py`
 
 Snapshot completo das 25 tabelas Delta do app para um Volume UC, formato Parquet.

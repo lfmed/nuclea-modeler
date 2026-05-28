@@ -9,6 +9,20 @@ da Tribo de Dados Núclea e parceiros aprovados.
 > recomendado — use deploy direto para Databricks Apps (vide README). Esta seção
 > é para quem **precisa** de ambiente local fora da rede corp.
 
+### Caminho rápido (recomendado)
+
+```bash
+make setup
+# OU (sem make):
+bash scripts/setup.sh
+```
+
+O script verifica ferramentas (uv, bun, git), cria `.env` a partir do
+template, instala todas as deps Python + frontend, e opcionalmente
+instala pre-commit hooks. Idempotente — pode rodar várias vezes.
+
+### Caminho manual
+
 ```bash
 # Python
 uv venv
