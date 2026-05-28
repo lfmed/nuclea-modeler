@@ -63,19 +63,13 @@ function Layout() {
       ],
     },
     {
-      label: "Catálogo",
+      label: "Modelagem",
       items: [
         {
-          to: "/connections",
-          label: "Conexões",
-          icon: <Database size={16} />,
-          match: (p) => p.startsWith("/connections"),
-        },
-        {
-          to: "/extractions",
-          label: "Engenharia Reversa",
-          icon: <ScanSearch size={16} />,
-          match: (p) => p.startsWith("/extractions"),
+          to: "/diagram",
+          label: "Diagrama (DER)",
+          icon: <Network size={16} />,
+          match: (p) => p.startsWith("/diagram"),
         },
         {
           to: "/entities",
@@ -89,11 +83,22 @@ function Layout() {
           icon: <Link2 size={16} />,
           match: (p) => p.startsWith("/relationships"),
         },
+      ],
+    },
+    {
+      label: "Fontes & Código",
+      items: [
         {
-          to: "/diagram",
-          label: "Diagrama (DER)",
-          icon: <Network size={16} />,
-          match: (p) => p.startsWith("/diagram"),
+          to: "/connections",
+          label: "Conexões",
+          icon: <Database size={16} />,
+          match: (p) => p.startsWith("/connections"),
+        },
+        {
+          to: "/extractions",
+          label: "Engenharia Reversa",
+          icon: <ScanSearch size={16} />,
+          match: (p) => p.startsWith("/extractions"),
         },
         {
           to: "/code",
