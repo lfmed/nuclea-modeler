@@ -94,7 +94,7 @@ Rotação: atualizar valor no Secrets API → re-testar conexão em `/connection
 
 | Data | Categoria | Detalhe | Status |
 |---|---|---|---|
-| 2026-05-28 | XXE (CWE-20, bandit B314) | `xml.etree.ElementTree.fromstring` no parser `.erx` do Embarcadero (upload do usuário) era vulnerável a XML External Entity attacks, billion-laughs DoS e DTD recursion. Detectado pelo bandit hard-gate em CI. Substituído por `defusedxml.ElementTree`. | ✅ Corrigido em main, próxima versão v0.2.1 |
+| 2026-05-28 | XXE (CWE-20, bandit B314) | `xml.etree.ElementTree.fromstring` no parser `.erx` do Embarcadero (upload do usuário) era vulnerável a XML External Entity attacks, billion-laughs DoS e DTD recursion. Detectado pelo bandit hard-gate em CI. Substituído por `defusedxml.ElementTree`. | ✅ Corrigido em [v0.2.1](https://github.com/lfmed/nuclea-modeler/releases/tag/v0.2.1). Recomendado criar [Security Advisory privado](https://github.com/lfmed/nuclea-modeler/security/advisories/new) via UI para tracking formal. |
 
 ## Agradecimentos
 
