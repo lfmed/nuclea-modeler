@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 
 import "@/styles/globals.css";
 import { routeTree } from "@/types/routeTree.gen";
+import { NotFoundPage } from "@/components/apx/not-found";
 
 import { RouterProvider, createRouter } from "@tanstack/react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -81,6 +82,7 @@ const router = createRouter({
       Carregando…
     </div>
   ),
+  defaultNotFoundComponent: () => <NotFoundPage />,
 });
 
 // Register things for typesafety

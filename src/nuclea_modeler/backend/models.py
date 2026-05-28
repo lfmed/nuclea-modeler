@@ -47,3 +47,13 @@ class ReadinessOut(BaseModel):
     warehouse_reachable: bool
     warehouse_latency_ms: int | None = None
     error: str | None = None
+
+
+class FeaturesOut(BaseModel):
+    """Feature flags currently enabled (env-driven, evaluated at startup).
+
+    The frontend can read this once on mount and gate UI elements. Unknown
+    flag names are absent from the dict — treat absent as disabled.
+    """
+
+    features: dict[str, bool]

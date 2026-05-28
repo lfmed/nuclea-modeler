@@ -5,9 +5,10 @@ from databricks.sdk.service.iam import User as UserOut
 from databricks.sdk.service.sql import StatementState
 
 from .core import Dependencies, create_router
+from .core.features import get_features
 from .core.sql import SqlDependency
 from .core._nuclea_config import get_settings
-from .models import HealthOut, LivenessOut, ReadinessOut, VersionOut
+from .models import FeaturesOut, HealthOut, LivenessOut, ReadinessOut, VersionOut
 
 router = create_router()
 
@@ -28,6 +29,16 @@ _BOOT_TIME = time.monotonic()
 @router.get("/version", response_model=VersionOut, operation_id="version")
 async def version():
     return VersionOut.from_metadata()
+
+
+@router.get("/features", response_model=FeaturesOut, operation_id="getFeatures")
+async def features() -> FeaturesOut:
+    """Return the feature flag state for this process.
+
+    Frontend polls once on mount and gates UI accordingly. Unknown flag names
+    are absent from the response — treat absent as disabled.
+    """
+    return FeaturesOut(features=get_features())
 
 
 @router.get("/livez", response_model=LivenessOut, operation_id="livez")
