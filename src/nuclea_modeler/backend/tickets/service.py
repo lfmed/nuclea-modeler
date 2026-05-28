@@ -164,6 +164,17 @@ def apply_ticket(
         op = ent_change.get("op")
         schema_name = ent_change.get("schema_name", "")
         technical_name = ent_change.get("technical_name", "")
+
+        # Relationships sintéticos vêm com schema_name="__relationship__".
+        # Apply de relationship ainda não materializado — skip com aviso pra
+        # não bloquear o resto do ticket.
+        if schema_name == "__relationship__":
+            errors.append(
+                f"relationship {technical_name} ainda não é auto-aplicado via ticket; "
+                "use /relationships diretamente"
+            )
+            continue
+
         ent_dec = _decision_for_entity(decisions, schema_name, technical_name, op)
 
         # Para op=add/remove: decisão é da entity inteira (sem field-level split).
@@ -242,12 +253,34 @@ def apply_ticket(
                     )
                     applied_attributes += 1
             elif op == "remove":
-                # Soft remove: just mark? For now, leave existing data alone but log.
-                # Future: introduce a `deprecated_at` column.
-                errors.append(
-                    f"remove of {schema_name}.{technical_name} not auto-applied "
-                    "(soft-delete not implemented; remove manually from /entities)."
+                # Lookup entity and hard-delete entity + attributes.
+                existing = delta.fetch_one_params(
+                    sql,
+                    f"SELECT entity_id FROM {s.fq_table('entities')} "
+                    f"WHERE system_id = :system_id "
+                    f"AND schema_name = :schema_name "
+                    f"AND technical_name = :technical_name",
+                    [
+                        delta.param("system_id", system_id),
+                        delta.param("schema_name", schema_name),
+                        delta.param("technical_name", technical_name),
+                    ],
                 )
+                if not existing:
+                    # Já não está no catálogo — nada a fazer.
+                    continue
+                eid = existing[0]
+                delta.run_params(
+                    sql,
+                    f"DELETE FROM {s.fq_table('attributes')} WHERE entity_id = :entity_id",
+                    [delta.param("entity_id", eid)],
+                )
+                delta.run_params(
+                    sql,
+                    f"DELETE FROM {s.fq_table('entities')} WHERE entity_id = :entity_id",
+                    [delta.param("entity_id", eid)],
+                )
+                applied_entities += 1
             elif op == "change":
                 # Apply field-level changes when target entity exists
                 existing = delta.fetch_one_params(
@@ -287,11 +320,73 @@ def apply_ticket(
                                 f"reverse {schema_name}.{technical_name}.{fld}: {exc}"
                             )
                         continue
-                    # action == "apply" (default): só metadados de entity vão para Delta.
-                    # attribute_add/_remove/change não são auto-aplicados ainda (igual ao
-                    # comportamento anterior).
+                    # action == "apply" (default):
+                    # 1. Metadados de entity (field na allowlist) → batch em updates
+                    # 2. attribute_add:NAME → INSERT em attributes
+                    # 3. attribute_remove:NAME → DELETE em attributes
+                    # 4. attribute:NAME.update → UPDATE em attributes
                     if fld in {"logical_name", "description_md", "native_comment", "row_count_approx", "domain"}:
                         updates[fld] = new_val
+                    elif fld and fld.startswith("attribute_add:"):
+                        attr_payload = new_val or {}
+                        aid = delta.new_id("attr-")
+                        delta.insert(
+                            sql,
+                            s.fq_table("attributes"),
+                            {
+                                "attribute_id": aid,
+                                "entity_id": eid,
+                                "technical_name": attr_payload.get("technical_name", fld.split(":", 1)[1]),
+                                "logical_name": attr_payload.get("logical_name"),
+                                "ordinal_position": attr_payload.get("ordinal_position"),
+                                "native_data_type": attr_payload.get("native_data_type"),
+                                "is_nullable": attr_payload.get("is_nullable"),
+                                "default_value": attr_payload.get("default_value"),
+                                "is_primary_key": bool(attr_payload.get("is_primary_key", False)),
+                                "native_comment": attr_payload.get("native_comment"),
+                                "created_at": now, "created_by": applied_by,
+                                "updated_at": now, "updated_by": applied_by,
+                            },
+                        )
+                        applied_attributes += 1
+                    elif fld and fld.startswith("attribute_remove:"):
+                        name = fld.split(":", 1)[1]
+                        delta.run_params(
+                            sql,
+                            f"DELETE FROM {s.fq_table('attributes')} "
+                            f"WHERE entity_id = :entity_id AND technical_name = :name",
+                            [delta.param("entity_id", eid), delta.param("name", name)],
+                        )
+                        applied_attributes += 1
+                    elif fld and fld.startswith("attribute:") and fld.endswith(".update"):
+                        name = fld.split(":", 1)[1].rsplit(".", 1)[0]
+                        attr_payload = new_val or {}
+                        attr_updates = {
+                            k: v for k, v in {
+                                "logical_name": attr_payload.get("logical_name"),
+                                "native_data_type": attr_payload.get("native_data_type"),
+                                "is_nullable": attr_payload.get("is_nullable"),
+                                "default_value": attr_payload.get("default_value"),
+                                "is_primary_key": attr_payload.get("is_primary_key"),
+                                "native_comment": attr_payload.get("native_comment"),
+                            }.items() if v is not None
+                        }
+                        if attr_updates:
+                            attr_updates["updated_at"] = now
+                            attr_updates["updated_by"] = applied_by
+                            # update_by_id requer key+key_val. attributes não tem
+                            # PK conhecida aqui — usamos um UPDATE explícito.
+                            sets = ", ".join(f"{k} = :{k}" for k in attr_updates.keys())
+                            params = [delta.param(k, v) for k, v in attr_updates.items()]
+                            params.append(delta.param("entity_id", eid))
+                            params.append(delta.param("name", name))
+                            delta.run_params(
+                                sql,
+                                f"UPDATE {s.fq_table('attributes')} SET {sets} "
+                                f"WHERE entity_id = :entity_id AND technical_name = :name",
+                                params,
+                            )
+                            applied_attributes += 1
                 if updates:
                     updates["updated_at"] = now
                     updates["updated_by"] = applied_by

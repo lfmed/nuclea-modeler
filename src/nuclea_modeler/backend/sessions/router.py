@@ -15,7 +15,7 @@ from ..core.sql import SqlDependency
 from ..rbac.router import _current_email
 from ..tickets.models import SessionStateOut
 from ..tickets.overlay import diff_counts
-from ..tickets.session import find_open_session_ticket
+from ..tickets.session import discard_session, find_open_session_ticket
 
 router = APIRouter(prefix=f"{api_prefix}/sessions", tags=["sessions"])
 
@@ -73,3 +73,21 @@ def get_current_session(
         entities_changed=changed,
         entities_removed=removed,
     )
+
+
+@router.post("/discard", operation_id="discardSession")
+def discard_current_session(
+    sql: SqlDependency,
+    user_ws: Dependencies.UserClient,
+    system_id: str = Query(..., description="Sistema cuja sessão será descartada"),
+) -> dict:
+    """Marca o ticket OPEN da sessão atual como REJECTED — rollback do staging."""
+    actor = _current_email(user_ws)
+    if not actor:
+        return {"discarded": False, "reason": "no actor"}
+    found = find_open_session_ticket(sql, actor, system_id)
+    if not found:
+        return {"discarded": False, "reason": "no open session"}
+    ticket_id, _ = found
+    discard_session(sql, ticket_id, by=actor)
+    return {"discarded": True, "ticket_id": ticket_id}
