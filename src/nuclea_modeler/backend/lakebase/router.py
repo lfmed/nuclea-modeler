@@ -153,14 +153,17 @@ def test_sandbox(
     sandbox_id: str,
     sql: SqlDependency,
     user_ws: Dependencies.UserClient,
+    app_ws: Dependencies.Client,
 ) -> SandboxTestResult:
     sbx = get_sandbox(sandbox_id, sql)
     actor = _current_email(user_ws)
+    # User OBO não tem scope `postgres`; SP do app tem via resource no app.yml.
+    # Conexão usa SP; actor fica no audit.
     result = lk.test_connection(
-        user_ws,
+        app_ws,
         instance_name=sbx.instance_name,
         database=sbx.database_name,
-        user_email=actor or None,
+        user_email=None,
     )
     s = get_settings()
     now = datetime.utcnow()
@@ -196,15 +199,18 @@ def list_sandbox_schemas(
     sandbox_id: str,
     sql: SqlDependency,
     user_ws: Dependencies.UserClient,
+    app_ws: Dependencies.Client,
 ) -> list[str]:
     sbx = get_sandbox(sandbox_id, sql)
-    actor = _current_email(user_ws)
+    # Conexão usa SP do app (scope postgres via app.yml resource); user_ws
+    # mantido só para futuro audit.
+    _ = _current_email(user_ws)
     try:
         return lk.list_schemas(
-            user_ws,
+            app_ws,
             instance_name=sbx.instance_name,
             database=sbx.database_name,
-            user_email=actor or None,
+            user_email=None,
         )
     except Exception as exc:
         raise HTTPException(500, f"failed to list schemas: {exc}") from exc

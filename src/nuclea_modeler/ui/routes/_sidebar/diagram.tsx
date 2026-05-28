@@ -257,7 +257,9 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
 
-  // Initialize nodes/edges. If no saved positions, run dagre once.
+  // Initialize / re-layout. Roda quando muda systemId, expanded, filter ou
+  // domainFilter — momentos onde faz sentido recalcular dagre se não há
+  // posições salvas.
   useEffect(() => {
     const hasAnyPositions = baseNodes.some(
       (n) => n.position.x !== 0 || n.position.y !== 0,
@@ -270,6 +272,29 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
     setEdges(baseEdges);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [systemId, expanded, filter, domainFilter]);
+
+  // Re-sync data quando view.entities/relationships mudarem por refetch
+  // (ex: invalidate após adicionar/remover atributo). Preserva posições atuais
+  // dos nodes — não roda dagre nem reset de UI.
+  useEffect(() => {
+    setNodes((prev) => {
+      const byId = new Map(baseNodes.map((n) => [n.id, n]));
+      const updated: Node[] = [];
+      for (const p of prev) {
+        const next = byId.get(p.id);
+        if (next) {
+          // Atualiza data (entity + attributes) mas mantém position atual
+          updated.push({ ...p, data: next.data });
+          byId.delete(p.id);
+        }
+      }
+      // Adiciona nodes novos (que não existiam antes)
+      for (const n of byId.values()) updated.push(n);
+      return updated;
+    });
+    setEdges(baseEdges);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [baseNodes, baseEdges]);
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => setNodes((nds) => applyNodeChanges(changes, nds)),

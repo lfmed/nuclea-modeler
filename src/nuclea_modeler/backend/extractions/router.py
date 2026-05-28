@@ -134,11 +134,16 @@ def run_lakebase(
     payload: LakebaseExtractionIn,
     sql: SqlDependency,
     user_ws: Dependencies.UserClient,
+    app_ws: Dependencies.Client,
 ) -> ExtractionResult:
+    # User OBO não tem scope `postgres` no token (consent não pediu); o SP do app
+    # tem via resource `nuclea-lakebase` no app.yml. Usamos o SP para `database.
+    # generate_database_credential` e para a conexão Postgres em si. user_ws
+    # continua sendo a fonte do `actor` no audit log e na escolha do pg role.
     actor = _current_email(user_ws)
     return run_lakebase_extraction(
         sql,
-        user_ws,
+        app_ws,
         sandbox_id=payload.sandbox_id,
         system_id=payload.system_id,
         schemas=payload.schemas,

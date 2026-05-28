@@ -433,7 +433,11 @@ def run_lakebase_extraction(
             ws,
             sandbox_instance=instance_name,
             sandbox_database=database_name or "databricks_postgres",
-            user_email=actor or None,
+            # `actor` é só pra audit no Delta. A conexão Postgres usa o
+            # client_id do SP do app (provisionado via CAN_CONNECT_AND_CREATE
+            # no resource Lakebase). Passar user_email=None força esse caminho
+            # em open_connection.
+            user_email=None,
             schemas=schemas,
             object_kinds=object_kinds,
             system_id=system_id,

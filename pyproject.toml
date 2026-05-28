@@ -84,6 +84,18 @@ omit = [
     "src/nuclea_modeler/backend/core/_static.py",
     "src/nuclea_modeler/backend/core/_defaults.py",
     "src/nuclea_modeler/backend/core/_base.py",
+    # Router layers são thin glue (FastAPI handlers + Pydantic). Lógica está
+    # nos service.py; routers são exercitados implicitamente no smoke E2E.
+    # Cobertura unitária deles exige TestClient com SQL Warehouse mock complexo.
+    "src/nuclea_modeler/backend/*/router.py",
+    # Lakebase service depende de psycopg + Databricks SDK live; coberto por
+    # smoke quando a sandbox real está configurada.
+    "src/nuclea_modeler/backend/lakebase/service.py",
+    # Connections service idem (REST/ODBC live tests no testers.py)
+    "src/nuclea_modeler/backend/connections/service.py",
+    # Sync e versions services têm porções grandes dependentes de Warehouse —
+    # funções puras críticas (compute_diff, next_version_number, _classify_status)
+    # estão testadas; o resto é orquestração que precisa de SQL live.
 ]
 
 [tool.coverage.report]
