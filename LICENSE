@@ -1,0 +1,43 @@
+Núclea Modeler — Licença Proprietária
+======================================
+
+Copyright © 2026 Núclea S.A. e Leandro Medeiros (Databricks Field Engineering).
+Todos os direitos reservados.
+
+Este software é propriedade de Núclea S.A. e foi desenvolvido sob contexto
+de Field Engineering Databricks para uso interno corporativo.
+
+USO PERMITIDO
+-------------
+- Pessoal interno da Núclea S.A. (Tribo de Dados, CdE de Dados, Architects,
+  Stewards, Engineers).
+- Pessoal Databricks (Field Engineering, suporte) que esteja prestando
+  serviço à Núclea S.A.
+- Parceiros aprovados explicitamente por escrito pela Núclea S.A.
+
+USO PROIBIDO
+------------
+- Redistribuição pública (open-source) sem autorização da Núclea S.A.
+- Uso comercial por terceiros não-autorizados.
+- Sub-licenciamento.
+- Engenharia reversa para criar derivados comerciais concorrentes.
+
+GARANTIAS
+---------
+ESTE SOFTWARE É FORNECIDO "COMO ESTÁ", SEM GARANTIA DE QUALQUER TIPO,
+EXPRESSA OU IMPLÍCITA, INCLUINDO MAS NÃO LIMITADO A GARANTIAS DE
+COMERCIABILIDADE, ADEQUAÇÃO A UM PROPÓSITO ESPECÍFICO E NÃO-INFRAÇÃO.
+
+EM NENHUM EVENTO OS AUTORES OU PROPRIETÁRIOS DOS DIREITOS AUTORAIS SERÃO
+RESPONSÁVEIS POR QUALQUER REIVINDICAÇÃO, DANOS OU OUTRAS RESPONSABILIDADES.
+
+CONTATO
+-------
+Para autorizações, integrações ou perguntas sobre uso: leandro.medeiros@databricks.com
+
+DEPENDÊNCIAS DE TERCEIROS
+-------------------------
+Este software incorpora bibliotecas de terceiros sob suas licenças originais
+(FastAPI MIT, React MIT, shadcn/ui MIT, Databricks SDK Databricks License,
+etc). As licenças completas estão disponíveis em `node_modules/*/LICENSE` e
+nos pacotes Python do `requirements.txt`.
