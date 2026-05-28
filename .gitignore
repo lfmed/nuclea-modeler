@@ -58,3 +58,7 @@ src/nuclea_modeler/__dist__/*.map
 # Logs
 *.log
 logs/
+
+# Claude Code / agent state
+.claude/scheduled_tasks.lock
+.claude/settings.local.json
