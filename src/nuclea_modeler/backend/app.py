@@ -29,6 +29,7 @@ from .audit.router import router as audit_router
 from .audit.middleware import AuditMiddleware
 from .sessions.router import router as sessions_router
 from .uc.router import router as uc_router
+from .admin.router import router as admin_router
 import os
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -71,6 +72,7 @@ app = create_app(
         search_router,
         sessions_router,
         uc_router,
+        admin_router,
     ]
 )
 
