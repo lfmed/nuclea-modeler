@@ -10,11 +10,14 @@ import {
   ChevronRight,
   Database,
   FileBox,
+  FileCode,
+  FileText,
   Loader2,
   Network,
   Plus,
   Sparkles,
   TableProperties,
+  Upload,
   X,
 } from "lucide-react";
 
@@ -25,6 +28,8 @@ import {
   useListUCCatalogsSuspense,
   useListUCSchemasSuspense,
   useListUCTablesSuspense,
+  useRunDDLImport,
+  useRunEmbarcaderoImport,
   useRunLakebaseExtraction,
   useRunUCExtraction,
   type SystemListOut,
@@ -48,7 +53,7 @@ import { Skeleton } from "@/components/ui/skeleton";
  *  Só preenche se o user ainda não tocou no campo.
  */
 
-type SourceKind = "NONE" | "LAKEBASE" | "UC";
+type SourceKind = "NONE" | "LAKEBASE" | "UC" | "DDL" | "EMBARCADERO";
 
 const TECH_OPTIONS = [
   "PostgreSQL",
@@ -58,6 +63,20 @@ const TECH_OPTIONS = [
   "Databricks",
   "Outro",
 ];
+
+const DDL_DIALECTS = [
+  { value: "ANSI", label: "ANSI / Genérico" },
+  { value: "POSTGRESQL", label: "PostgreSQL" },
+  { value: "ORACLE", label: "Oracle" },
+  { value: "MSSQL", label: "SQL Server" },
+  { value: "MYSQL", label: "MySQL" },
+  { value: "DATABRICKS", label: "Databricks" },
+];
+
+// Cap para upload .erx — 10 MB (alinhado ao backend EmbarcaderoImportIn).
+const ERX_MAX_BYTES = 10 * 1024 * 1024;
+// Cap para .sql — 5 MB.
+const DDL_MAX_BYTES = 5 * 1024 * 1024;
 
 const MAX_SCHEMAS = 50;
 
@@ -105,28 +124,48 @@ function WizardInner({
   const [ucSchema, setUcSchema] = useState("");
   const [ucTables, setUcTables] = useState<string[]>([]);
 
+  // DDL paste/upload
+  const [ddlText, setDdlText] = useState("");
+  const [ddlDialect, setDdlDialect] = useState("ANSI");
+  const [ddlFileName, setDdlFileName] = useState("");
+
+  // Embarcadero .erx
+  const [erxText, setErxText] = useState("");
+  const [erxFileName, setErxFileName] = useState("");
+
   const qc = useQueryClient();
   const [submitting, setSubmitting] = useState(false);
 
   const createSystem = useCreateSystem();
   const runLakebase = useRunLakebaseExtraction();
   const runUC = useRunUCExtraction();
+  const runDDL = useRunDDLImport();
+  const runEmbarcadero = useRunEmbarcaderoImport();
 
   // ─── Auto-sugestões ─────────────────────────────────────────────────────────
-  // Tecnologia FIXA pela fonte: Lakebase=PostgreSQL, UC=Databricks. NONE deixa
-  // o user escolher. techTouched só importa quando source=NONE (pra preservar
-  // escolha manual entre toggles de NONE → outras fontes → NONE).
+  // Tecnologia FIXA pela fonte: Lakebase=PostgreSQL, UC=Databricks.
+  // DDL: usa o dialect escolhido (mapping para o select de tech).
+  // EMBARCADERO/NONE: livre — só preenche se user não tocou.
   useEffect(() => {
     if (source === "LAKEBASE") {
       setTechnology("PostgreSQL");
     } else if (source === "UC") {
       setTechnology("Databricks");
+    } else if (source === "DDL") {
+      const map: Record<string, string> = {
+        POSTGRESQL: "PostgreSQL",
+        ORACLE: "Oracle",
+        MSSQL: "SQL Server",
+        MYSQL: "MySQL",
+        DATABRICKS: "Databricks",
+      };
+      setTechnology(map[ddlDialect] || "");
     } else if (!techTouched) {
       setTechnology("");
     }
-  }, [source, techTouched]);
+  }, [source, ddlDialect, techTouched]);
 
-  // Nome automático conforme escolhe sandbox/schema (só se user não tocou)
+  // Nome automático conforme escolhe sandbox/schema/arquivo (só se user não tocou)
   useEffect(() => {
     if (nameTouched) return;
     if (source === "LAKEBASE" && sandboxName) {
@@ -135,14 +174,23 @@ function WizardInner({
       setName(`${ucCatalog}.${ucSchema}`);
     } else if (source === "UC" && ucCatalog) {
       setName(ucCatalog);
+    } else if (source === "DDL" && ddlFileName) {
+      setName(ddlFileName.replace(/\.[^.]+$/, ""));
+    } else if (source === "EMBARCADERO" && erxFileName) {
+      setName(erxFileName.replace(/\.[^.]+$/, ""));
     }
-  }, [source, sandboxName, ucCatalog, ucSchema, nameTouched]);
+  }, [
+    source, sandboxName, ucCatalog, ucSchema,
+    ddlFileName, erxFileName, nameTouched,
+  ]);
 
   // ─── Validação pra avançar ──────────────────────────────────────────────────
   const sourceReady =
     source === "NONE" ||
     (source === "LAKEBASE" && !!sandboxId && lakebaseSchemas.length > 0) ||
-    (source === "UC" && !!ucCatalog && !!ucSchema && ucTables.length > 0);
+    (source === "UC" && !!ucCatalog && !!ucSchema && ucTables.length > 0) ||
+    (source === "DDL" && ddlText.trim().length > 0) ||
+    (source === "EMBARCADERO" && erxText.trim().length > 0);
   const canNext = step === 1 && name.trim().length > 0 && sourceReady;
 
   // ─── Submit ─────────────────────────────────────────────────────────────────
@@ -186,6 +234,35 @@ function WizardInner({
           });
         } catch (e) {
           toast.error("Sistema criado, mas discovery UC falhou", {
+            description: e instanceof Error ? e.message : String(e),
+          });
+        }
+      } else if (source === "DDL") {
+        try {
+          await runDDL.mutateAsync({
+            data: {
+              system_id: created.system_id,
+              dialect: ddlDialect,
+              ddl_text: ddlText,
+              open_ticket: true,
+            },
+          });
+        } catch (e) {
+          toast.error("Sistema criado, mas import DDL falhou", {
+            description: e instanceof Error ? e.message : String(e),
+          });
+        }
+      } else if (source === "EMBARCADERO") {
+        try {
+          await runEmbarcadero.mutateAsync({
+            data: {
+              system_id: created.system_id,
+              xml_text: erxText,
+              open_ticket: true,
+            },
+          });
+        } catch (e) {
+          toast.error("Sistema criado, mas import Embarcadero falhou", {
             description: e instanceof Error ? e.message : String(e),
           });
         }
@@ -308,6 +385,14 @@ function WizardInner({
                   setUcSchema("");
                   setUcTables([]);
                 }
+                if (s !== "DDL") {
+                  setDdlText("");
+                  setDdlFileName("");
+                }
+                if (s !== "EMBARCADERO") {
+                  setErxText("");
+                  setErxFileName("");
+                }
               }}
               sandboxId={sandboxId}
               setSandboxId={setSandboxId}
@@ -327,6 +412,16 @@ function WizardInner({
               }}
               ucTables={ucTables}
               setUcTables={setUcTables}
+              ddlText={ddlText}
+              setDdlText={setDdlText}
+              ddlDialect={ddlDialect}
+              setDdlDialect={setDdlDialect}
+              ddlFileName={ddlFileName}
+              setDdlFileName={setDdlFileName}
+              erxText={erxText}
+              setErxText={setErxText}
+              erxFileName={erxFileName}
+              setErxFileName={setErxFileName}
             />
           )}
 
@@ -342,6 +437,11 @@ function WizardInner({
               ucCatalog={ucCatalog}
               ucSchema={ucSchema}
               ucTables={ucTables}
+              ddlDialect={ddlDialect}
+              ddlFileName={ddlFileName}
+              ddlText={ddlText}
+              erxFileName={erxFileName}
+              erxText={erxText}
             />
           )}
         </CardContent>
@@ -429,6 +529,16 @@ function StepConfigure(props: {
   setUcSchema: (v: string) => void;
   ucTables: string[];
   setUcTables: (v: string[]) => void;
+  ddlText: string;
+  setDdlText: (v: string) => void;
+  ddlDialect: string;
+  setDdlDialect: (v: string) => void;
+  ddlFileName: string;
+  setDdlFileName: (v: string) => void;
+  erxText: string;
+  setErxText: (v: string) => void;
+  erxFileName: string;
+  setErxFileName: (v: string) => void;
 }) {
   return (
     <div className="space-y-6">
@@ -482,6 +592,30 @@ function StepConfigure(props: {
             setSchema={props.setUcSchema}
             tables={props.ucTables}
             setTables={props.setUcTables}
+          />
+        </section>
+      )}
+
+      {props.source === "DDL" && (
+        <section className="space-y-3 rounded-md border bg-muted/20 p-4">
+          <DDLDiscovery
+            ddlText={props.ddlText}
+            setDdlText={props.setDdlText}
+            dialect={props.ddlDialect}
+            setDialect={props.setDdlDialect}
+            fileName={props.ddlFileName}
+            setFileName={props.setDdlFileName}
+          />
+        </section>
+      )}
+
+      {props.source === "EMBARCADERO" && (
+        <section className="space-y-3 rounded-md border bg-muted/20 p-4">
+          <EmbarcaderoDiscovery
+            xmlText={props.erxText}
+            setXmlText={props.setErxText}
+            fileName={props.erxFileName}
+            setFileName={props.setErxFileName}
           />
         </section>
       )}
@@ -557,12 +691,6 @@ function SourceCards({
     icon: React.ReactNode;
   }[] = [
     {
-      value: "NONE",
-      title: "Sem fonte (vazio)",
-      description: "Cria sistema vazio. Adicione entidades manualmente no DER.",
-      icon: <FileBox className="h-5 w-5" />,
-    },
-    {
       value: "LAKEBASE",
       title: "Lakebase sandbox",
       description: "Descobre tabelas Postgres de uma sandbox cadastrada.",
@@ -574,10 +702,28 @@ function SourceCards({
       description: "Descobre tabelas no UC: catalog → schema → tables.",
       icon: <Network className="h-5 w-5" />,
     },
+    {
+      value: "DDL",
+      title: "Arquivo SQL (DDL)",
+      description: "Cole ou faça upload de um .sql com CREATE TABLE — funciona pra qualquer banco.",
+      icon: <FileCode className="h-5 w-5" />,
+    },
+    {
+      value: "EMBARCADERO",
+      title: "Embarcadero (.erx)",
+      description: "Upload do XML do ER/Studio — modelo lógico completo.",
+      icon: <FileText className="h-5 w-5" />,
+    },
+    {
+      value: "NONE",
+      title: "Sem fonte (vazio)",
+      description: "Cria sistema vazio. Adicione entidades manualmente no DER.",
+      icon: <FileBox className="h-5 w-5" />,
+    },
   ];
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+    <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-3">
       {options.map((opt) => {
         const selected = source === opt.value;
         return (
@@ -976,6 +1122,157 @@ function UCTablesList({
 
 // ─── Step 2: Resumo ───────────────────────────────────────────────────────────
 
+// ─── DDL / Embarcadero file pickers ───────────────────────────────────────────
+
+function DDLDiscovery({
+  ddlText,
+  setDdlText,
+  dialect,
+  setDialect,
+  fileName,
+  setFileName,
+}: {
+  ddlText: string;
+  setDdlText: (v: string) => void;
+  dialect: string;
+  setDialect: (v: string) => void;
+  fileName: string;
+  setFileName: (v: string) => void;
+}) {
+  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (f.size > DDL_MAX_BYTES) {
+      toast.error(`Arquivo muito grande (${(f.size / 1024 / 1024).toFixed(1)} MB > 5 MB)`);
+      return;
+    }
+    try {
+      const text = await f.text();
+      setDdlText(text);
+      setFileName(f.name);
+    } catch (err) {
+      toast.error("Falha ao ler arquivo", {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3 items-end">
+        <div>
+          <label className="text-xs font-medium block mb-1">Dialeto SQL</label>
+          <select
+            value={dialect}
+            onChange={(e) => setDialect(e.target.value)}
+            className="w-full rounded-md border bg-background px-3 py-2 text-sm h-9"
+          >
+            {DDL_DIALECTS.map((d) => (
+              <option key={d.value} value={d.value}>
+                {d.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs font-medium block mb-1 sr-only">Upload</label>
+          <label className="inline-flex items-center gap-2 cursor-pointer rounded-md border bg-background px-3 py-2 text-xs hover:bg-muted/40 h-9">
+            <Upload className="h-3.5 w-3.5" />
+            <span>Carregar .sql</span>
+            <input
+              type="file"
+              accept=".sql,.ddl,text/plain"
+              onChange={onFile}
+              className="hidden"
+            />
+          </label>
+        </div>
+      </div>
+      {fileName && (
+        <p className="text-[11px] text-muted-foreground">
+          Arquivo carregado: <strong>{fileName}</strong> ({ddlText.length.toLocaleString()} chars)
+        </p>
+      )}
+      <div>
+        <label className="text-xs font-medium block mb-1">
+          Conteúdo DDL (CREATE TABLE, etc.)
+        </label>
+        <textarea
+          value={ddlText}
+          onChange={(e) => {
+            setDdlText(e.target.value);
+            if (fileName) setFileName(""); // user editou manualmente, sai do "modo arquivo"
+          }}
+          rows={8}
+          placeholder="-- Cole o DDL aqui ou use 'Carregar .sql'&#10;CREATE TABLE clientes (&#10;  cliente_id BIGINT PRIMARY KEY,&#10;  nome VARCHAR(200) NOT NULL&#10;);"
+          className="w-full rounded-md border bg-background px-3 py-2 text-xs font-mono"
+        />
+      </div>
+    </div>
+  );
+}
+
+function EmbarcaderoDiscovery({
+  xmlText,
+  setXmlText,
+  fileName,
+  setFileName,
+}: {
+  xmlText: string;
+  setXmlText: (v: string) => void;
+  fileName: string;
+  setFileName: (v: string) => void;
+}) {
+  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (f.size > ERX_MAX_BYTES) {
+      toast.error(`Arquivo muito grande (${(f.size / 1024 / 1024).toFixed(1)} MB > 10 MB)`);
+      return;
+    }
+    try {
+      const text = await f.text();
+      setXmlText(text);
+      setFileName(f.name);
+    } catch (err) {
+      toast.error("Falha ao ler arquivo", {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <label className="text-xs font-medium block mb-1">Arquivo .erx</label>
+        <label className="inline-flex items-center gap-2 cursor-pointer rounded-md border bg-background px-3 py-2 text-xs hover:bg-muted/40">
+          <Upload className="h-3.5 w-3.5" />
+          <span>{fileName ? "Trocar arquivo" : "Selecionar .erx"}</span>
+          <input
+            type="file"
+            accept=".erx,.xml,text/xml,application/xml"
+            onChange={onFile}
+            className="hidden"
+          />
+        </label>
+      </div>
+      {fileName ? (
+        <div className="rounded-md border bg-emerald-500/5 p-3 text-xs space-y-1">
+          <p className="font-medium">{fileName}</p>
+          <p className="text-muted-foreground">
+            {xmlText.length.toLocaleString()} caracteres carregados. O parser
+            extrai entities, atributos e relacionamentos do XML do ER/Studio.
+          </p>
+        </div>
+      ) : (
+        <p className="text-[11px] text-muted-foreground">
+          Aceita arquivos até 10 MB. Parser usa defusedxml (proteção contra XXE).
+        </p>
+      )}
+    </div>
+  );
+}
+
 function StepSummary({
   name,
   domain,
@@ -987,6 +1284,11 @@ function StepSummary({
   ucCatalog,
   ucSchema,
   ucTables,
+  ddlDialect,
+  ddlFileName,
+  ddlText,
+  erxFileName,
+  erxText,
 }: {
   name: string;
   domain: string;
@@ -998,6 +1300,11 @@ function StepSummary({
   ucCatalog: string;
   ucSchema: string;
   ucTables: string[];
+  ddlDialect: string;
+  ddlFileName: string;
+  ddlText: string;
+  erxFileName: string;
+  erxText: string;
 }) {
   return (
     <div className="space-y-4 max-w-2xl">
@@ -1020,7 +1327,11 @@ function StepSummary({
               ? "Sem fonte (vazio)"
               : source === "LAKEBASE"
                 ? "Lakebase sandbox"
-                : "Unity Catalog"
+                : source === "UC"
+                  ? "Unity Catalog"
+                  : source === "DDL"
+                    ? "Arquivo SQL (DDL)"
+                    : "Embarcadero (.erx)"
           }
         />
         {source === "LAKEBASE" && (
@@ -1040,6 +1351,22 @@ function StepSummary({
               label="Tables"
               value={ucTables.length ? ucTables.join(", ") : "—"}
             />
+          </>
+        )}
+        {source === "DDL" && (
+          <>
+            <SummaryRow label="Dialeto" value={ddlDialect} />
+            <SummaryRow
+              label="Origem"
+              value={ddlFileName ? `arquivo ${ddlFileName}` : "DDL colado"}
+            />
+            <SummaryRow label="Tamanho" value={`${ddlText.length.toLocaleString()} chars`} />
+          </>
+        )}
+        {source === "EMBARCADERO" && (
+          <>
+            <SummaryRow label="Arquivo" value={erxFileName || "—"} />
+            <SummaryRow label="Tamanho" value={`${erxText.length.toLocaleString()} chars`} />
           </>
         )}
       </dl>
