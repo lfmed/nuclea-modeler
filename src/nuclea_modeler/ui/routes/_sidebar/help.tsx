@@ -878,7 +878,7 @@ function About() {
               <span className="size-2 rounded-full bg-nuclea-primary" />
               <span className="font-semibold">Núclea Modeler</span>
               <Badge variant="outline" className="text-[10px]">
-                v0.2.0
+                v0.2.1
               </Badge>
             </div>
             <div className="flex items-center gap-4 flex-wrap">

@@ -5,12 +5,25 @@ Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
-### Security
-- **XXE / XML External Entity fix** — parser `.erx` do Embarcadero (`extractions/embarcadero.py`)
-  agora usa `defusedxml.ElementTree.fromstring` ao invés de `xml.etree.ElementTree.fromstring`,
-  proibindo entities externas, billion-laughs DoS e DTD recursion. Detectado pelo
-  bandit hard-gate. Tests novos em `tests/test_embarcadero_security.py` validam
-  rejeição de 3 payloads maliciosos.
+### Added
+- Histórico futuro entra aqui.
+
+## [0.2.1] — 2026-05-28
+
+**Security patch release.** Atualização recomendada imediatamente — corrige
+vulnerabilidade XXE no parser de upload `.erx`.
+
+### Security 🔒
+- **XXE / XML External Entity (CWE-20, bandit B314) — corrigido** — parser `.erx`
+  do Embarcadero (`extractions/embarcadero.py`) agora usa
+  `defusedxml.ElementTree.fromstring` ao invés de `xml.etree.ElementTree.fromstring`,
+  proibindo entities externas, billion-laughs DoS e DTD recursion.
+  Severity Medium, Confidence High — detectado pelo bandit hard-gate em CI.
+  Payload malicioso poderia ler arquivos do servidor via `file://`, exaurir memória,
+  ou bater o processo. **Recomendação:** atualizar para v0.2.1 imediatamente se
+  o app aceita uploads de `.erx`.
+- Tests novos em `tests/test_embarcadero_security.py` validam rejeição de 3 payloads
+  maliciosos (XXE, billion laughs, DTD com entities) + sanity test.
 
 ### Added
 - 11 tests novos para `audit/service.py` (list_audit + count_audit filtros/clamps/offset)
@@ -92,6 +105,7 @@ MVP funcional. Spec 100% + extras.
 - Persistência: 100% Delta/UC, sem Postgres operacional.
 - Lakebase: usado apenas como sandbox de validação.
 
-[Unreleased]: https://github.com/lfmed/nuclea-modeler/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/lfmed/nuclea-modeler/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/lfmed/nuclea-modeler/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/lfmed/nuclea-modeler/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/lfmed/nuclea-modeler/releases/tag/v0.1.0
