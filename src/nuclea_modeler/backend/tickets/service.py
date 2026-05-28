@@ -405,19 +405,42 @@ def apply_ticket(
         except Exception as exc:  # keep going on per-entity errors
             errors.append(f"{op} {schema_name}.{technical_name}: {exc}")
 
-    # Update ticket status to APPLIED (or stay APPROVED if all errored)
-    final_status = "APPLIED"
-    delta.update_by_id(
-        sql,
-        s.fq_table("reconciliation_tickets"),
-        "ticket_id",
-        ticket_id,
-        {
-            "status": final_status,
-            "applied_at": now,
-            "applied_by": applied_by,
-        },
-    )
+    # Update ticket status:
+    # - APPLIED se houve ao menos 1 entity/attribute/reverse aplicado E nenhum erro
+    # - Mantém APPROVED se tudo errored (user pode tentar reaplicar)
+    # - PARTIAL_APPLIED não existe no enum hoje; usa APPLIED e errors pra discriminar.
+    total_applied = applied_entities + applied_attributes + reversed_items
+    has_errors = bool(errors)
+    if total_applied == 0 and has_errors:
+        final_status = status  # mantém APPROVED — não toca o ticket no Delta
+        log.warning(
+            f"[apply_ticket] ticket={ticket_id} 0 applied, {len(errors)} errors — "
+            f"mantendo {final_status} para reaplicação. errors={errors[:3]}"
+        )
+    else:
+        final_status = "APPLIED"
+        if has_errors:
+            log.warning(
+                f"[apply_ticket] ticket={ticket_id} aplicado parcialmente: "
+                f"{total_applied} ok / {len(errors)} erros. errors={errors[:3]}"
+            )
+        else:
+            log.info(
+                f"[apply_ticket] ticket={ticket_id} aplicado: "
+                f"entities={applied_entities} attrs={applied_attributes} "
+                f"reverse={reversed_items} ignored={ignored_items}"
+            )
+        delta.update_by_id(
+            sql,
+            s.fq_table("reconciliation_tickets"),
+            "ticket_id",
+            ticket_id,
+            {
+                "status": final_status,
+                "applied_at": now,
+                "applied_by": applied_by,
+            },
+        )
     return TicketApplyResult(
         ticket_id=ticket_id,
         status=final_status,

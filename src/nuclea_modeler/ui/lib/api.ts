@@ -590,6 +590,15 @@ export const useRejectTicket = (
     ...opts?.mutation,
   });
 
+export const useReopenTicket = (
+  opts?: Opts<TicketApplyResult, { ticketId: string }>,
+) =>
+  useMutation({
+    mutationFn: async ({ ticketId }) =>
+      (await api.post<TicketApplyResult>(`/tickets/${encodeURIComponent(ticketId)}/reopen`)).data,
+    ...opts?.mutation,
+  });
+
 export const useApplyTicket = (
   opts?: Opts<TicketApplyResult, { ticketId: string; data?: TicketApplyIn }>,
 ) =>

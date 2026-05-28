@@ -9,6 +9,7 @@ import {
   useApproveTicket,
   useRejectTicket,
   useApplyTicket,
+  useReopenTicket,
   useMyRolesSuspense,
   useListSandboxesSuspense,
   type TicketStatus,
@@ -173,6 +174,16 @@ function TicketDetail() {
       },
     },
   });
+  const { mutate: reopen, isPending: reopening } = useReopenTicket({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: ["getTicket", id] });
+        qc.invalidateQueries({ queryKey: ["listTickets"] });
+        toast.success("Ticket reaberto — clique 'Aplicar' para tentar de novo");
+      },
+      onError: (err) => toast.error(String(err)),
+    },
+  });
 
   const [rejectReason, setRejectReason] = useState("");
   const [showRejectInput, setShowRejectInput] = useState(false);
@@ -180,6 +191,7 @@ function TicketDetail() {
   const canApprove = me.can_approve_tickets && ticket.status === "OPEN";
   const canReject = me.can_approve_tickets && ["OPEN", "APPROVED"].includes(ticket.status);
   const canApply = me.can_apply_tickets && ticket.status === "APPROVED";
+  const canReopen = me.can_apply_tickets && ticket.status === "APPLIED";
 
   return (
     <div className="space-y-6">
@@ -234,6 +246,17 @@ function TicketDetail() {
             >
               <XCircle className="mr-2 h-4 w-4" />
               Rejeitar
+            </Button>
+          )}
+          {canReopen && (
+            <Button
+              variant="outline"
+              onClick={() => reopen({ ticketId: id })}
+              disabled={reopening}
+              title="Volta o status para APPROVED para tentar aplicar de novo (útil se houve falha silenciosa)"
+            >
+              <RefreshCw className="mr-2 h-4 w-4" />
+              {reopening ? "Reabrindo..." : "Reabrir"}
             </Button>
           )}
           {!canApprove && !canApply && !canReject && (

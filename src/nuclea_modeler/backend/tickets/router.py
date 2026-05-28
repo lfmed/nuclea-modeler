@@ -218,6 +218,39 @@ def reject(
     response_model=TicketApplyResult,
     operation_id="applyTicket",
 )
+@router.post(
+    "/{ticket_id}/reopen",
+    response_model=TicketApplyResult,
+    operation_id="reopenTicket",
+)
+def reopen(
+    ticket_id: str,
+    sql: SqlDependency,
+    user_ws: Dependencies.UserClient,
+) -> TicketApplyResult:
+    """Reverte status APPLIED → APPROVED para permitir reaplicação.
+
+    Útil em casos onde o apply rodou mas falhou silenciosamente (ex: schema
+    cache, retentar manualmente). Só altera o status — não toca nas entities
+    que possam ter sido inseridas.
+    """
+    actor = _current_email(user_ws)
+    require_role(sql, actor, *TICKET_APPLIERS)
+    s = get_settings()
+    delta.update_by_id(
+        sql,
+        s.fq_table("reconciliation_tickets"),
+        "ticket_id",
+        ticket_id,
+        {"status": "APPROVED", "applied_at": None, "applied_by": None},
+    )
+    return TicketApplyResult(
+        ticket_id=ticket_id, status="APPROVED",
+        applied_entities=0, applied_attributes=0,
+        errors=["ticket reaberto manualmente para reaplicação"],
+    )
+
+
 def apply(
     ticket_id: str,
     sql: SqlDependency,
