@@ -13,6 +13,7 @@ Pendentes da auditoria de produção que **não entraram no v0.2.0**:
 - **i18n EN/ES** — todo PT-BR hardcoded. Extrair strings para `i18next`.
 - **CodeQL** — workflow criado em `.github/workflows/codeql.yml.disabled`. Requer GitHub Advanced Security ativado (privado é pago). Enquanto isso, cobertura via ruff + bandit + npm audit + TruffleHog.
 - **External health checks** — Databricks Apps força SSO em todo endpoint, incluindo `/livez`/`/readyz`. Para uptime monitoring externo, vide `docs/operations/deploy-runbook.md` (Gotcha: SSO obrigatório). Opções: Databricks Job M2M (recomendado), `unauthenticated_paths` no app.yml (expõe), ou Frontend polling.
+- **ruff format hard-gate** — ~50 arquivos com drift de formatação. Rodar `uv run ruff format src/ tests/` num ambiente com PyPI acessível, commitar e remover `continue-on-error` em `.github/workflows/ci.yml`. Vide [ADR-0004](docs/adr/0004-quality-gates-evolution.md).
 
 ## Backlog técnico
 

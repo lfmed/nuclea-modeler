@@ -80,7 +80,7 @@ Anti-pattern: skip "porque é ruidoso". Se é ruidoso ao ponto de querer skipar,
 | **v0.2.1** | **OpenAPI snapshot** | **promovido hard-gate condicional** |
 | **v0.2.1** | **deps-sync (novo)** | **hard-gate desde criação** |
 | **v0.2.1** | **pytest-cov** | **promovido ≥75%** (real ~81%) |
-| **v0.2.1** | **ruff format** | **promovido hard-gate** (drift validado em CI matrix) |
+| **v0.2.1** | **ruff format** | tentativa de promoção revertida — base não está formatada (~50 arquivos com drift). Promover após rodar `uv run ruff format` num ambiente com PyPI acessível e commitar o resultado. |
 
 ### 5. Achados reais que justificaram a abordagem
 
