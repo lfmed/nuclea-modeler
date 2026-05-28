@@ -6,9 +6,12 @@ from databricks.sdk.service.sql import StatementState
 
 from .core import Dependencies, create_router
 from .core.features import get_features
+from .core.metrics import snapshot as metrics_snapshot
 from .core.sql import SqlDependency
 from .core._nuclea_config import get_settings
 from .models import FeaturesOut, HealthOut, LivenessOut, ReadinessOut, VersionOut
+from .rbac.router import _current_email
+from .rbac.service import ROLE_ADMIN, require_role
 
 router = create_router()
 
@@ -39,6 +42,19 @@ async def features() -> FeaturesOut:
     are absent from the response — treat absent as disabled.
     """
     return FeaturesOut(features=get_features())
+
+
+@router.get("/metrics", operation_id="metrics")
+def metrics(sql: SqlDependency, user_ws: Dependencies.UserClient) -> dict:
+    """In-process metrics snapshot — ADMIN-only.
+
+    Returns per-route request counts (by status class) and latency p50/p95/max
+    over a rolling window of the last 512 requests. Resets on restart, per
+    worker. Not a Prometheus replacement — for production monitoring, route
+    to Lakehouse Monitoring or Datadog.
+    """
+    require_role(sql, _current_email(user_ws), ROLE_ADMIN)
+    return metrics_snapshot()
 
 
 @router.get("/livez", response_model=LivenessOut, operation_id="livez")

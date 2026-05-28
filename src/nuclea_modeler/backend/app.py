@@ -27,7 +27,13 @@ from .code_objects.router import (
 )
 from .audit.router import router as audit_router
 from .audit.middleware import AuditMiddleware
+import os
+
+from fastapi.middleware.cors import CORSMiddleware
+
+from .core.exceptions import install_exception_handlers
 from .core.logging import RequestIdMiddleware, configure_logging
+from .core.metrics import MetricsMiddleware
 from .core.security import RateLimitMiddleware, SecurityHeadersMiddleware
 from .search.router import router as search_router
 
@@ -70,7 +76,29 @@ app = create_app(
 #   response ←  RequestId ← SecurityHeaders ← RateLimit ← Audit ← app
 # RequestIdMiddleware is added LAST so it runs FIRST on the way in: every
 # downstream middleware and handler sees the request_id in the contextvar.
+app.add_middleware(MetricsMiddleware)
 app.add_middleware(AuditMiddleware)
 app.add_middleware(RateLimitMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RequestIdMiddleware)
+
+# CORS — only needed if the frontend ever runs on a different origin than the
+# API. Today the UI is served from the same FastAPI process, so same-origin
+# requests don't trip CORS. We still declare the middleware explicitly so
+# future split deployments (mobile, B2B) require only an env tweak.
+_cors_origins = os.getenv("NUCLEA_CORS_ALLOW_ORIGINS", "").strip()
+if _cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[o.strip() for o in _cors_origins.split(",") if o.strip()],
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+        expose_headers=["X-Request-ID", "X-Error-ID", "Retry-After"],
+        max_age=600,
+    )
+
+# Global exception handler — must be installed AFTER the app is created.
+# Logs uncaught exceptions with request_id + traceback, returns a sanitised
+# 500 to the client with a quotable error_id.
+install_exception_handlers(app)
