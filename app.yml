@@ -11,6 +11,8 @@ command:
       echo '[NUCLEA] vite not installed; skipping UI build';
     fi;
     ls -la src/nuclea_modeler/__dist__/ 2>/dev/null || true;
+    echo '[NUCLEA] Running migrations (pre-uvicorn, single shot)...';
+    PYTHONPATH=src python -m scripts.run_migrations || { echo '[NUCLEA] Migrations failed; abortando.'; exit 1; };
     echo '[NUCLEA] Starting uvicorn...';
     exec uvicorn nuclea_modeler.backend.app:app --host 0.0.0.0 --port 8000 --workers 2 --app-dir src
 
@@ -46,3 +48,7 @@ env:
     value: nuclea-modeler
   - name: DATABRICKS_SQL_WAREHOUSE_ID
     value: b8e52268d9828bdd
+  # Migrations rodam 1x no command: antes do uvicorn (evita contention entre
+  # os 2 workers). Desabilitamos o lifespan auto-apply pra não duplicar.
+  - name: NUCLEA_MIGRATIONS_AUTO_APPLY
+    value: "false"
