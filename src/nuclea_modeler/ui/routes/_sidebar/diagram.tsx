@@ -70,6 +70,7 @@ import {
   X,
   XCircle,
 } from "lucide-react";
+import { EmptyState } from "@/components/apx/empty-state";
 
 import { EntityNode } from "@/components/diagram/entity-node";
 import { applyDagreLayout, type LayoutDirection } from "@/components/diagram/layout";
@@ -137,17 +138,20 @@ function DiagramBody() {
 
   if (systems.length === 0) {
     return (
-      <Card className="border-dashed">
-        <CardContent className="pt-10 pb-10 text-center">
-          <Network className="mx-auto h-10 w-10 text-muted-foreground/50 mb-3" />
-          <p className="text-sm text-muted-foreground mb-4">
-            Cadastre sistemas e entidades primeiro para gerar um diagrama.
-          </p>
-          <Button asChild>
-            <Link to="/entities">Ir para Entidades</Link>
-          </Button>
-        </CardContent>
-      </Card>
+      <EmptyState
+        icon={<Network className="h-10 w-10" />}
+        title="Nada para diagramar ainda"
+        description={
+          <>
+            O DER (Diagrama Entidade-Relacionamento) precisa de pelo menos um
+            <strong> sistema</strong> com entidades. Cadastre o primeiro sistema
+            e suas tabelas — o diagrama é gerado automaticamente com auto-layout
+            Dagre.
+          </>
+        }
+        primaryAction={{ label: "Ir para Entidades", to: "/entities" }}
+        secondaryAction={{ label: "Engenharia reversa", to: "/extractions" }}
+      />
     );
   }
 

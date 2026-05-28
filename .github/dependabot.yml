@@ -1,0 +1,70 @@
+version: 2
+
+# Weekly dependency updates across all ecosystems used by the project.
+# Patch+minor are grouped to keep PR noise low; majors get their own PR so
+# breaking-change reviews stay focused.
+updates:
+  # ─── Python (FastAPI + Databricks SDK + tools) ────────────────────────────
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:00"
+      timezone: America/Sao_Paulo
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "python"]
+    commit-message:
+      prefix: "deps(py)"
+    groups:
+      python-patch-minor:
+        applies-to: version-updates
+        update-types: ["patch", "minor"]
+    ignore:
+      # Pin databricks-sdk by minor — frequent breaking changes in 0.x train
+      - dependency-name: databricks-sdk
+        update-types: ["version-update:semver-major"]
+
+  # ─── JavaScript (React + TanStack + shadcn) ──────────────────────────────
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:00"
+      timezone: America/Sao_Paulo
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "frontend"]
+    commit-message:
+      prefix: "deps(ui)"
+    groups:
+      ui-patch-minor:
+        applies-to: version-updates
+        update-types: ["patch", "minor"]
+      radix-ui:
+        patterns: ["@radix-ui/*"]
+      tanstack:
+        patterns: ["@tanstack/*"]
+    ignore:
+      # React 19 is recent — let the ecosystem catch up before auto-bumping
+      - dependency-name: react
+        update-types: ["version-update:semver-major"]
+      - dependency-name: react-dom
+        update-types: ["version-update:semver-major"]
+
+  # ─── GitHub Actions ──────────────────────────────────────────────────────
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:00"
+      timezone: America/Sao_Paulo
+    open-pull-requests-limit: 3
+    labels: ["dependencies", "ci"]
+    commit-message:
+      prefix: "deps(ci)"
+    groups:
+      actions:
+        applies-to: version-updates
+        update-types: ["patch", "minor", "major"]

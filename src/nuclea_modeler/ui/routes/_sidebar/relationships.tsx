@@ -30,6 +30,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertCircle, Link2, Plus, RefreshCw, Trash2, X } from "lucide-react";
+import { EmptyState } from "@/components/apx/empty-state";
 
 export const Route = createFileRoute("/_sidebar/relationships")({
   component: RelationshipsPage,
@@ -158,14 +159,18 @@ function RelationshipsTable({ systemId }: { systemId: string }) {
 
   if (!rels || rels.length === 0) {
     return (
-      <Card className="border-dashed">
-        <CardContent className="pt-10 pb-10 text-center">
-          <Link2 className="mx-auto h-10 w-10 text-muted-foreground/50 mb-3" />
-          <p className="text-sm text-muted-foreground">
-            Nenhum relacionamento cadastrado para o sistema selecionado.
-          </p>
-        </CardContent>
-      </Card>
+      <EmptyState
+        icon={<Link2 className="h-10 w-10" />}
+        title="Sem relacionamentos cadastrados"
+        description={
+          <>
+            Relacionamentos (FKs lógicas) ligam entidades no DER e geram linhagem.
+            Você pode criar pelo formulário acima ou arrastando uma aresta entre
+            duas tabelas no <strong>Diagrama</strong>.
+          </>
+        }
+        primaryAction={{ label: "Abrir Diagrama", to: "/diagram" }}
+      />
     );
   }
 

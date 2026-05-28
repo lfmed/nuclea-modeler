@@ -21,6 +21,7 @@ import {
   HelpCircle,
   Code2,
   Activity,
+  Gauge,
 } from "lucide-react";
 import {
   SidebarGroup,
@@ -191,6 +192,12 @@ function Layout() {
           label: "Auditoria",
           icon: <Activity size={16} />,
           match: (p) => p.startsWith("/admin/audit"),
+        },
+        {
+          to: "/admin/metrics",
+          label: "Métricas",
+          icon: <Gauge size={16} />,
+          match: (p) => p.startsWith("/admin/metrics"),
         },
       ],
     },

@@ -34,6 +34,7 @@ import {
   RefreshCw,
   Trash2,
 } from "lucide-react";
+import { EmptyState } from "@/components/apx/empty-state";
 
 export const Route = createFileRoute("/_sidebar/lineage")({
   component: LineagePage,
@@ -97,17 +98,19 @@ function LineageBody() {
 
   if (entities.length === 0) {
     return (
-      <Card className="border-dashed">
-        <CardContent className="pt-10 pb-10 text-center">
-          <GitFork className="mx-auto h-10 w-10 text-muted-foreground/50 mb-3" />
-          <p className="text-sm text-muted-foreground mb-4">
-            Cadastre entidades primeiro para mapear sua linhagem.
-          </p>
-          <Button asChild>
-            <Link to="/entities">Ir para Entidades</Link>
-          </Button>
-        </CardContent>
-      </Card>
+      <EmptyState
+        icon={<GitFork className="h-10 w-10" />}
+        title="Linhagem precisa de entidades"
+        description={
+          <>
+            Linhagem rastreia <strong>de onde vem</strong> e <strong>para onde vai</strong> cada
+            entidade — upstream (origem) e downstream (consumidores). Cadastre as
+            entidades primeiro e a aba <em>Linhagem</em> de cada uma fica disponível.
+          </>
+        }
+        primaryAction={{ label: "Ir para Entidades", to: "/entities" }}
+        secondaryAction={{ label: "Engenharia reversa", to: "/extractions" }}
+      />
     );
   }
 
