@@ -1,0 +1,53 @@
+name: Greetings
+
+# Mensagem de boas-vindas para primeira contribuição de cada usuário.
+# Roda só na primeira PR ou issue da pessoa — depois fica quieto.
+
+on:
+  pull_request_target:
+    types: [opened]
+  issues:
+    types: [opened]
+
+permissions:
+  pull-requests: write
+  issues: write
+
+jobs:
+  greet:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/first-interaction@v1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          issue-message: |
+            Olá @${{ github.event.issue.user.login || github.actor }}! 👋
+
+            Obrigado por abrir sua primeira issue no **Núclea Modeler**.
+
+            Para acelerar a triagem:
+            - ✅ Você usou um dos [templates de issue](https://github.com/lfmed/nuclea-modeler/issues/new/choose)? Bug, feature ou pergunta — cada um tem campos diferentes.
+            - 🔍 Se for **bug**, inclua o `error_id` e o `request_id` (saem no header `X-Error-ID` e `X-Request-ID` de toda response).
+            - 🔒 Se for **vulnerabilidade de segurança**, **não use issue pública**. Use o [Security Advisory privado](https://github.com/lfmed/nuclea-modeler/security/advisories/new).
+
+            Tempo médio de resposta: **3 dias úteis**.
+
+            Links úteis:
+            - 🚀 [Getting Started (20min)](https://github.com/lfmed/nuclea-modeler/blob/main/docs/tutorial/getting-started.md)
+            - 📚 [Centro de Ajuda do app](https://nuclea-modeler-7474646973581105.aws.databricksapps.com/help)
+            - 🤝 [CONTRIBUTING.md](https://github.com/lfmed/nuclea-modeler/blob/main/CONTRIBUTING.md)
+
+          pr-message: |
+            Obrigado pela sua primeira PR no **Núclea Modeler**, @${{ github.event.pull_request.user.login || github.actor }}! 🎉
+
+            Antes de marcar como ready for review:
+            - ✅ CI verde (ruff + pytest + tsc + bundle size + secret scan)
+            - ✅ PR template preenchido — descrição, contexto, plano de teste
+            - ✅ Mudanças de schema vão em `databricks/sql/NNN_*.sql`
+            - ✅ Queries com input do usuário usam `delta.param()` (nunca f-string)
+            - ✅ Routes têm `response_model` + `operation_id`
+
+            Convenções completas: [CONTRIBUTING.md](https://github.com/lfmed/nuclea-modeler/blob/main/CONTRIBUTING.md).
+
+            Reviewer aparece via [CODEOWNERS](https://github.com/lfmed/nuclea-modeler/blob/main/.github/CODEOWNERS) automaticamente.

@@ -1,0 +1,62 @@
+name: Stale issues + PRs
+
+# Auto-cleanup de issues e PRs abandonados.
+# Issues: 90d sem atividade → "stale" → +14d sem atividade → "closed"
+# PRs: 30d sem atividade → "stale" → +14d sem atividade → "closed"
+
+on:
+  schedule:
+    # Daily at 03:00 UTC (00:00 BRT) — fora do horário de trabalho.
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/stale@v9
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+          # Issues
+          days-before-issue-stale: 90
+          days-before-issue-close: 14
+          stale-issue-label: "stale"
+          stale-issue-message: |
+            ⏰ Esta issue está inativa há **90 dias**.
+
+            Para mantê-la aberta:
+            - Comente com novidades, ou
+            - Adicione a label `pinned` para evitar auto-close
+
+            Caso contrário, será fechada automaticamente em **14 dias**.
+            (Pode reabrir a qualquer momento se voltar a ser relevante.)
+          close-issue-message: |
+            Fechando por inatividade. Sinta-se à vontade para reabrir quando tiver novidades. 👋
+          exempt-issue-labels: "pinned,security,roadmap"
+
+          # PRs
+          days-before-pr-stale: 30
+          days-before-pr-close: 14
+          stale-pr-label: "stale"
+          stale-pr-message: |
+            ⏰ Este PR está inativo há **30 dias**.
+
+            Se ainda for relevante:
+            - Faça rebase contra `main` e adicione um comentário
+            - Ou peça review explicitamente
+
+            Senão será fechado em **14 dias** (pode reabrir).
+          close-pr-message: |
+            Fechando este PR por inatividade. Reabrir a qualquer momento quando puder retomar.
+          exempt-pr-labels: "pinned,wip,blocked"
+
+          # Comportamento
+          operations-per-run: 100
+          remove-stale-when-updated: true
+          ascending: true  # processa os mais antigos primeiro
