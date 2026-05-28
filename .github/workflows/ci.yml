@@ -86,14 +86,25 @@ jobs:
     name: Secret scan
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # On PRs we diff against the PR base. On pushes to main we scan the
+    # whole tree (TruffleHog errors when base == head, e.g. the initial push).
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: TruffleHog
+
+      - name: TruffleHog (PR — diff against base)
+        if: github.event_name == 'pull_request'
         uses: trufflesecurity/trufflehog@v3.82.13
         with:
           path: ./
-          base: ${{ github.event.repository.default_branch }}
-          head: HEAD
+          base: ${{ github.event.pull_request.base.sha }}
+          head: ${{ github.event.pull_request.head.sha }}
+          extra_args: --only-verified
+
+      - name: TruffleHog (push — full scan)
+        if: github.event_name == 'push'
+        uses: trufflesecurity/trufflehog@v3.82.13
+        with:
+          path: ./
           extra_args: --only-verified

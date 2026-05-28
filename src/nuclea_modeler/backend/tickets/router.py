@@ -1,7 +1,6 @@
 """Tickets HTTP endpoints — list, get, open, approve, reject, apply."""
 from __future__ import annotations
 
-import json
 from datetime import datetime
 from typing import cast
 

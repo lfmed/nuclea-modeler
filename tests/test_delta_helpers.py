@@ -6,8 +6,6 @@ from __future__ import annotations
 
 from datetime import date, datetime, timezone, timedelta
 
-import pytest
-
 from nuclea_modeler.backend.core.delta import _quote_lit, _format_ts, param
 
 

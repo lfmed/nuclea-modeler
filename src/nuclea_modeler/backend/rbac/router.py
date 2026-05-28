@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
 from ..._metadata import api_prefix
 from ..core import Dependencies, delta
@@ -12,12 +12,10 @@ from ..core.sql import SqlDependency
 from .models import MyRolesOut, UserRoleIn, UserRoleOut
 from .service import (
     ROLE_ADMIN,
-    ROLE_DATA_ARCHITECT,
     ROLE_DATA_ENGINEER,
     TICKET_APPLIERS,
     TICKET_APPROVERS,
     get_user_roles,
-    has_role,
     require_role,
 )
 

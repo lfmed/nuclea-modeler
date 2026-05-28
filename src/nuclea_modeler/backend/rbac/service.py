@@ -1,7 +1,6 @@
 """RBAC service — fetch and check user roles persisted in Delta `user_roles`."""
 from __future__ import annotations
 
-from functools import lru_cache
 from typing import Final
 
 from fastapi import HTTPException

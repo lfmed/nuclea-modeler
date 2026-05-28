@@ -20,6 +20,8 @@ dependencies = [
 dev = [
     "pytest>=8.0.0",
     "ruff>=0.6.0",
+    "starlette>=0.40.0",  # used by tests via TestClient (also a FastAPI dep)
+    "httpx>=0.28.0",      # used by tests + REST tester
 ]
 
 [build-system]
@@ -35,6 +37,28 @@ nuclea_modeler = ["__dist__/**/*"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+[tool.ruff.lint]
+# Default rules + a small pragmatic baseline. We don't enable the full suite
+# because the codebase predates the linter — adopt incrementally.
+select = ["E", "F", "W"]
+ignore = [
+    "E501",  # line length — handled by formatter
+    "E741",  # ambiguous variable name (we use `l`, `O` deliberately in places)
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests routinely use `pytest.importorskip(...)` BEFORE other imports — the
+# pattern is intentional (skip whole module if optional dep missing) and would
+# otherwise trip E402. Also F401 for fixtures-as-imports.
+"tests/**" = ["E402", "F401"]
+# Auto-generated migration scripts are not Python source.
+"src/nuclea_modeler/__dist__/**" = ["F401", "F811", "E402"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-q --tb=short"
 
 # APX metadata retained for reference. Not used by the Databricks Apps runtime.
 [tool.apx.metadata]
