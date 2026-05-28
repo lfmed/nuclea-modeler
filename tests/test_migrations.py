@@ -117,7 +117,7 @@ def _make_mock_sql(applied: dict[str, str] | None = None):
             )
         # All other statements succeed silently
         return SimpleNamespace(
-            status=SimpleNamespace(state="SUCCEEDED", error=None),
+            status=SimpleNamespace(state=StatementState.SUCCEEDED, error=None),
             result=SimpleNamespace(data_array=[]),
         )
 
@@ -231,7 +231,7 @@ def test_apply_migrations_stops_on_first_failure(tmp_path: Path, patched_state):
                 result=None,
             )
         return SimpleNamespace(
-            status=SimpleNamespace(state="SUCCEEDED", error=None),
+            status=SimpleNamespace(state=StatementState.SUCCEEDED, error=None),
             result=SimpleNamespace(data_array=[]),
         )
 
