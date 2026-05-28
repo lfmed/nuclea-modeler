@@ -37,7 +37,28 @@ export const Route = createFileRoute("/_sidebar/tickets/$id")({
   component: TicketDetailPage,
 });
 
+// Telemetry helper: avisa o backend que esse route component montou.
+// Permite confirmar pelos logs se o detail page está sendo renderizado.
+function _reportMount(stage: string, extra?: Record<string, unknown>) {
+  try {
+    fetch("/api/_client_log", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        level: "info",
+        message: `[ticket-detail] ${stage}`,
+        url: window.location.href,
+        extra: extra || null,
+      }),
+      keepalive: true,
+    }).catch(() => {});
+  } catch {
+    /* swallow */
+  }
+}
+
 function TicketDetailPage() {
+  _reportMount("TicketDetailPage:render");
   return (
     <div className="space-y-6">
       <Button variant="ghost" size="sm" asChild>
@@ -77,9 +98,12 @@ function TicketDetailPage() {
 
 function TicketDetail() {
   const { id } = Route.useParams();
+  _reportMount("TicketDetail:render", { id });
   const qc = useQueryClient();
   const { data: ticket } = useGetTicketSuspense(id, selector());
+  _reportMount("TicketDetail:ticketLoaded", { id, status: ticket?.status });
   const { data: me } = useMyRolesSuspense(selector());
+  _reportMount("TicketDetail:meLoaded", { id, roles: me?.roles });
 
   const { mutate: approve, isPending: approving } = useApproveTicket({
     mutation: {
