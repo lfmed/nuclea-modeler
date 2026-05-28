@@ -166,13 +166,18 @@ def apply_ticket(
         technical_name = ent_change.get("technical_name", "")
 
         # Relationships sintéticos vêm com schema_name="__relationship__".
-        # Apply de relationship ainda não materializado — skip com aviso pra
-        # não bloquear o resto do ticket.
+        # `technical_name` é o relationship_id; payload tem todos os campos.
         if schema_name == "__relationship__":
-            errors.append(
-                f"relationship {technical_name} ainda não é auto-aplicado via ticket; "
-                "use /relationships diretamente"
-            )
+            try:
+                _apply_relationship_change(sql, ent_change, applied_by, now)
+                if op == "add":
+                    applied_entities += 1
+                elif op == "change":
+                    applied_entities += 1
+                elif op == "remove":
+                    applied_entities += 1
+            except Exception as exc:
+                errors.append(f"relationship {op} {technical_name}: {exc}")
             continue
 
         ent_dec = _decision_for_entity(decisions, schema_name, technical_name, op)
@@ -589,3 +594,91 @@ def _apply_reverse_entity(
         return
 
     raise ValueError(f"reverse não suportado para op={op!r}")
+
+
+# ─── Relationship materialization ─────────────────────────────────────────────
+# Aplica entries sintéticos do diff (schema_name="__relationship__") na tabela
+# relationships. Suporta op=add/change/remove. Payload do entry tem o shape
+# definido em _relationship_in_to_payload (relationships/router.py).
+
+
+def _apply_relationship_change(
+    sql: Sql,
+    entry: dict,
+    applied_by: str,
+    now: datetime,
+) -> None:
+    op = entry.get("op")
+    rid = entry.get("technical_name")
+    if not rid:
+        raise ValueError("relationship sem technical_name")
+    s = get_settings()
+    payload = entry.get("payload") or {}
+
+    if op == "remove":
+        delta.run_params(
+            sql,
+            f"DELETE FROM {s.fq_table('relationships')} WHERE relationship_id = :rid",
+            [delta.param("rid", rid)],
+        )
+        return
+
+    if op == "add":
+        # Idempotente: skip se já existe
+        existing = delta.fetch_one_params(
+            sql,
+            f"SELECT relationship_id FROM {s.fq_table('relationships')} "
+            f"WHERE relationship_id = :rid",
+            [delta.param("rid", rid)],
+        )
+        if existing:
+            return
+        delta.insert(
+            sql,
+            s.fq_table("relationships"),
+            {
+                "relationship_id": rid,
+                "system_id": payload.get("system_id"),
+                "source_entity_id": payload.get("source_entity_id"),
+                "target_entity_id": payload.get("target_entity_id"),
+                "source_attr_ids": payload.get("source_attr_ids") or [],
+                "target_attr_ids": payload.get("target_attr_ids") or [],
+                "rel_type": payload.get("rel_type"),
+                "source_cardinality": payload.get("source_cardinality"),
+                "target_cardinality": payload.get("target_cardinality"),
+                "description": payload.get("description"),
+                "origin": payload.get("origin", "MANUAL"),
+                "fk_update_rule": payload.get("fk_update_rule"),
+                "fk_delete_rule": payload.get("fk_delete_rule"),
+                "created_at": now, "created_by": applied_by,
+                "updated_at": now, "updated_by": applied_by,
+            },
+        )
+        return
+
+    if op == "change":
+        # Para change, payload (atualizado) é a fonte de verdade.
+        updates = {
+            "source_entity_id": payload.get("source_entity_id"),
+            "target_entity_id": payload.get("target_entity_id"),
+            "source_attr_ids": payload.get("source_attr_ids") or [],
+            "target_attr_ids": payload.get("target_attr_ids") or [],
+            "rel_type": payload.get("rel_type"),
+            "source_cardinality": payload.get("source_cardinality"),
+            "target_cardinality": payload.get("target_cardinality"),
+            "description": payload.get("description"),
+            "fk_update_rule": payload.get("fk_update_rule"),
+            "fk_delete_rule": payload.get("fk_delete_rule"),
+            "updated_at": now,
+            "updated_by": applied_by,
+        }
+        # filtra None pra não sobrescrever com null não-intencional
+        updates = {k: v for k, v in updates.items() if v is not None}
+        if not updates:
+            return
+        delta.update_by_id(
+            sql, s.fq_table("relationships"), "relationship_id", rid, updates,
+        )
+        return
+
+    raise ValueError(f"op de relationship desconhecida: {op!r}")
