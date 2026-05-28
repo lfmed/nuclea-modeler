@@ -19,9 +19,17 @@ env:
 
 jobs:
   python:
-    name: Python (ruff + pytest)
+    # Matrix garante compatibilidade entre Python 3.11 (runtime de produção
+    # nos Databricks Apps) e 3.12 (devs locais com versões mais novas).
+    # 3.13 ainda recente — adicionar quando a maioria das deps testarem nele.
+    # fail-fast: false → se 3.11 quebrar, 3.12 ainda roda (e vice-versa).
+    name: Python ${{ matrix.python }} (ruff + pytest)
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12"]
     steps:
       - uses: actions/checkout@v6
 
@@ -30,12 +38,12 @@ jobs:
         with:
           version: "0.10.7"
 
-      - name: Set up Python
-        run: uv python install 3.11
+      - name: Set up Python ${{ matrix.python }}
+        run: uv python install ${{ matrix.python }}
 
       - name: Install dependencies
         run: |
-          uv venv
+          uv venv --python ${{ matrix.python }}
           uv pip install -e ".[dev]"
           # psycopg used by extractions/lakebase service is optional at module load
           # but required for full test coverage. Install the binary wheel.
@@ -62,10 +70,12 @@ jobs:
         run: uv run pytest tests/
 
       - name: Upload coverage XML
+        # Artifact único por job da matrix (precisa nome distinto para
+        # actions/upload-artifact@v4 não rejeitar colisão).
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-xml
+          name: coverage-xml-py${{ matrix.python }}
           path: coverage.xml
           retention-days: 14
 
