@@ -89,15 +89,23 @@ def test_list_audit_applies_each_filter(patched_audit):
 
 
 def test_list_audit_skips_none_filters(patched_audit):
-    """Filters set to None must NOT appear in the WHERE."""
+    """Filters set to None must NOT appear in the WHERE clause.
+
+    Column names (object_type, action) aparecem no SELECT (COLS_SHORT)
+    independentemente de filtros. O teste verifica apenas o WHERE.
+    """
     from nuclea_modeler.backend.audit.service import list_audit
     sql = MagicMock()
     list_audit(sql, actor_email="alice", limit=10)
     query = _q(patched_audit)
-    assert "actor_email = :actor_email" in query
-    assert "action = :action" not in query
-    assert "object_type" not in query
-    assert "since" not in query.lower() or "since" not in query  # nem aparece
+    # Extrai apenas o WHERE clause
+    where_clause = ""
+    if "WHERE" in query:
+        where_clause = query.split("WHERE", 1)[1].split("ORDER BY", 1)[0]
+    assert "actor_email = :actor_email" in where_clause
+    assert "action = :action" not in where_clause
+    assert ":object_type" not in where_clause
+    assert ":since" not in where_clause
 
 
 def test_list_audit_clamps_limit_to_1000(patched_audit):

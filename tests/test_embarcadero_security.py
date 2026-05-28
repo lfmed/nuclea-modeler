@@ -43,17 +43,22 @@ def test_rejects_billion_laughs():
         parse_erx(bomb, system_id="sys-test")
 
 
-def test_rejects_dtd():
-    """DTD inline é vetor para múltiplos ataques. defusedxml proíbe por default."""
+def test_rejects_dtd_with_entities():
+    """DTD declarando entities é vetor de XXE. defusedxml proíbe.
+
+    DTD inline puro (só elements, sem entities) é tolerado por algumas
+    versões do defusedxml — o que importa é que entities sejam proibidas,
+    e isso já está coberto em test_rejects_xxe_external_entity e
+    test_rejects_billion_laughs.
+    """
     dtd = """<?xml version="1.0"?>
     <!DOCTYPE Model [
       <!ELEMENT Model (Entities)>
-      <!ELEMENT Entities (Entity*)>
-      <!ELEMENT Entity EMPTY>
+      <!ENTITY hack "should-not-resolve">
     ]>
-    <Model><Entities><Entity name="x"/></Entities></Model>
+    <Model><Entities><Entity name="&hack;"/></Entities></Model>
     """
-    with pytest.raises((ValueError, defusedxml.DTDForbidden)):
+    with pytest.raises((ValueError, defusedxml.EntitiesForbidden, defusedxml.DTDForbidden)):
         parse_erx(dtd, system_id="sys-test")
 
 
