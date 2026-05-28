@@ -24,7 +24,6 @@ import { toPng } from "html-to-image";
 
 import {
   useCreateRelationship,
-  useCreateSystem,
   useGetDiagramSuspense,
   useGetSessionStatusSuspense,
   useDiscardSession,
@@ -74,6 +73,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { EmptyState } from "@/components/apx/empty-state";
+import { NewSystemWizard } from "@/components/apx/new-system-wizard";
 
 import { EntityNode } from "@/components/diagram/entity-node";
 import { applyDagreLayout, type LayoutDirection } from "@/components/diagram/layout";
@@ -140,19 +140,6 @@ function DiagramBody() {
   const { data: systems } = useListSystemsSuspense(selector());
   const [systemId, setSystemId] = useState(systems[0]?.system_id || "");
   const [showNewSystem, setShowNewSystem] = useState(false);
-  const qc = useQueryClient();
-
-  const createSystem = useCreateSystem({
-    mutation: {
-      onSuccess: (sys) => {
-        qc.invalidateQueries({ queryKey: ["listSystems"] });
-        setSystemId(sys.system_id);
-        setShowNewSystem(false);
-        toast.success(`Sistema "${sys.system_name}" criado`);
-      },
-      onError: (e) => toast.error(String(e)),
-    },
-  });
 
   if (systems.length === 0) {
     return (
@@ -206,13 +193,12 @@ function DiagramBody() {
         </CardContent>
       </Card>
 
-      {showNewSystem && (
-        <NewSystemDialog
-          onClose={() => setShowNewSystem(false)}
-          onSubmit={(data) => createSystem.mutate({ data })}
-          submitting={createSystem.isPending}
-        />
-      )}
+      <NewSystemWizard
+        open={showNewSystem}
+        onClose={() => setShowNewSystem(false)}
+        onCreated={(sys) => setSystemId(sys.system_id)}
+      />
+
 
       {systemId && (
         <Suspense fallback={<Skeleton className="h-[600px] w-full" />}>
@@ -1821,98 +1807,3 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function NewSystemDialog({
-  onClose,
-  onSubmit,
-  submitting,
-}: {
-  onClose: () => void;
-  onSubmit: (data: import("@/lib/api").SystemIn) => void;
-  submitting: boolean;
-}) {
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [domain, setDomain] = useState("");
-  const [technology, setTechnology] = useState("");
-
-  return (
-    <div
-      className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
-      onClick={onClose}
-    >
-      <Card
-        className="w-full max-w-lg"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <Plus className="h-5 w-5 text-nuclea-primary" />
-              Novo sistema (modelo)
-            </CardTitle>
-            <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-          <CardDescription>
-            Um sistema agrupa entidades e relacionamentos de um modelo de dados.
-            Pode evoluir sem fonte conectada; depois você pode validar contra
-            Lakebase/ODBC.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div>
-            <label className="text-xs font-medium block mb-1">Nome *</label>
-            <Input
-              autoFocus
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Cadastro de Clientes"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-medium block mb-1">Domínio</label>
-            <Input
-              value={domain}
-              onChange={(e) => setDomain(e.target.value)}
-              placeholder="Cadastro, Risco, Cobrança..."
-            />
-          </div>
-          <div>
-            <label className="text-xs font-medium block mb-1">Tecnologia</label>
-            <Input
-              value={technology}
-              onChange={(e) => setTechnology(e.target.value)}
-              placeholder="PostgreSQL, Oracle, SQL Server..."
-            />
-          </div>
-          <div>
-            <label className="text-xs font-medium block mb-1">Descrição</label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={3}
-              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-            />
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" onClick={onClose}>Cancelar</Button>
-            <Button
-              onClick={() =>
-                onSubmit({
-                  system_name: name,
-                  description: description || null,
-                  domain: domain || null,
-                  technology: technology || null,
-                })
-              }
-              disabled={submitting || !name.trim()}
-            >
-              {submitting ? "Criando..." : "Criar sistema"}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}

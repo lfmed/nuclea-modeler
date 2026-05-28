@@ -1513,6 +1513,89 @@ export const useRunDDLImport = (
     ...opts?.mutation,
   });
 
+// ─── Unity Catalog browse + extraction (M2 — Reverse Engineering) ────────────
+
+export interface UCColumnOut {
+  name: string;
+  type_text: string;
+  nullable: boolean;
+  position: number;
+}
+
+export interface UCCatalogOut {
+  name: string;
+  comment?: string | null;
+}
+
+export interface UCSchemaOut {
+  name: string;
+  catalog_name: string;
+  comment?: string | null;
+}
+
+export interface UCTableOut {
+  name: string;
+  catalog_name: string;
+  schema_name: string;
+  table_type: string;
+  comment?: string | null;
+  columns?: UCColumnOut[];
+}
+
+export interface UCExtractionIn {
+  system_id: string;
+  catalog: string;
+  schema: string;
+  table_names: string[];
+  open_ticket: boolean;
+}
+
+export const useListUCCatalogsSuspense = (s?: Selector<UCCatalogOut[]>) =>
+  useSuspenseQuery({
+    queryKey: ["listUCCatalogs"],
+    queryFn: () => api.get<UCCatalogOut[]>("/uc/catalogs"),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useListUCSchemasSuspense = (
+  catalog: string,
+  s?: Selector<UCSchemaOut[]>,
+) =>
+  useSuspenseQuery({
+    queryKey: ["listUCSchemas", catalog],
+    queryFn: () =>
+      api.get<UCSchemaOut[]>(
+        `/uc/catalogs/${encodeURIComponent(catalog)}/schemas`,
+      ),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useListUCTablesSuspense = (
+  catalog: string,
+  schema: string,
+  s?: Selector<UCTableOut[]>,
+) =>
+  useSuspenseQuery({
+    queryKey: ["listUCTables", catalog, schema],
+    queryFn: () =>
+      api.get<UCTableOut[]>(
+        `/uc/catalogs/${encodeURIComponent(catalog)}/schemas/${encodeURIComponent(schema)}/tables`,
+      ),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useRunUCExtraction = (
+  opts?: Opts<ExtractionResult, { data: UCExtractionIn }>,
+) =>
+  useMutation({
+    mutationFn: async ({ data }) =>
+      (await api.post<ExtractionResult>("/extractions/uc/run", data)).data,
+    ...opts?.mutation,
+  });
+
 // ─── Lineage (Módulo 7) ──────────────────────────────────────────────────────
 
 export type IntegrationType = "CDC" | "BATCH" | "API_PULL" | "API_PUSH" | "FILE";
