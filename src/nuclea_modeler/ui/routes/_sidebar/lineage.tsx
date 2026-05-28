@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { Suspense, useState } from "react";
 import { QueryErrorResetBoundary, useQueryClient } from "@tanstack/react-query";
 import { ErrorBoundary } from "react-error-boundary";
