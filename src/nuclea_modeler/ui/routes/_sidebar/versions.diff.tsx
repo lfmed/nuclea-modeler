@@ -16,7 +16,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertCircle, ArrowLeft, ArrowRight } from "lucide-react";
 
-import { StatusBadge } from "./versions";
+import { StatusBadge } from "./versions.index";
 import { DiffSections } from "./versions.$id";
 
 interface DiffSearch {

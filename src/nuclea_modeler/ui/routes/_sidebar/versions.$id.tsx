@@ -33,7 +33,7 @@ import {
   Trash2,
 } from "lucide-react";
 
-import { StatusBadge } from "./versions";
+import { StatusBadge } from "./versions.index";
 
 export const Route = createFileRoute("/_sidebar/versions/$id")({
   component: VersionDetailPage,
