@@ -14,16 +14,45 @@ Este projeto está sendo construído em colaboração com um assistente de IA (C
 
 ## Índice
 
+### Fase 1 — Concepção e MVP (2026-05-22 → 2026-05-25)
+
 | # | Arquivo | Fase | Status |
 |---|---------|------|--------|
 | 00 | [00-spec.md](00-spec.md) | Spec original recebida do cliente | ✅ |
 | 01 | [01-plano-militar.md](01-plano-militar.md) | Plano de execução consolidado | ✅ |
-| 10 | [10-fase0-bootstrap.md](10-fase0-bootstrap.md) | Bootstrap: repo, scaffold, UC, recursos | 🟡 em curso |
-| 20 | [20-fase1-mvp.md](20-fase1-mvp.md) | MVP: M1 + M2 + M3 + M9 + deploy | ⏳ |
+| 10 | [10-fase0-bootstrap.md](10-fase0-bootstrap.md) | Bootstrap: repo, scaffold, UC, recursos | ✅ |
+| 20 | [20-fase1-mvp.md](20-fase1-mvp.md) | MVP: M1 + M2 + M3 + M9 + deploy | ✅ |
 | 30 | [30-tickets-rbac.md](30-tickets-rbac.md) | Tickets de reconciliação + RBAC | ✅ |
 | 40 | [40-madrugada-multiagente.md](40-madrugada-multiagente.md) | Madrugada god-mode: 7 PRs paralelos | ✅ |
-| 50 | [50-fase3-visualizacao.md](50-fase3-visualizacao.md) | M7 + M4 | ⏳ |
-| 90 | [90-cross-rbac-audit.md](90-cross-rbac-audit.md) | RBAC global, auditoria, busca | ⏳ |
+
+### Fase 2 — Visualização e cross-cutting (2026-05-25 → 2026-05-26)
+
+| # | Arquivo | Fase | Status |
+|---|---------|------|--------|
+| 50 | [50-fase3-visualizacao.md](50-fase3-visualizacao.md) | M7 (Linhagem) + M4 (DER React Flow) | ✅ |
+| 90 | [90-cross-rbac-audit.md](90-cross-rbac-audit.md) | RBAC global, auditoria, busca | ✅ |
+
+### Fase 3 — Production hardening v0.2.0 (2026-05-26 → 2026-05-28)
+
+Documentado em **commits Conventional Commits** + [**ADR-0003**](../adr/0003-production-hardening.md).
+
+| Sprint | Entregas | Resultado |
+|---|---|---|
+| SQL parametrization | 100+ ocorrências `_q()` → `delta.param()` | 0 f-string SQL com input usuário |
+| UX polish demo | Welcome tour, EmptyState shared, A11y pass | 25+ aria-labels, 7 rotas refatoradas |
+| Sprint 0 produção | Migrations runner, security middleware, `/livez+/readyz`, JSON logs, request_id, exception handler, `/metrics`, feature flags, CORS, ODBC/REST real, paginação | App enterprise-ready |
+| Quality gates | pytest-cov 60% hard, tsc enforcement, bandit, CodeQL, OpenAPI snapshot, Dependabot semanal | 5 workflows CI/CD ativos |
+| Community ready | Issue templates, SECURITY.md, ROADMAP.md, CONTRIBUTING.md, pre-commit, welcome+stale bots, LICENSE | Onboarding completo |
+| Docs | Getting Started, API Recipes, Architecture Mermaid, demo HTML, CHANGELOG, Makefile | 26 docs markdown |
+
+### Como contribuir prompts novos
+
+Para um sprint novo significativo (>3h de trabalho, >5 commits, ou mudança arquitetural), crie um arquivo aqui com:
+- Contexto: por que está fazendo
+- Prompts principais que orientaram a IA
+- Decisões + trade-offs aceitos
+- Commits resultantes (referências)
+- Aprendizados pro próximo sprint
 
 ## Convenções
 
