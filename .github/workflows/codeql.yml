@@ -1,0 +1,55 @@
+name: CodeQL
+
+# GitHub's static analyser for security vulnerabilities.
+# Free for public repos and for repos with GitHub Advanced Security enabled.
+# Complements bandit (Python only) + npm audit (JS deps) by catching
+# cross-language data-flow patterns: tainted input → sink, weak crypto,
+# improper auth checks, etc.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly sweep on Sundays at 04:00 UTC (01:00 BRT)
+    - cron: "0 4 * * 0"
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ["python", "javascript-typescript"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          # security-extended adds queries for less-common patterns. Trade-off:
+          # more false positives. Tune via .github/codeql/queries.yml if needed.
+          queries: security-extended,security-and-quality
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"

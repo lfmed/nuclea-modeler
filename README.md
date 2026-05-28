@@ -185,6 +185,8 @@ Frontend consome via `useFeatures()` em `ui/lib/features.ts`.
 
 ## Documentação
 
+- 🚀 **Comece aqui:** [`docs/tutorial/getting-started.md`](docs/tutorial/getting-started.md) — primeiro dia em 20min
+- 🏗️ Arquitetura (Mermaid): [`docs/architecture/system.md`](docs/architecture/system.md)
 - 📋 Spec funcional: [`docs/spec/`](docs/spec/)
 - 🛠️ Plano de execução: [`docs/prompts/01-plano-militar.md`](docs/prompts/01-plano-militar.md)
 - 🗒️ Prompt registry: [`docs/prompts/`](docs/prompts/)
@@ -192,6 +194,8 @@ Frontend consome via `useFeatures()` em `ui/lib/features.ts`.
 - 🎯 Roteiro de demo para arquiteto: [`docs/demo/jornada-arquiteto-de-dados.html`](docs/demo/jornada-arquiteto-de-dados.html)
 - 🔧 Receitas curl da API: [`docs/api/RECIPES.md`](docs/api/RECIPES.md)
 - 📜 Changelog: [`CHANGELOG.md`](CHANGELOG.md)
+- 🗺️ Roadmap: [`ROADMAP.md`](ROADMAP.md)
+- 🔒 Segurança: [`SECURITY.md`](SECURITY.md)
 - 🤝 Como contribuir: [`CONTRIBUTING.md`](CONTRIBUTING.md)
 - 🛠 Scripts operacionais: [`scripts/README.md`](scripts/README.md)
 
