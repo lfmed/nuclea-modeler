@@ -77,6 +77,7 @@ import { EmptyState } from "@/components/apx/empty-state";
 
 import { EntityNode } from "@/components/diagram/entity-node";
 import { applyDagreLayout, type LayoutDirection } from "@/components/diagram/layout";
+import { getTypesForTechnology } from "@/components/diagram/types-by-tech";
 
 const nodeTypes: NodeTypes = { entity: EntityNode };
 
@@ -227,6 +228,11 @@ function DiagramBody() {
 function DiagramCanvas({ systemId }: { systemId: string }) {
   const { data: view } = useGetDiagramSuspense(systemId, "default", selector());
   const { data: session } = useGetSessionStatusSuspense(systemId, selector());
+  const { data: systems } = useListSystemsSuspense(selector());
+  const systemTechnology = useMemo(
+    () => systems.find((s) => s.system_id === systemId)?.technology || null,
+    [systems, systemId],
+  );
   const qc = useQueryClient();
   const canvasRef = useRef<HTMLDivElement>(null);
 
@@ -418,15 +424,45 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
     URL.revokeObjectURL(url);
   }, [systemId, view, nodes]);
 
-  // Quick add entity
+  // Quick add entity + FK helper
   const [showAddEntity, setShowAddEntity] = useState(false);
+  const [pendingFks, setPendingFks] = useState<
+    { sourceColName: string; targetEntityId: string; targetAttrId: string }[]
+  >([]);
+  const createFk = useCreateRelationship();
+
   const quickAdd = useQuickAddEntity({
     mutation: {
-      onSuccess: () => {
+      onSuccess: (created) => {
         qc.invalidateQueries({ queryKey: ["getDiagram", systemId] });
         qc.invalidateQueries({ queryKey: ["listEntities"] });
         setShowAddEntity(false);
         toast.success("Entidade adicionada");
+        // Pra cada FK marcada na tabela, cria um relationship sintético
+        // na mesma sessão. source_attr_ids fica vazio porque a coluna source
+        // ainda está staged no ticket — o user pode editar o relacionamento
+        // depois pra preencher quando o ticket for aplicado.
+        if (pendingFks.length > 0 && created) {
+          const fks = pendingFks;
+          setPendingFks([]);
+          for (const fk of fks) {
+            createFk.mutate({
+              data: {
+                system_id: systemId,
+                source_entity_id: (created as { entity_id: string }).entity_id,
+                target_entity_id: fk.targetEntityId,
+                source_attr_ids: [],
+                target_attr_ids: [fk.targetAttrId],
+                rel_type: "1:N",
+                source_cardinality: "MANDATORY",
+                target_cardinality: "OPTIONAL",
+                description: `FK lógica: coluna "${fk.sourceColName}" → alvo`,
+              },
+            });
+          }
+          // Invalida de novo após FKs serem criadas
+          qc.invalidateQueries({ queryKey: ["getSessionStatus", systemId] });
+        }
       },
       onError: (e) => toast.error(String(e)),
     },
@@ -505,8 +541,13 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
         {showAddEntity && (
           <QuickAddEntityDialog
             systemId={systemId}
+            systemTechnology={systemTechnology}
+            existingEntities={view.entities}
             onClose={() => setShowAddEntity(false)}
-            onSubmit={(data) => quickAdd.mutate({ systemId, data })}
+            onSubmit={(data, fks) => {
+              setPendingFks(fks);
+              quickAdd.mutate({ systemId, data });
+            }}
             submitting={quickAdd.isPending}
           />
         )}
@@ -685,8 +726,13 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
       {showAddEntity && (
         <QuickAddEntityDialog
           systemId={systemId}
+          systemTechnology={systemTechnology}
+          existingEntities={view.entities}
           onClose={() => setShowAddEntity(false)}
-          onSubmit={(data) => quickAdd.mutate({ systemId, data })}
+          onSubmit={(data, fks) => {
+            setPendingFks(fks);
+            quickAdd.mutate({ systemId, data });
+          }}
           submitting={quickAdd.isPending}
         />
       )}
@@ -787,48 +833,106 @@ function SessionBanner({
 
 // ───────────────────────────────────────────────────────────────────────────
 
+type AttrRow = {
+  uid: string; // local ID pra key e tracking de FK targets dentro do dialog
+  name: string;
+  type: string;
+  nullable: boolean;
+  pk: boolean;
+  fkTargetEntityId: string; // "" se não é FK
+  fkTargetAttrId: string;   // "" se ainda não escolheu coluna
+};
+
+let _rowSeq = 0;
+const newRow = (overrides: Partial<AttrRow> = {}): AttrRow => ({
+  uid: `r${++_rowSeq}`,
+  name: "",
+  type: "",
+  nullable: true,
+  pk: false,
+  fkTargetEntityId: "",
+  fkTargetAttrId: "",
+  ...overrides,
+});
+
 function QuickAddEntityDialog({
   systemId,
+  systemTechnology,
+  existingEntities,
   onClose,
   onSubmit,
   submitting,
 }: {
   systemId: string;
+  systemTechnology?: string | null;
+  existingEntities: DiagramEntity[];
   onClose: () => void;
-  onSubmit: (data: import("@/lib/api").QuickEntityIn) => void;
+  onSubmit: (
+    data: import("@/lib/api").QuickEntityIn,
+    fks: { sourceColName: string; targetEntityId: string; targetAttrId: string }[],
+  ) => void;
   submitting: boolean;
 }) {
   const [schemaName, setSchemaName] = useState("public");
   const [technicalName, setTechnicalName] = useState("");
   const [logicalName, setLogicalName] = useState("");
   const [entityType, setEntityType] = useState<"TABLE" | "VIEW">("TABLE");
-  const [attrsText, setAttrsText] = useState(
-    "id BIGINT PK\nnome VARCHAR(200)\ncriado_em TIMESTAMP",
+  const typeOptions = useMemo(
+    () => getTypesForTechnology(systemTechnology),
+    [systemTechnology],
+  );
+  const [rows, setRows] = useState<AttrRow[]>(() => [
+    newRow({ name: "id", type: typeOptions[0] || "INTEGER", pk: true, nullable: false }),
+  ]);
+
+  const updateRow = (uid: string, patch: Partial<AttrRow>) =>
+    setRows((prev) => prev.map((r) => (r.uid === uid ? { ...r, ...patch } : r)));
+  const removeRow = (uid: string) =>
+    setRows((prev) => prev.filter((r) => r.uid !== uid));
+  const addRow = () => setRows((prev) => [...prev, newRow({ type: typeOptions[0] || "" })]);
+
+  // Entities elegíveis pra FK target: do mesmo sistema OU compartilhadas
+  const fkCandidates = useMemo(
+    () =>
+      existingEntities.filter(
+        (e) => e.system_id === systemId || (e as { is_shared?: boolean }).is_shared,
+      ),
+    [existingEntities, systemId],
   );
 
-  const parseAttrs = () =>
-    attrsText
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => {
-        // Format: "<name> <type> [PK] [NULL|NOT NULL]"
-        const parts = line.split(/\s+/);
-        const name = parts[0];
-        const type = parts[1] || "STRING";
-        const upper = parts.map((p) => p.toUpperCase());
-        return {
-          technical_name: name,
-          native_data_type: type,
-          is_primary_key: upper.includes("PK") || upper.includes("PRIMARY"),
-          is_nullable: !upper.includes("NOT_NULL") && !(upper.includes("NOT") && upper.includes("NULL")),
-        };
-      });
+  const handleSubmit = () => {
+    const attrs = rows
+      .filter((r) => r.name.trim())
+      .map((r) => ({
+        technical_name: r.name.trim(),
+        native_data_type: r.type || null,
+        is_primary_key: r.pk,
+        is_nullable: r.nullable,
+      }));
+    const fks = rows
+      .filter((r) => r.name.trim() && r.fkTargetEntityId && r.fkTargetAttrId)
+      .map((r) => ({
+        sourceColName: r.name.trim(),
+        targetEntityId: r.fkTargetEntityId,
+        targetAttrId: r.fkTargetAttrId,
+      }));
+    onSubmit(
+      {
+        system_id: systemId,
+        schema_name: schemaName,
+        technical_name: technicalName,
+        logical_name: logicalName || null,
+        entity_type: entityType,
+        initial_attributes: attrs,
+      },
+      fks,
+    );
+  };
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <Card className="w-full max-w-2xl" onClick={(e) => e.stopPropagation()}>
-        <CardHeader>
+      <Card className="w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <CardHeader className="shrink-0">
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2">
               <Plus className="h-5 w-5 text-nuclea-primary" />
@@ -839,14 +943,12 @@ function QuickAddEntityDialog({
             </button>
           </div>
           <CardDescription>
-            Atalho para criar uma entidade direto no canvas. Para edição completa use{" "}
-            <Link to="/entities/$id" params={{ id: "x" }} className="underline text-nuclea-primary">
-              /entities
-            </Link>{" "}
-            depois.
+            Defina colunas, tipos, PK e FKs. Tipos mostrados são os da tecnologia
+            <strong> {systemTechnology || "genérica"}</strong>. FKs viram relacionamentos
+            no DER e entram na mesma sessão de edição.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="overflow-y-auto flex-1 space-y-4">
           <div className="grid md:grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-medium block mb-1">Schema</label>
@@ -857,7 +959,7 @@ function QuickAddEntityDialog({
               <select
                 className="w-full rounded-md border bg-background px-3 py-2 text-sm"
                 value={entityType}
-                onChange={(e) => setEntityType(e.target.value as any)}
+                onChange={(e) => setEntityType(e.target.value as "TABLE" | "VIEW")}
               >
                 <option value="TABLE">TABLE</option>
                 <option value="VIEW">VIEW</option>
@@ -881,30 +983,126 @@ function QuickAddEntityDialog({
               />
             </div>
           </div>
+
           <div>
-            <label className="text-xs font-medium block mb-1">
-              Atributos (formato: <code>nome tipo [PK]</code> uma por linha)
-            </label>
-            <textarea
-              value={attrsText}
-              onChange={(e) => setAttrsText(e.target.value)}
-              rows={6}
-              className="w-full rounded-md border bg-background px-3 py-2 text-xs font-mono"
-            />
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-medium">Colunas</label>
+              <Button variant="outline" size="sm" onClick={addRow}>
+                <Plus className="mr-1 h-3 w-3" /> Adicionar coluna
+              </Button>
+            </div>
+            <div className="border rounded-md overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead className="bg-muted/40 text-muted-foreground">
+                  <tr>
+                    <th className="text-left p-2 font-medium">Nome</th>
+                    <th className="text-left p-2 font-medium">Tipo</th>
+                    <th className="text-center p-2 font-medium w-12">Nulo</th>
+                    <th className="text-center p-2 font-medium w-12">PK</th>
+                    <th className="text-left p-2 font-medium">FK → Tabela</th>
+                    <th className="text-left p-2 font-medium">FK → Coluna</th>
+                    <th className="w-8"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r) => {
+                    const targetEnt = fkCandidates.find((e) => e.entity_id === r.fkTargetEntityId);
+                    return (
+                      <tr key={r.uid} className="border-t">
+                        <td className="p-1">
+                          <Input
+                            value={r.name}
+                            onChange={(e) => updateRow(r.uid, { name: e.target.value })}
+                            placeholder="nome_coluna"
+                            className="h-7 text-xs font-mono"
+                          />
+                        </td>
+                        <td className="p-1">
+                          <select
+                            value={r.type}
+                            onChange={(e) => updateRow(r.uid, { type: e.target.value })}
+                            className="h-7 text-xs rounded border bg-background px-1.5 font-mono w-full"
+                          >
+                            <option value="">— tipo —</option>
+                            {typeOptions.map((t) => (
+                              <option key={t} value={t}>{t}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="p-1 text-center">
+                          <input
+                            type="checkbox"
+                            checked={r.nullable}
+                            onChange={(e) => updateRow(r.uid, { nullable: e.target.checked })}
+                          />
+                        </td>
+                        <td className="p-1 text-center">
+                          <input
+                            type="checkbox"
+                            checked={r.pk}
+                            onChange={(e) => updateRow(r.uid, { pk: e.target.checked, nullable: e.target.checked ? false : r.nullable })}
+                          />
+                        </td>
+                        <td className="p-1">
+                          <select
+                            value={r.fkTargetEntityId}
+                            onChange={(e) =>
+                              updateRow(r.uid, {
+                                fkTargetEntityId: e.target.value,
+                                fkTargetAttrId: "",
+                              })
+                            }
+                            className="h-7 text-xs rounded border bg-background px-1.5 w-full"
+                          >
+                            <option value="">— nenhuma —</option>
+                            {fkCandidates.map((e) => (
+                              <option key={e.entity_id} value={e.entity_id}>
+                                {e.schema_name}.{e.technical_name}
+                                {(e as { is_shared?: boolean }).is_shared ? " (compartilhada)" : ""}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="p-1">
+                          <select
+                            value={r.fkTargetAttrId}
+                            onChange={(e) => updateRow(r.uid, { fkTargetAttrId: e.target.value })}
+                            disabled={!targetEnt}
+                            className="h-7 text-xs rounded border bg-background px-1.5 font-mono w-full disabled:opacity-50"
+                          >
+                            <option value="">— coluna —</option>
+                            {(targetEnt?.attributes ?? []).map((a) => (
+                              <option key={a.attribute_id} value={a.attribute_id}>
+                                {a.technical_name}{a.is_primary_key ? " 🔑" : ""}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="p-1">
+                          <button
+                            onClick={() => removeRow(r.uid)}
+                            className="text-muted-foreground hover:text-destructive"
+                            disabled={rows.length === 1}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-1">
+              Marque PK pra chave primária. Pra FK, escolha tabela alvo e a coluna —
+              o relacionamento entra na sessão automaticamente quando você criar a tabela.
+            </p>
           </div>
-          <div className="flex justify-end gap-2 pt-2">
+
+          <div className="flex justify-end gap-2 pt-2 border-t">
             <Button variant="outline" onClick={onClose}>Cancelar</Button>
             <Button
-              onClick={() =>
-                onSubmit({
-                  system_id: systemId,
-                  schema_name: schemaName,
-                  technical_name: technicalName,
-                  logical_name: logicalName || null,
-                  entity_type: entityType,
-                  initial_attributes: parseAttrs(),
-                })
-              }
+              onClick={handleSubmit}
               disabled={submitting || !technicalName || !schemaName}
             >
               {submitting ? "Salvando..." : "Criar"}
