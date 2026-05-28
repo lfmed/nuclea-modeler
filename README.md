@@ -216,6 +216,8 @@ Frontend consome via `useFeatures()` em `ui/lib/features.ts`.
 - 🔒 Segurança: [`SECURITY.md`](SECURITY.md)
 - 🤝 Como contribuir: [`CONTRIBUTING.md`](CONTRIBUTING.md)
 - 🛠 Scripts operacionais: [`scripts/README.md`](scripts/README.md)
+- ⚙️ Deploy & runbook detalhado: [`docs/operations/deploy-runbook.md`](docs/operations/deploy-runbook.md)
+- 🔐 Branch protection: [`docs/operations/branch-protection.md`](docs/operations/branch-protection.md)
 
 ## Licença
 
