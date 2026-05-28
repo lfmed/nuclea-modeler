@@ -11,6 +11,12 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Force Node.js 24 runtime on actions still pinned to Node 20.
+# GitHub deprecates Node 20 in June 2026; this opt-in flag preempts the
+# deprecation warnings on actions/checkout, setup-uv, etc.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   python:
     name: Python (ruff + pytest)
@@ -42,12 +48,11 @@ jobs:
         run: uv run ruff format --check src/ tests/
         continue-on-error: true  # warn-only; turn off once code is formatted
 
-      # Bandit: static security analyser. Warn-only inicialmente para não
-      # bloquear PRs antes do triage inicial. Vira hard-gate quando tivermos
-      # a baseline de skips estabilizada.
+      # Bandit: static security analyser. HARD-GATE.
+      # Skips (B101/B404/B603/B608) documentados em pyproject.toml — todos
+      # auditados manualmente conforme ADR-0003.
       - name: Bandit security scan
         run: uv run bandit -c pyproject.toml -r src/ scripts/ -ll
-        continue-on-error: true
 
       - name: Run tests with coverage
         # pytest config (pyproject.toml) já passa --cov --cov-fail-under=60
@@ -61,13 +66,12 @@ jobs:
           path: coverage.xml
           retention-days: 14
 
-      # Verifies docs/openapi.json matches the live code. If a PR changes a
-      # route signature without updating the snapshot, this surfaces it.
-      # Warn-only inicialmente — primeiro run gera o snapshot real, operator
-      # commita, depois remove continue-on-error.
+      # Verifies docs/openapi.json matches the live code. HARD-GATE — exceto
+      # quando snapshot é stub (script detecta via _note keys e emite warning,
+      # exit 0). Para gerar o real: `python -m scripts.dump_openapi` num
+      # workspace com databricks-sdk e committar.
       - name: OpenAPI snapshot drift check
         run: uv run python -m scripts.dump_openapi --check
-        continue-on-error: true
 
   frontend:
     name: Frontend (build + bundle size)

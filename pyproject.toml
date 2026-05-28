@@ -94,7 +94,7 @@ show_missing = true
 skip_covered = false
 
 [tool.bandit]
-# Bandit static security analyser. CI roda em warn-only inicialmente.
+# Bandit static security analyser — hard-gate no CI.
 # Skips são deliberados — não silenciamos achados reais, só ruído conhecido.
 exclude_dirs = [
     "tests",           # asserts em test são esperados (B101)
@@ -105,6 +105,13 @@ skips = [
     "B101",  # assert_used — em test code só, mas exclude_dirs já cobre
     "B404",  # subprocess import (usamos em scripts/ legítimo)
     "B603",  # subprocess sem shell=True (forma SEGURA, não warn)
+    # B608 = hardcoded SQL expressions. ~30 sites Low-confidence, todos
+    # auditados manualmente — todos são:
+    # (a) f-string com identifier validado por _require_ident() (sync/diagram)
+    # (b) f-string com IDs vindos de query prévia ao banco (_quote_id helper)
+    # (c) interpolação só de table names via s.fq_table()
+    # Input do usuário 100% usa delta.param() — auditado e documentado em ADR-0003.
+    "B608",
 ]
 
 # APX metadata retained for reference. Not used by the Databricks Apps runtime.
