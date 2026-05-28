@@ -1,4 +1,15 @@
-"""Module — Relationships CRUD (manual, complements EXTRACTED relations)."""
+"""Module — Relationships CRUD (manual, complements EXTRACTED relations).
+
+Modelo editorial: mutations (POST/PUT/DELETE) NÃO escrevem direto no catálogo.
+Elas são staged num ticket OPEN de sessão do user. O ticket é aplicado depois
+via /tickets/{id}/apply quando aprovado.
+
+Como o DiffEntity (do helper de sessão) modela mudanças de entity, codificamos
+mudanças de relationships como entries com schema_name='__relationship__' e
+technical_name=<relationship_id ou par src->tgt>. O payload carrega os campos
+do relationship. apply_ticket ainda não materializa relationships — issue
+separado pra implementar isso (mantém compat com o contrato atual).
+"""
 from __future__ import annotations
 
 from datetime import datetime
@@ -10,6 +21,7 @@ from ..core import Dependencies, delta
 from ..core._nuclea_config import get_settings
 from ..core.sql import SqlDependency
 from ..rbac.router import _current_email
+from ..tickets.session import get_or_create_session_ticket, stage_entity_change
 from .models import RelationshipIn, RelationshipListOut, RelationshipOut
 
 router = APIRouter(prefix=f"{api_prefix}/relationships", tags=["relationships"])
@@ -22,6 +34,10 @@ _REL_COLS = [
     "fk_update_rule", "fk_delete_rule",
     "created_at", "created_by", "updated_at", "updated_by",
 ]
+
+# Schema "synthetic" usado no DiffEntity pra distinguir entries de relationship
+# de entries de entity de verdade. Reads do diff podem filtrar por isso.
+_REL_SCHEMA_MARKER = "__relationship__"
 
 
 def _entity_label(schema: str | None, technical: str | None) -> str | None:
@@ -81,6 +97,14 @@ def _select_rel_query(where_clause: str = "") -> str:
 
 def _validate_entities(sql: SqlDependency, system_id: str,
                        source_entity_id: str, target_entity_id: str) -> None:
+    """Confere que os entities existem no catálogo e pertencem ao system.
+
+    Atenção: este modelo editorial permite que entities estejam apenas staged
+    (no ticket OPEN), não ainda no catálogo. Para essa primeira versão exigimos
+    que ambos existam no catálogo — se forem entities recém-criadas na sessão,
+    o user precisa aplicar o ticket antes de criar relationships entre elas.
+    Issue separado pra suportar referências a entities pre_allocated.
+    """
     s = get_settings()
     rows = delta.fetch_all_params(
         sql,
@@ -111,6 +135,79 @@ def _validate_entities(sql: SqlDependency, system_id: str,
             f"target entity belongs to system '{found[target_entity_id]}', "
             f"not '{system_id}'",
         )
+
+
+def _relationship_in_to_payload(
+    payload: RelationshipIn, *, origin: str = "MANUAL"
+) -> dict:
+    return {
+        "system_id": payload.system_id,
+        "source_entity_id": payload.source_entity_id,
+        "target_entity_id": payload.target_entity_id,
+        "source_attr_ids": list(payload.source_attr_ids),
+        "target_attr_ids": list(payload.target_attr_ids),
+        "rel_type": payload.rel_type,
+        "source_cardinality": payload.source_cardinality,
+        "target_cardinality": payload.target_cardinality,
+        "description": payload.description,
+        "origin": origin,
+        "fk_update_rule": payload.fk_update_rule,
+        "fk_delete_rule": payload.fk_delete_rule,
+    }
+
+
+def _virtual_relationship_out(
+    relationship_id: str,
+    payload: RelationshipIn,
+    actor: str,
+    *,
+    source_label: str | None = None,
+    target_label: str | None = None,
+) -> RelationshipOut:
+    now = datetime.utcnow()
+    return RelationshipOut(
+        relationship_id=relationship_id,
+        system_id=payload.system_id,
+        system_name=None,
+        source_entity_id=payload.source_entity_id,
+        source_entity_label=source_label,
+        target_entity_id=payload.target_entity_id,
+        target_entity_label=target_label,
+        source_attr_ids=list(payload.source_attr_ids),
+        target_attr_ids=list(payload.target_attr_ids),
+        rel_type=payload.rel_type,
+        source_cardinality=payload.source_cardinality,
+        target_cardinality=payload.target_cardinality,
+        description=payload.description,
+        origin="MANUAL",
+        fk_update_rule=payload.fk_update_rule,
+        fk_delete_rule=payload.fk_delete_rule,
+        created_at=now,
+        created_by=actor,
+        updated_at=now,
+        updated_by=actor,
+    )
+
+
+def _entity_labels(sql, source_id: str, target_id: str) -> tuple[str | None, str | None]:
+    """Fetch (schema.technical_name) labels for src/tgt entities — best effort."""
+    s = get_settings()
+    rows = delta.fetch_all_params(
+        sql,
+        f"""
+        SELECT entity_id, schema_name, technical_name
+        FROM {s.fq_table('entities')}
+        WHERE entity_id IN (:src, :tgt)
+        """,
+        [delta.param("src", source_id), delta.param("tgt", target_id)],
+    )
+    by_id = {r[0]: (r[1], r[2]) for r in rows}
+    src = by_id.get(source_id)
+    tgt = by_id.get(target_id)
+    return (
+        _entity_label(src[0], src[1]) if src else None,
+        _entity_label(tgt[0], tgt[1]) if tgt else None,
+    )
 
 
 @router.get("", response_model=list[RelationshipListOut], operation_id="listRelationships")
@@ -166,35 +263,29 @@ def create_relationship(
     sql: SqlDependency,
     user_ws: Dependencies.UserClient,
 ) -> RelationshipOut:
+    """Stage criação de relationship. NÃO grava no catálogo — vai pro ticket OPEN."""
     _validate_entities(
         sql, payload.system_id, payload.source_entity_id, payload.target_entity_id,
     )
-    s = get_settings()
     actor = _current_email(user_ws) or "unknown"
     rid = delta.new_id("rel-")
-    now = datetime.utcnow()
-    delta.insert(
-        sql,
-        s.fq_table("relationships"),
-        {
-            "relationship_id": rid,
-            "system_id": payload.system_id,
-            "source_entity_id": payload.source_entity_id,
-            "target_entity_id": payload.target_entity_id,
-            "source_attr_ids": payload.source_attr_ids,
-            "target_attr_ids": payload.target_attr_ids,
-            "rel_type": payload.rel_type,
-            "source_cardinality": payload.source_cardinality,
-            "target_cardinality": payload.target_cardinality,
-            "description": payload.description,
-            "origin": "MANUAL",
-            "fk_update_rule": payload.fk_update_rule,
-            "fk_delete_rule": payload.fk_delete_rule,
-            "created_at": now, "created_by": actor,
-            "updated_at": now, "updated_by": actor,
-        },
+    ticket_id, diff = get_or_create_session_ticket(sql, actor, payload.system_id)
+    rel_payload = _relationship_in_to_payload(payload, origin="MANUAL")
+    rel_payload["relationship_id"] = rid
+    entry = {
+        "op": "add",
+        "schema_name": _REL_SCHEMA_MARKER,
+        "technical_name": rid,
+        "entity_type": "RELATIONSHIP",
+        "payload": rel_payload,
+    }
+    stage_entity_change(sql, ticket_id, diff, entry)
+    src_label, tgt_label = _entity_labels(
+        sql, payload.source_entity_id, payload.target_entity_id,
     )
-    return get_relationship(rid, sql)
+    return _virtual_relationship_out(
+        rid, payload, actor, source_label=src_label, target_label=tgt_label,
+    )
 
 
 @router.put("/{relationship_id}", response_model=RelationshipOut, operation_id="updateRelationship")
@@ -204,39 +295,62 @@ def update_relationship(
     sql: SqlDependency,
     user_ws: Dependencies.UserClient,
 ) -> RelationshipOut:
+    """Stage update de relationship no ticket OPEN."""
     _validate_entities(
         sql, payload.system_id, payload.source_entity_id, payload.target_entity_id,
     )
-    s = get_settings()
     actor = _current_email(user_ws) or "unknown"
-    delta.update_by_id(
-        sql,
-        s.fq_table("relationships"),
-        "relationship_id",
-        relationship_id,
-        {
-            "system_id": payload.system_id,
-            "source_entity_id": payload.source_entity_id,
-            "target_entity_id": payload.target_entity_id,
-            "source_attr_ids": payload.source_attr_ids,
-            "target_attr_ids": payload.target_attr_ids,
-            "rel_type": payload.rel_type,
-            "source_cardinality": payload.source_cardinality,
-            "target_cardinality": payload.target_cardinality,
-            "description": payload.description,
-            "fk_update_rule": payload.fk_update_rule,
-            "fk_delete_rule": payload.fk_delete_rule,
-            "updated_at": datetime.utcnow(),
-            "updated_by": actor,
-        },
+    ticket_id, diff = get_or_create_session_ticket(sql, actor, payload.system_id)
+    rel_payload = _relationship_in_to_payload(payload)
+    rel_payload["relationship_id"] = relationship_id
+    entry = {
+        "op": "change",
+        "schema_name": _REL_SCHEMA_MARKER,
+        "technical_name": relationship_id,
+        "entity_type": "RELATIONSHIP",
+        "payload": rel_payload,
+        "field_changes": [
+            {"field": "relationship_update", "before": None, "after": rel_payload}
+        ],
+    }
+    stage_entity_change(sql, ticket_id, diff, entry)
+    src_label, tgt_label = _entity_labels(
+        sql, payload.source_entity_id, payload.target_entity_id,
     )
-    return get_relationship(relationship_id, sql)
+    return _virtual_relationship_out(
+        relationship_id, payload, actor,
+        source_label=src_label, target_label=tgt_label,
+    )
 
 
 @router.delete("/{relationship_id}", operation_id="deleteRelationship")
-def delete_relationship(relationship_id: str, sql: SqlDependency) -> dict:
+def delete_relationship(
+    relationship_id: str,
+    sql: SqlDependency,
+    user_ws: Dependencies.UserClient,
+) -> dict:
+    """Stage delete de relationship no ticket OPEN.
+
+    Precisa ler o system_id do catálogo pra abrir o ticket de sessão correto.
+    """
     s = get_settings()
-    delta.delete_by_id(
-        sql, s.fq_table("relationships"), "relationship_id", relationship_id,
+    actor = _current_email(user_ws) or "unknown"
+    row = delta.fetch_one_params(
+        sql,
+        f"SELECT system_id FROM {s.fq_table('relationships')} "
+        f"WHERE relationship_id = :relationship_id",
+        [delta.param("relationship_id", relationship_id)],
     )
-    return {"deleted": relationship_id}
+    if not row:
+        raise HTTPException(404, f"relationship '{relationship_id}' not found")
+    system_id = row[0]
+    ticket_id, diff = get_or_create_session_ticket(sql, actor, system_id)
+    entry = {
+        "op": "remove",
+        "schema_name": _REL_SCHEMA_MARKER,
+        "technical_name": relationship_id,
+        "entity_type": "RELATIONSHIP",
+        "payload": {"relationship_id": relationship_id},
+    }
+    stage_entity_change(sql, ticket_id, diff, entry)
+    return {"deleted": relationship_id, "pending": True, "ticket_id": ticket_id}

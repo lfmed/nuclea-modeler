@@ -13,6 +13,16 @@ from ..core import Dependencies, delta
 from ..core._nuclea_config import get_settings
 from ..core.sql import SqlDependency
 from ..rbac.router import _current_email
+from ..tickets.overlay import (
+    field_changes_by_target,
+    index_session_diff,
+    pick_entry,
+)
+from ..tickets.session import (
+    find_open_session_ticket,
+    get_or_create_session_ticket,
+    stage_entity_change,
+)
 from .models import (
     DiagramAttribute,
     DiagramEntity,
@@ -40,7 +50,24 @@ def _require_ident(value: str, field: str) -> str:
     return value
 
 
-def _build_diagram(sql, system_id: str, layout_name: str = "default") -> DiagramView:
+def _build_diagram(
+    sql,
+    system_id: str,
+    layout_name: str = "default",
+    *,
+    session_ticket_id: str | None = None,
+    session_diff: dict[str, Any] | None = None,
+) -> DiagramView:
+    """Monta a view do DER.
+
+    Quando `session_ticket_id`/`session_diff` são fornecidos, aplica overlay:
+    - entries op=add → adiciona DiagramEntity virtual com pending_op="add"
+    - entries op=change → mescla field_changes e flagga pending_op="change"
+      (também aplica em attributes via field "attribute:NAME.subfield" e
+      adições/remoções virtuais de attributes)
+    - entries op=remove → mantém na lista com pending_op="remove" (frontend
+      renderiza com opacidade)
+    """
     s = get_settings()
     sys_row = delta.fetch_one_params(
         sql,
@@ -159,14 +186,165 @@ def _build_diagram(sql, system_id: str, layout_name: str = "default") -> Diagram
 
     layout = _load_layout_dict(sql, system_id, layout_name)
 
+    entities_list = list(entities_by_id.values())
+
+    # ─── Editorial overlay (read-only) ─────────────────────────────────────
+    # Aplica pending ops do ticket OPEN da sessão atual sem mexer no Delta.
+    if session_diff:
+        entities_list = _apply_session_overlay(
+            entities_list,
+            system_id=system_id,
+            session_ticket_id=session_ticket_id,
+            session_diff=session_diff,
+        )
+
     return DiagramView(
         system_id=system_id,
         system_name=system_name,
-        entities=list(entities_by_id.values()),
+        entities=entities_list,
         relationships=relationships,
         layout={k: NodePosition(**v) for k, v in layout.items()} if layout else {},
         layout_name=layout_name,
     )
+
+
+def _apply_session_overlay(
+    entities: list[DiagramEntity],
+    *,
+    system_id: str,
+    session_ticket_id: str | None,
+    session_diff: dict[str, Any],
+) -> list[DiagramEntity]:
+    """Aplica o diff do ticket de sessão na lista de DiagramEntity.
+
+    NÃO altera o catálogo Delta — apenas devolve uma view enriquecida com
+    flags `pending_op`/`pending_ticket_id`. Entries `add` para entities
+    que ainda não existem viram entities virtuais com `entity_id` sintético
+    `pending-ent-{schema}.{tech}`.
+    """
+    indexed = index_session_diff(session_diff)
+    consumed: set[tuple[str, str]] = set()
+    out: list[DiagramEntity] = []
+    for ent in entities:
+        entry = pick_entry(indexed, ent.schema_name, ent.technical_name)
+        if not entry:
+            out.append(ent)
+            continue
+        op = entry.get("op")
+        consumed.add((ent.schema_name, ent.technical_name))
+        if op == "remove":
+            ent.pending_op = "remove"
+            ent.pending_ticket_id = session_ticket_id
+            out.append(ent)
+        elif op == "change":
+            ent_updates, attr_changes, attr_adds, attr_removes = (
+                field_changes_by_target(entry)
+            )
+            for fld in ("logical_name", "domain", "criticality", "entity_type"):
+                if fld in ent_updates and ent_updates[fld] is not None:
+                    setattr(ent, fld, ent_updates[fld])
+            attrs_by_name: dict[str, DiagramAttribute] = {
+                a.technical_name: a for a in ent.attributes
+            }
+            for col_name, sub_changes in attr_changes.items():
+                target = attrs_by_name.get(col_name)
+                if not target:
+                    continue
+                for sub, after in sub_changes.items():
+                    if sub == "logical_name":
+                        target.logical_name = after
+                    elif sub == "native_data_type":
+                        target.native_data_type = after
+                    elif sub == "is_nullable":
+                        target.is_nullable = (
+                            bool(after) if after is not None else None
+                        )
+                    elif sub == "is_primary_key":
+                        target.is_primary_key = bool(after)
+                    elif sub == "ordinal_position":
+                        try:
+                            target.ordinal_position = (
+                                int(after) if after is not None else None
+                            )
+                        except (TypeError, ValueError):
+                            pass
+                target.pending_op = "change"
+            for raw in attr_adds:
+                ent.attributes.append(
+                    DiagramAttribute(
+                        attribute_id=(
+                            f"pending-attr-{ent.schema_name}."
+                            f"{ent.technical_name}.{raw.get('technical_name')}"
+                        ),
+                        technical_name=raw.get("technical_name") or "",
+                        logical_name=raw.get("logical_name"),
+                        native_data_type=raw.get("native_data_type"),
+                        is_primary_key=bool(raw.get("is_primary_key", False)),
+                        is_nullable=raw.get("is_nullable"),
+                        ordinal_position=raw.get("ordinal_position"),
+                        has_lgpd_flag=False,
+                        pending_op="add",
+                    )
+                )
+            removed_names = {r.get("technical_name") for r in attr_removes}
+            for a in ent.attributes:
+                if a.technical_name in removed_names and a.pending_op is None:
+                    a.pending_op = "remove"
+            ent.pending_op = "change"
+            ent.pending_ticket_id = session_ticket_id
+            out.append(ent)
+        else:
+            ent.pending_op = "add"
+            ent.pending_ticket_id = session_ticket_id
+            out.append(ent)
+
+    for key, entries in indexed.items():
+        if key in consumed:
+            continue
+        add_entry = next(
+            (e for e in entries if e.get("op") == "add"),
+            None,
+        )
+        if not add_entry:
+            continue
+        payload = add_entry.get("payload") or {}
+        attrs_raw = add_entry.get("attributes") or []
+        virtual_id = f"pending-ent-{key[0]}.{key[1]}"
+        virt_attrs: list[DiagramAttribute] = []
+        for idx, a in enumerate(attrs_raw):
+            virt_attrs.append(
+                DiagramAttribute(
+                    attribute_id=(
+                        f"pending-attr-{key[0]}.{key[1]}."
+                        f"{a.get('technical_name', idx)}"
+                    ),
+                    technical_name=a.get("technical_name") or "",
+                    logical_name=a.get("logical_name"),
+                    native_data_type=a.get("native_data_type"),
+                    is_primary_key=bool(a.get("is_primary_key", False)),
+                    is_nullable=a.get("is_nullable"),
+                    ordinal_position=a.get("ordinal_position", idx + 1),
+                    has_lgpd_flag=False,
+                    pending_op="add",
+                )
+            )
+        out.append(
+            DiagramEntity(
+                entity_id=virtual_id,
+                system_id=system_id,
+                schema_name=key[0],
+                technical_name=key[1],
+                logical_name=payload.get("logical_name"),
+                entity_type=add_entry.get("entity_type", "TABLE") or "TABLE",
+                domain=payload.get("domain"),
+                criticality=payload.get("criticality"),
+                attributes=virt_attrs,
+                has_lgpd_flag=False,
+                pending_op="add",
+                pending_ticket_id=session_ticket_id,
+            )
+        )
+    return out
 
 
 def _quote_id(value: str) -> str:
@@ -203,9 +381,30 @@ def _load_layout_dict(sql, system_id: str, layout_name: str) -> dict[str, dict[s
 def get_diagram(
     system_id: str,
     sql: SqlDependency,
+    user_ws: Dependencies.UserClient,
     layout_name: str = "default",
 ) -> DiagramView:
-    return _build_diagram(sql, system_id, layout_name)
+    """Retorna o DER do sistema com overlay editorial.
+
+    Se o user atual tiver um ticket OPEN de sessão para `system_id`, suas
+    mudanças pendentes (add/change/remove de entities + attributes) são
+    aplicadas em cima do catálogo committed e cada item recebe
+    `pending_op`/`pending_ticket_id`. O Delta NÃO é tocado.
+    """
+    actor = _current_email(user_ws)
+    session_ticket_id: str | None = None
+    session_diff: dict[str, Any] | None = None
+    if actor:
+        found = find_open_session_ticket(sql, actor, system_id)
+        if found:
+            session_ticket_id, session_diff = found
+    return _build_diagram(
+        sql,
+        system_id,
+        layout_name,
+        session_ticket_id=session_ticket_id,
+        session_diff=session_diff,
+    )
 
 
 @router.post(
@@ -310,55 +509,32 @@ def quick_add_entity(
     sql: SqlDependency,
     user_ws: Dependencies.UserClient,
 ) -> DiagramEntity:
-    """Cria uma entidade + atributos iniciais em uma única chamada (atalho DER)."""
-    from datetime import datetime
+    """Stage criação de entity + atributos iniciais no ticket OPEN.
+
+    NÃO grava no catálogo — toda a entity + attributes vão como um único
+    DiffEntity op=add no ticket de sessão. O frontend renderiza com overlay
+    usando `_build_diagram(..., session_ticket_id=...)` quando o ticket está
+    aberto.
+    """
     if payload.system_id != system_id:
         raise HTTPException(400, "system_id mismatch")
-    s = get_settings()
-    try:
-        me = user_ws.current_user.me()
-        actor = me.user_name or me.display_name or "unknown"
-    except Exception:
-        actor = "unknown"
+    actor = _current_email(user_ws) or "unknown"
     eid = delta.new_id("ent-")
-    now = datetime.utcnow()
-    delta.insert(
-        sql,
-        s.fq_table("entities"),
-        {
-            "entity_id": eid,
-            "system_id": system_id,
-            "schema_name": payload.schema_name,
-            "technical_name": payload.technical_name,
-            "logical_name": payload.logical_name,
-            "domain": payload.domain,
-            "entity_type": payload.entity_type,
-            "tags": [],
-            "created_at": now, "created_by": actor,
-            "updated_at": now, "updated_by": actor,
-        },
-    )
-    # Insert initial attributes
+    # Pré-alocar attribute_ids; usados no payload do diff e no response virtual.
+    attrs_for_diff: list[dict] = []
     attrs_out: list[DiagramAttribute] = []
     for idx, raw in enumerate(payload.initial_attributes):
         aid = delta.new_id("attr-")
-        delta.insert(
-            sql,
-            s.fq_table("attributes"),
-            {
-                "attribute_id": aid,
-                "entity_id": eid,
-                "technical_name": raw.get("technical_name", ""),
-                "logical_name": raw.get("logical_name"),
-                "ordinal_position": idx + 1,
-                "native_data_type": raw.get("native_data_type"),
-                "is_nullable": raw.get("is_nullable", True),
-                "is_primary_key": bool(raw.get("is_primary_key", False)),
-                "default_value": raw.get("default_value"),
-                "created_at": now, "created_by": actor,
-                "updated_at": now, "updated_by": actor,
-            },
-        )
+        attrs_for_diff.append({
+            "attribute_id": aid,
+            "technical_name": raw.get("technical_name", ""),
+            "logical_name": raw.get("logical_name"),
+            "ordinal_position": idx + 1,
+            "native_data_type": raw.get("native_data_type"),
+            "is_nullable": raw.get("is_nullable", True),
+            "is_primary_key": bool(raw.get("is_primary_key", False)),
+            "default_value": raw.get("default_value"),
+        })
         attrs_out.append(
             DiagramAttribute(
                 attribute_id=aid,
@@ -369,8 +545,26 @@ def quick_add_entity(
                 is_nullable=bool(raw.get("is_nullable", True)),
                 ordinal_position=idx + 1,
                 has_lgpd_flag=False,
+                pending_op="add",
             )
         )
+
+    ticket_id, diff = get_or_create_session_ticket(sql, actor, system_id)
+    entry = {
+        "op": "add",
+        "schema_name": payload.schema_name,
+        "technical_name": payload.technical_name,
+        "entity_type": payload.entity_type,
+        "payload": {
+            "logical_name": payload.logical_name,
+            "domain": payload.domain,
+            "entity_type": payload.entity_type,
+            "tags": [],
+            "pre_allocated_entity_id": eid,
+        },
+        "attributes": attrs_for_diff,
+    }
+    stage_entity_change(sql, ticket_id, diff, entry)
     return DiagramEntity(
         entity_id=eid,
         system_id=system_id,
@@ -381,6 +575,8 @@ def quick_add_entity(
         domain=payload.domain,
         attributes=attrs_out,
         has_lgpd_flag=False,
+        pending_op="add",
+        pending_ticket_id=ticket_id,
     )
 
 
