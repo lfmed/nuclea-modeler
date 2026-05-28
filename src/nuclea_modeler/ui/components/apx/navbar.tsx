@@ -12,23 +12,23 @@ interface NavbarProps {
 
 export function Navbar({ leftContent, rightContent }: NavbarProps) {
   return (
-    <header className="z-50 bg-background/80 backdrop-blur-sm border-b">
+    <header role="banner" className="z-50 bg-background/80 backdrop-blur-sm border-b">
       <div className="h-16 flex items-center justify-between px-4">
         {leftContent || <Logo />}
         <div className="flex-1" />
         {rightContent || (
-          <div className="flex items-center gap-2">
+          <nav aria-label="Ações globais" className="flex items-center gap-2">
             <GlobalSearch />
             <Link
               to="/help"
               title="Ajuda"
-              aria-label="Ajuda"
-              className="inline-flex items-center justify-center rounded-md size-9 text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+              aria-label="Abrir centro de ajuda"
+              className="inline-flex items-center justify-center rounded-md size-9 text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
             >
-              <HelpCircle className="h-4 w-4" />
+              <HelpCircle className="h-4 w-4" aria-hidden="true" />
             </Link>
             <ModeToggle />
-          </div>
+          </nav>
         )}
       </div>
     </header>

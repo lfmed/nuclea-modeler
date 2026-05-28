@@ -27,6 +27,7 @@ import {
   RefreshCw,
   Search,
 } from "lucide-react";
+import { EmptyState } from "@/components/apx/empty-state";
 
 export const Route = createFileRoute("/_sidebar/glossary")({
   component: GlossaryPage,
@@ -162,20 +163,19 @@ function TermsTable({
 
   if (!terms || terms.length === 0) {
     return (
-      <Card className="border-dashed">
-        <CardContent className="pt-10 pb-10 text-center">
-          <BookOpen className="mx-auto h-10 w-10 text-muted-foreground/50 mb-3" />
-          <p className="text-sm text-muted-foreground mb-4">
-            Nenhum termo encontrado. Comece criando o primeiro termo do dicionário.
-          </p>
-          <Button asChild>
-            <Link to="/glossary/new">
-              <Plus className="mr-2 h-4 w-4" />
-              Novo termo
-            </Link>
-          </Button>
-        </CardContent>
-      </Card>
+      <EmptyState
+        icon={<BookOpen className="h-10 w-10" />}
+        title="Dicionário corporativo vazio"
+        description={
+          <>
+            Termos são a fonte da verdade conceitual ("CPF do Cliente", "Limite Pré-aprovado")
+            que se ligam a múltiplos atributos físicos em sistemas distintos. Aprovação flui em
+            <strong> DRAFT → IN_REVIEW → APPROVED</strong>.
+          </>
+        }
+        primaryAction={{ label: "Criar primeiro termo", to: "/glossary/new" }}
+        secondaryAction={{ label: "Ver fluxo de aprovação", to: "/help" }}
+      />
     );
   }
 

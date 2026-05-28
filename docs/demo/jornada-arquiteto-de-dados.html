@@ -1,0 +1,1109 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Núclea Modeler — Jornada do Arquiteto de Dados</title>
+<style>
+  :root {
+    --bg: #0e0a14;
+    --bg-card: #1a1322;
+    --bg-elev: #241a31;
+    --text: #f5f1f9;
+    --text-dim: #b5a8c5;
+    --text-soft: #8a7a9e;
+    --primary: #c93dad;
+    --primary-soft: #7b2d8e;
+    --primary-dark: #4a1a5a;
+    --accent: #ffc72c;
+    --accent-soft: #d6a423;
+    --success: #4ade80;
+    --warning: #fb923c;
+    --danger: #f87171;
+    --border: rgba(255, 255, 255, 0.08);
+    --radius: 12px;
+    --shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+    font-feature-settings: "cv11", "ss01", "ss03", "tnum";
+    background: radial-gradient(ellipse at top, #1d1029 0%, var(--bg) 50%);
+    color: var(--text);
+    line-height: 1.55;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 4rem 2rem;
+  }
+  /* ─── Cover ─────────────────────────────────────────────── */
+  .cover {
+    text-align: left;
+    padding: 5rem 0 6rem;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 4rem;
+    position: relative;
+  }
+  .cover::before {
+    content: '';
+    position: absolute;
+    top: 2rem; left: 0;
+    width: 60px; height: 4px;
+    background: linear-gradient(90deg, var(--primary), var(--accent));
+    border-radius: 2px;
+  }
+  .cover .eyebrow {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    color: var(--accent);
+    font-weight: 600;
+    margin-bottom: 1.25rem;
+  }
+  .cover h1 {
+    font-size: clamp(2.2rem, 5vw, 3.6rem);
+    line-height: 1.1;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    margin-bottom: 1.25rem;
+    background: linear-gradient(135deg, var(--text) 30%, var(--primary) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .cover .lead {
+    font-size: 1.25rem;
+    color: var(--text-dim);
+    max-width: 700px;
+    margin-bottom: 2.5rem;
+  }
+  .cover-meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1.5rem;
+    padding-top: 2rem;
+    border-top: 1px solid var(--border);
+  }
+  .cover-meta dt {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--text-soft);
+    margin-bottom: 0.35rem;
+  }
+  .cover-meta dd {
+    font-size: 0.95rem;
+    color: var(--text);
+    font-weight: 500;
+  }
+
+  /* ─── Sections ──────────────────────────────────────────── */
+  section {
+    margin-bottom: 5rem;
+  }
+  .section-header {
+    margin-bottom: 2.5rem;
+    display: flex;
+    align-items: baseline;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+  .section-number {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    color: var(--primary);
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+  h2 {
+    font-size: 2rem;
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    line-height: 1.2;
+  }
+  .section-subtitle {
+    color: var(--text-dim);
+    font-size: 1.05rem;
+    margin-top: 0.5rem;
+  }
+
+  /* ─── Persona ───────────────────────────────────────────── */
+  .persona {
+    display: grid;
+    grid-template-columns: 1fr 2fr;
+    gap: 2.5rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 2.5rem;
+    box-shadow: var(--shadow);
+    align-items: start;
+  }
+  .persona-avatar {
+    aspect-ratio: 1;
+    background: linear-gradient(135deg, var(--primary-soft), var(--primary-dark));
+    border-radius: var(--radius);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 5rem;
+    color: var(--accent);
+    font-weight: 800;
+    letter-spacing: -0.05em;
+  }
+  .persona h3 {
+    font-size: 1.5rem;
+    margin-bottom: 0.25rem;
+  }
+  .persona .role {
+    color: var(--accent);
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 1.25rem;
+  }
+  .persona .bio {
+    color: var(--text-dim);
+    margin-bottom: 1.5rem;
+  }
+  .persona-pains {
+    list-style: none;
+    display: grid;
+    gap: 0.6rem;
+  }
+  .persona-pains li {
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-start;
+    color: var(--text-dim);
+    font-size: 0.95rem;
+  }
+  .persona-pains li::before {
+    content: '×';
+    color: var(--danger);
+    font-weight: 700;
+    font-size: 1.1rem;
+    line-height: 1.4;
+    flex-shrink: 0;
+  }
+
+  /* ─── Scenarios ─────────────────────────────────────────── */
+  .scenario {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-bottom: 2rem;
+    box-shadow: var(--shadow);
+    transition: border-color 0.2s, transform 0.2s;
+  }
+  .scenario:hover {
+    border-color: var(--primary-soft);
+    transform: translateY(-2px);
+  }
+  .scenario-head {
+    padding: 1.75rem 2rem;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(135deg, transparent, rgba(201, 61, 173, 0.04));
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 1.5rem;
+    align-items: center;
+  }
+  .scenario-num {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--primary), var(--primary-soft));
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 1.2rem;
+    flex-shrink: 0;
+    box-shadow: 0 4px 14px rgba(201, 61, 173, 0.3);
+  }
+  .scenario-title h3 {
+    font-size: 1.3rem;
+    margin-bottom: 0.25rem;
+    font-weight: 700;
+  }
+  .scenario-quote {
+    color: var(--accent);
+    font-style: italic;
+    font-size: 0.9rem;
+  }
+  .scenario-duration {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.75rem;
+    color: var(--text-soft);
+    background: var(--bg-elev);
+    padding: 0.4rem 0.7rem;
+    border-radius: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    white-space: nowrap;
+  }
+  .scenario-body {
+    padding: 2rem;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+  }
+  .scenario-col h4 {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--text-soft);
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .scenario-col h4::before {
+    content: '';
+    width: 3px;
+    height: 14px;
+    background: var(--primary);
+    border-radius: 2px;
+  }
+  .scenario-col h4.outcome::before { background: var(--success); }
+  .steps {
+    list-style: none;
+    counter-reset: step;
+  }
+  .steps li {
+    counter-increment: step;
+    padding: 0.7rem 0 0.7rem 2.2rem;
+    position: relative;
+    color: var(--text-dim);
+    border-bottom: 1px dashed var(--border);
+    font-size: 0.95rem;
+  }
+  .steps li:last-child { border-bottom: none; }
+  .steps li::before {
+    content: counter(step);
+    position: absolute;
+    left: 0;
+    top: 0.65rem;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--bg-elev);
+    color: var(--accent);
+    font-weight: 700;
+    font-size: 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border);
+  }
+  .steps code, .outcomes code, .stack code, .checklist code, .map code {
+    background: var(--bg-elev);
+    color: var(--accent);
+    padding: 0.1rem 0.45rem;
+    border-radius: 4px;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.85em;
+    border: 1px solid var(--border);
+  }
+  .outcomes {
+    list-style: none;
+    display: grid;
+    gap: 0.75rem;
+  }
+  .outcomes li {
+    padding: 0.75rem 1rem 0.75rem 2.5rem;
+    background: rgba(74, 222, 128, 0.05);
+    border-left: 3px solid var(--success);
+    border-radius: 4px;
+    color: var(--text-dim);
+    font-size: 0.92rem;
+    position: relative;
+  }
+  .outcomes li::before {
+    content: '✓';
+    position: absolute;
+    left: 1rem;
+    top: 0.75rem;
+    color: var(--success);
+    font-weight: 700;
+  }
+  .scenario-footer {
+    padding: 1rem 2rem;
+    background: var(--bg-elev);
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .pill {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    background: rgba(201, 61, 173, 0.1);
+    padding: 0.35rem 0.7rem;
+    border-radius: 999px;
+    border: 1px solid rgba(201, 61, 173, 0.25);
+  }
+  .pill-label {
+    font-size: 0.7rem;
+    color: var(--text-soft);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-right: 0.25rem;
+  }
+
+  /* ─── Map table ─────────────────────────────────────────── */
+  .map-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    background: var(--bg-card);
+    border-radius: var(--radius);
+    overflow: hidden;
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border);
+  }
+  .map-table th, .map-table td {
+    padding: 1rem 1.25rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  .map-table th {
+    background: var(--bg-elev);
+    color: var(--accent);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 600;
+  }
+  .map-table tbody tr:last-child td { border-bottom: none; }
+  .map-table tbody tr:hover { background: rgba(201, 61, 173, 0.04); }
+  .map-table td:first-child { font-weight: 600; color: var(--text); }
+  .map-table td { color: var(--text-dim); font-size: 0.9rem; }
+
+  /* ─── Checklist ─────────────────────────────────────────── */
+  .checklist {
+    list-style: none;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1rem;
+    box-shadow: var(--shadow);
+  }
+  .checklist li {
+    display: flex;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-dim);
+    font-size: 0.95rem;
+    align-items: flex-start;
+  }
+  .checklist li:last-child { border-bottom: none; }
+  .checklist input[type="checkbox"] {
+    margin-top: 0.3rem;
+    accent-color: var(--primary);
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+  }
+  .checklist strong { color: var(--text); display: block; margin-bottom: 0.2rem; }
+  .checklist .hint { color: var(--text-soft); font-size: 0.85rem; font-family: "SF Mono", Menlo, Consolas, monospace; }
+
+  /* ─── CTA / Footer ──────────────────────────────────────── */
+  .cta {
+    background: linear-gradient(135deg, var(--primary-dark), var(--primary-soft));
+    padding: 3rem 2.5rem;
+    border-radius: var(--radius);
+    text-align: center;
+    box-shadow: var(--shadow);
+    position: relative;
+    overflow: hidden;
+  }
+  .cta::before {
+    content: '';
+    position: absolute;
+    top: -50%; right: -10%;
+    width: 300px; height: 300px;
+    background: radial-gradient(circle, var(--accent) 0%, transparent 70%);
+    opacity: 0.15;
+    pointer-events: none;
+  }
+  .cta h2 {
+    font-size: 1.8rem;
+    margin-bottom: 1rem;
+  }
+  .cta p {
+    color: var(--text-dim);
+    max-width: 600px;
+    margin: 0 auto 2rem;
+  }
+  .cta-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    text-align: left;
+    position: relative;
+    z-index: 1;
+  }
+  .cta-card {
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 1.25rem;
+    border-radius: 8px;
+  }
+  .cta-card strong {
+    display: block;
+    color: var(--accent);
+    margin-bottom: 0.4rem;
+    font-size: 0.95rem;
+  }
+  .cta-card span {
+    color: var(--text-dim);
+    font-size: 0.85rem;
+  }
+  footer {
+    margin-top: 5rem;
+    padding-top: 2rem;
+    border-top: 1px solid var(--border);
+    text-align: center;
+    color: var(--text-soft);
+    font-size: 0.85rem;
+  }
+  footer a { color: var(--accent); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+
+  /* ─── Responsive ────────────────────────────────────────── */
+  @media (max-width: 720px) {
+    .page { padding: 2rem 1rem; }
+    .persona { grid-template-columns: 1fr; }
+    .persona-avatar { max-width: 140px; }
+    .scenario-head { grid-template-columns: auto 1fr; }
+    .scenario-duration { grid-column: 1 / -1; justify-self: start; }
+    .scenario-body { grid-template-columns: 1fr; gap: 1.5rem; }
+    .map-table { font-size: 0.85rem; }
+    .map-table th, .map-table td { padding: 0.7rem; }
+  }
+
+  /* ─── Print ─────────────────────────────────────────────── */
+  @media print {
+    body { background: white; color: black; }
+    .scenario, .persona, .checklist, .map-table, .cta { box-shadow: none; border: 1px solid #ccc; }
+    .cta { background: #f5f5f5; color: black; }
+    .cta h2 { color: var(--primary-dark); }
+    .cta p, .cta-card span { color: #555; }
+    .scenario { page-break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ═══════════════════════════════════ COVER ═════════════════════════════ -->
+  <header class="cover">
+    <div class="eyebrow">Núclea Modeler · Jornada de Demonstração</div>
+    <h1>Um dia na vida do Arquiteto de Dados</h1>
+    <p class="lead">
+      Como o Núclea Modeler resolve o dia-a-dia de quem mantém a verdade sobre os dados da companhia —
+      do banco recém-descoberto à publicação da versão aprovada do modelo.
+    </p>
+    <dl class="cover-meta">
+      <div>
+        <dt>Audiência</dt>
+        <dd>Arquitetos &amp; CdE de Dados</dd>
+      </div>
+      <div>
+        <dt>Duração</dt>
+        <dd>45 minutos + Q&amp;A</dd>
+      </div>
+      <div>
+        <dt>Formato</dt>
+        <dd>Demo guiada · 6 cenários</dd>
+      </div>
+      <div>
+        <dt>URL Live</dt>
+        <dd><code>nuclea-modeler.databricksapps.com</code></dd>
+      </div>
+    </dl>
+  </header>
+
+  <!-- ═══════════════════════════════════ PERSONA ═══════════════════════════ -->
+  <section>
+    <div class="section-header">
+      <span class="section-number">01</span>
+      <h2>Quem é o herói da história</h2>
+    </div>
+    <p class="section-subtitle" style="margin-bottom: 2rem;">
+      Antes da demo, alinhe as pessoas com quem o app está conversando.
+    </p>
+
+    <div class="persona">
+      <div class="persona-avatar">MS</div>
+      <div>
+        <h3>Marcos Silveira</h3>
+        <div class="role">Arquiteto Sênior · Tribo de Dados, Núclea</div>
+        <p class="bio">
+          10 anos modelando dados em bancos. Mantém o catálogo lógico de HINT/HEXT/PROD,
+          é o "guardião da verdade" sobre quais tabelas existem, o que cada coluna significa,
+          e quais sistemas consomem cada entidade. Hoje gasta 60% do tempo conciliando
+          modelos do Embarcadero ER/Studio com a realidade dos bancos — e descobrindo
+          tarde demais quando o time de Eng criou tabelas sem avisar.
+        </p>
+        <ul class="persona-pains">
+          <li>Tabelas aparecem em produção dias depois do deploy sem nenhum registro no catálogo.</li>
+          <li>"Onde está o campo X?" demora 20 minutos de SQL no Catalog Explorer + 3 perguntas no Slack.</li>
+          <li>O ER/Studio tem versão divergente entre João, Maria e o repositório do time.</li>
+          <li>Auditoria pede relatório LGPD trimestral e ele monta na unha em Excel.</li>
+          <li>Refatoração de tabela CLIENTE? Ninguém sabe o blast radius — é fé.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════ SCENARIO 1 ════════════════════════ -->
+  <section>
+    <div class="section-header">
+      <span class="section-number">02</span>
+      <h2>Os 6 cenários da rotina</h2>
+    </div>
+    <p class="section-subtitle" style="margin-bottom: 2.5rem;">
+      Cada cenário simula uma situação real do Marcos. Demo guiada com tempo cronometrado.
+    </p>
+
+    <article class="scenario">
+      <header class="scenario-head">
+        <div class="scenario-num">1</div>
+        <div class="scenario-title">
+          <h3>"O DBA criou 3 tabelas em produção sem avisar"</h3>
+          <p class="scenario-quote">— "Como descobrir o que mudou no banco desde a última revisão?"</p>
+        </div>
+        <span class="scenario-duration">8 min</span>
+      </header>
+      <div class="scenario-body">
+        <div class="scenario-col">
+          <h4>Fluxo no app</h4>
+          <ol class="steps">
+            <li>Marcos navega em <code>/extractions</code> e clica <strong>"Nova extração"</strong>.</li>
+            <li>Seleciona o sistema <code>HINT_CARTÕES</code> e o sandbox Lakebase já provisionado <code>JDBCTESTLAKEBASE</code>.</li>
+            <li>Define schemas alvo (ou deixa "todos") e clica <strong>Executar</strong>.</li>
+            <li>App conecta via psycopg, varre <code>information_schema</code> + <code>pg_constraint</code> (PKs), monta snapshot.</li>
+            <li>Compara snapshot contra o catálogo: detecta <strong>3 entidades novas</strong> + <strong>1 com tipo alterado</strong>.</li>
+            <li>Sistema <strong>abre ticket automaticamente</strong>: <code>"Reconciliação Lakebase — 3 novos, 1 alterado, 0 removidos"</code>.</li>
+            <li>Marcos abre o ticket em <code>/tickets/{id}</code>, revisa o diff lado-a-lado.</li>
+            <li>Clica <strong>"Aprovar &amp; Aplicar"</strong> → entidades + atributos são criados no catálogo em um único commit.</li>
+          </ol>
+        </div>
+        <div class="scenario-col">
+          <h4 class="outcome">Resultado</h4>
+          <ul class="outcomes">
+            <li>Catálogo agora reflete <strong>exatamente</strong> o que existe no banco.</li>
+            <li>Ticket fica como evidência auditável: quem aprovou, quando, com que diff.</li>
+            <li>Audit log registra: <code>action=APPLY · object_type=ticket · actor=marcos@nuclea</code>.</li>
+            <li>Próxima extração já reconhece as 3 tabelas como conhecidas.</li>
+            <li>Tempo total da operação: <strong>~2 minutos</strong> (vs. 1 dia manual).</li>
+          </ul>
+          <h4 style="margin-top: 1.5rem;">Por que isso é único</h4>
+          <ul class="outcomes" style="border-left-color: var(--accent); background: rgba(255, 199, 44, 0.05);">
+            <li style="border-left: none;">
+              <span style="color: var(--accent); position: absolute; left: 1rem; top: 0.75rem;">★</span>
+              Round-trip <strong>modelo ↔ banco real</strong>. Embarcadero compara modelo ↔ modelo.
+            </li>
+          </ul>
+        </div>
+      </div>
+      <footer class="scenario-footer">
+        <span class="pill-label">Módulos:</span>
+        <span class="pill">M2 Engenharia Reversa</span>
+        <span class="pill">Tickets de Reconciliação</span>
+        <span class="pill">M-LB Lakebase Sandbox</span>
+        <span class="pill">Audit</span>
+      </footer>
+    </article>
+
+    <!-- ─── Scenario 2 ─────────────────────────────────────── -->
+    <article class="scenario">
+      <header class="scenario-head">
+        <div class="scenario-num">2</div>
+        <div class="scenario-title">
+          <h3>"Onde está o campo CPF? Em quais sistemas?"</h3>
+          <p class="scenario-quote">— "DPO me pediu mapeamento LGPD do CPF até EOD."</p>
+        </div>
+        <span class="scenario-duration">5 min</span>
+      </header>
+      <div class="scenario-body">
+        <div class="scenario-col">
+          <h4>Fluxo no app</h4>
+          <ol class="steps">
+            <li>Marcos clica na <strong>busca global</strong> (Cmd+K) no header — disponível em qualquer página.</li>
+            <li>Digita <code>cpf</code>. App busca em 7 dimensões: <em>entity, attribute, term, flag, ticket, connection, system</em>.</li>
+            <li>Resultados em até 20 hits: 8 atributos (em 5 entidades diferentes), 1 termo do glossário ("CPF do Cliente"), 2 entidades cuja descrição menciona CPF.</li>
+            <li>Clica no termo do glossário <code>/glossary/cpf-cliente</code> — vê definição canônica + sinônimos (<em>"documento", "cpf_titular"</em>).</li>
+            <li>Aba <strong>"Mapeamentos"</strong> lista todos os atributos físicos vinculados ao termo, em todos os sistemas.</li>
+            <li>Marcos identifica que <code>cliente.cpf</code>, <code>pessoa.documento</code>, e <code>cadastro.cpf_titular</code> são todos o mesmo conceito.</li>
+            <li>Exporta a lista direto da página (CSV / Markdown), anexa no e-mail pro DPO.</li>
+          </ol>
+        </div>
+        <div class="scenario-col">
+          <h4 class="outcome">Resultado</h4>
+          <ul class="outcomes">
+            <li>Resposta entregue em <strong>5 minutos</strong>, não 5 horas.</li>
+            <li>Mapeamento conceitual ↔ físico fica versionado e auditável.</li>
+            <li>Quando o DPO pedir de novo no próximo trimestre, é 1 clique.</li>
+            <li>Atributos com flag LGPD aparecem destacados na busca (badge amarelo).</li>
+          </ul>
+          <h4 style="margin-top: 1.5rem;">Por que isso é único</h4>
+          <ul class="outcomes" style="border-left-color: var(--accent); background: rgba(255, 199, 44, 0.05);">
+            <li style="border-left: none;">
+              <span style="color: var(--accent); position: absolute; left: 1rem; top: 0.75rem;">★</span>
+              Busca <strong>semântica + física</strong> juntas. Catalog Explorer só busca por nome técnico.
+            </li>
+          </ul>
+        </div>
+      </div>
+      <footer class="scenario-footer">
+        <span class="pill-label">Módulos:</span>
+        <span class="pill">Busca global</span>
+        <span class="pill">M6 Dicionário</span>
+        <span class="pill">M5 Flags LGPD</span>
+      </footer>
+    </article>
+
+    <!-- ─── Scenario 3 ─────────────────────────────────────── -->
+    <article class="scenario">
+      <header class="scenario-head">
+        <div class="scenario-num">3</div>
+        <div class="scenario-title">
+          <h3>"Quais tabelas dependem da CLIENTE? Posso refatorar?"</h3>
+          <p class="scenario-quote">— "Antes de mover a coluna, preciso saber o blast radius."</p>
+        </div>
+        <span class="scenario-duration">7 min</span>
+      </header>
+      <div class="scenario-body">
+        <div class="scenario-col">
+          <h4>Fluxo no app</h4>
+          <ol class="steps">
+            <li>Marcos navega em <code>/entities</code>, filtra por <code>cliente</code>, abre a entidade.</li>
+            <li>Aba <strong>"Diagrama"</strong> abre o DER focado nessa entidade — React Flow + Dagre auto-layout.</li>
+            <li>Vê visualmente: 8 entidades conectadas via relacionamentos (FK lógicas), com cardinalidades anotadas (1:N, N:N).</li>
+            <li>Clica numa aresta → painel mostra <em>"FK lógica origem.cliente_id → pedido.cliente_id, cardinalidade 1:N, regra ON DELETE CASCADE"</em>.</li>
+            <li>Vai em <strong>"Linhagem"</strong> da entidade → grafo upstream/downstream.</li>
+            <li><strong>Upstream:</strong> SAP_ERP (ODBC, periodicidade D-1, transformação "merge + dedup por cpf").</li>
+            <li><strong>Downstream:</strong> DW_PRINCIPAL (consumo BATCH, SLA crítico), CRM_SALESFORCE (consumo REST, SLA tolerante).</li>
+            <li>Aumenta a profundidade pra <code>depth=2</code> → vê a cadeia completa do "bisavô" upstream ao "bisneto" downstream.</li>
+          </ol>
+        </div>
+        <div class="scenario-col">
+          <h4 class="outcome">Resultado</h4>
+          <ul class="outcomes">
+            <li>Marcos sabe que <strong>refatorar CLIENTE quebra 4 dashboards e 1 pipeline crítico</strong>.</li>
+            <li>Reuniao de design vai com mapa real, não com chute.</li>
+            <li>Visual exportável em PNG/SVG via <code>html-to-image</code> embutido.</li>
+            <li>Linhagem casada com Unity Catalog Lineage quando disponível.</li>
+          </ul>
+          <h4 style="margin-top: 1.5rem;">Por que isso é único</h4>
+          <ul class="outcomes" style="border-left-color: var(--accent); background: rgba(255, 199, 44, 0.05);">
+            <li style="border-left: none;">
+              <span style="color: var(--accent); position: absolute; left: 1rem; top: 0.75rem;">★</span>
+              DER + Linhagem <strong>na mesma tela</strong>. ER/Studio só tem DER; UC Lineage só tem linhagem.
+            </li>
+          </ul>
+        </div>
+      </div>
+      <footer class="scenario-footer">
+        <span class="pill-label">Módulos:</span>
+        <span class="pill">M4 DER</span>
+        <span class="pill">M7 Linhagem</span>
+        <span class="pill">Relacionamentos</span>
+      </footer>
+    </article>
+
+    <!-- ─── Scenario 4 ─────────────────────────────────────── -->
+    <article class="scenario">
+      <header class="scenario-head">
+        <div class="scenario-num">4</div>
+        <div class="scenario-title">
+          <h3>"O modelo bate com o banco?" (round-trip)</h3>
+          <p class="scenario-quote">— "Antes de publicar a versão Q2, valido contra a realidade."</p>
+        </div>
+        <span class="scenario-duration">6 min</span>
+      </header>
+      <div class="scenario-body">
+        <div class="scenario-col">
+          <h4>Fluxo no app</h4>
+          <ol class="steps">
+            <li>No DER do sistema <code>CRM</code>, Marcos clica em <strong>"Validar contra fonte"</strong>.</li>
+            <li>Seleciona modo <code>Lakebase</code> (sandbox de teste) ou <code>UC_DELTA</code> (catálogo direto).</li>
+            <li>App gera DDL Postgres do modelo atual → executa no sandbox → faz reverse-engineering → diff coluna a coluna.</li>
+            <li>Recebe relatório por entidade: <strong>"presente na fonte? colunas faltando? colunas extras? tipos divergentes?"</strong></li>
+            <li>3 entidades estão em <span style="color: var(--success);">✓ OK</span>, 1 tem 2 colunas faltando, 1 não existe na fonte.</li>
+            <li>Marcos clica em <strong>"Sincronizar diferenças"</strong> — modelo é atualizado em rascunho (draft).</li>
+            <li>Revisa o draft, ajusta nomes lógicos das colunas novas, aprova.</li>
+          </ol>
+        </div>
+        <div class="scenario-col">
+          <h4 class="outcome">Resultado</h4>
+          <ul class="outcomes">
+            <li>Modelo publicado tem garantia de <strong>fidelidade ao banco</strong>.</li>
+            <li>Lakebase Sandbox é descartável — sobe e desce em minutos via API.</li>
+            <li>Auditoria de validação fica gravada em <code>extractions</code> + <code>tickets</code>.</li>
+            <li>Próxima publicação sabe exatamente o que mudou desde a última validação.</li>
+          </ul>
+          <h4 style="margin-top: 1.5rem;">Por que isso é único</h4>
+          <ul class="outcomes" style="border-left-color: var(--accent); background: rgba(255, 199, 44, 0.05);">
+            <li style="border-left: none;">
+              <span style="color: var(--accent); position: absolute; left: 1rem; top: 0.75rem;">★</span>
+              <strong>Validação executável</strong>, não declarativa. Modelo encontra o erro <em>antes</em> da publicação.
+            </li>
+          </ul>
+        </div>
+      </div>
+      <footer class="scenario-footer">
+        <span class="pill-label">Módulos:</span>
+        <span class="pill">M-LB Lakebase Sandbox</span>
+        <span class="pill">M10 Export DDL</span>
+        <span class="pill">M4 DER · Validate Source</span>
+      </footer>
+    </article>
+
+    <!-- ─── Scenario 5 ─────────────────────────────────────── -->
+    <article class="scenario">
+      <header class="scenario-head">
+        <div class="scenario-num">5</div>
+        <div class="scenario-title">
+          <h3>"Publicar a versão Q2 do modelo do CRM"</h3>
+          <p class="scenario-quote">— "Preciso de approval trail e diff vs. Q1."</p>
+        </div>
+        <span class="scenario-duration">6 min</span>
+      </header>
+      <div class="scenario-body">
+        <div class="scenario-col">
+          <h4>Fluxo no app</h4>
+          <ol class="steps">
+            <li>Marcos vai em <code>/versions</code>, filtra por sistema <code>CRM</code>.</li>
+            <li>Vê histórico: <code>v1.0</code> (ativo, Q1), <code>v1.1 draft</code> (trabalho em curso).</li>
+            <li>Clica em <strong>"Publicar v1.2 — Q2 2026"</strong>: preenche título + changelog markdown.</li>
+            <li>Marca <strong>"Tornar ativa"</strong> — versão antiga é demovida automaticamente para PUBLISHED.</li>
+            <li>App congela um snapshot JSON imutável: entidades + atributos + relacionamentos + views.</li>
+            <li>Na tela <code>/versions/diff?from=v1.0&to=v1.2</code> vê diff visual lado-a-lado:
+                <span style="color: var(--success);">+12 colunas adicionadas</span>,
+                <span style="color: var(--warning);">~5 alteradas</span>,
+                <span style="color: var(--danger);">-2 removidas</span>.</li>
+            <li>Em caso de incidente, qualquer versão pode ser <strong>restaurada</strong> em 1 clique (cria novo DRAFT).</li>
+            <li>Aciona <strong>Sync para Unity Catalog</strong> → 47 COMMENT ON TABLE, 312 COMMENT ON COLUMN, 89 ALTER SET TAGS aplicados.</li>
+          </ol>
+        </div>
+        <div class="scenario-col">
+          <h4 class="outcome">Resultado</h4>
+          <ul class="outcomes">
+            <li>Versão imutável publicada com approval trail completo.</li>
+            <li>UC sincronizado: <code>COMMENT</code>s e <code>TAGS</code> visíveis no Catalog Explorer nativo.</li>
+            <li>Diff visual substitui revisão manual de SQL exportado.</li>
+            <li>Compliance: histórico de versões é evidência para auditoria.</li>
+          </ul>
+          <h4 style="margin-top: 1.5rem;">Por que isso é único</h4>
+          <ul class="outcomes" style="border-left-color: var(--accent); background: rgba(255, 199, 44, 0.05);">
+            <li style="border-left: none;">
+              <span style="color: var(--accent); position: absolute; left: 1rem; top: 0.75rem;">★</span>
+              Versionamento <strong>do modelo + propagação ao UC</strong> em fluxo único. ER/Studio Repository é check-in/out só.
+            </li>
+          </ul>
+        </div>
+      </div>
+      <footer class="scenario-footer">
+        <span class="pill-label">Módulos:</span>
+        <span class="pill">M8 Versionamento</span>
+        <span class="pill">M9 Sync UC</span>
+        <span class="pill">RBAC (publish requer ARCHITECT/ADMIN)</span>
+      </footer>
+    </article>
+
+    <!-- ─── Scenario 6 ─────────────────────────────────────── -->
+    <article class="scenario">
+      <header class="scenario-head">
+        <div class="scenario-num">6</div>
+        <div class="scenario-title">
+          <h3>"Relatório LGPD trimestral para a auditoria"</h3>
+          <p class="scenario-quote">— "DPO precisa de evidência de cobertura LGPD."</p>
+        </div>
+        <span class="scenario-duration">5 min</span>
+      </header>
+      <div class="scenario-body">
+        <div class="scenario-col">
+          <h4>Fluxo no app</h4>
+          <ol class="steps">
+            <li>Marcos vai em <code>/flags</code>, filtra por categoria <code>LGPD</code>.</li>
+            <li>Vê todas as flags LGPD em uso: <code>cpf</code>, <code>email</code>, <code>endereco</code>, <code>dado_sensivel</code>, etc.</li>
+            <li>Clica em uma flag → vê todos os atributos e entidades que carregam ela.</li>
+            <li>App mostra que a flag em colunas <strong>propagou automaticamente</strong> para as tabelas-pai (regra spec §4.5.2).</li>
+            <li>Vai em <code>/admin/audit</code>, filtra por <code>action=APPLY_FLAG</code> nos últimos 90 dias.</li>
+            <li>Exporta relatório consolidado: número de atributos LGPD por sistema, por domínio, com justificativa de cada aplicação.</li>
+          </ol>
+        </div>
+        <div class="scenario-col">
+          <h4 class="outcome">Resultado</h4>
+          <ul class="outcomes">
+            <li>Relatório LGPD em <strong>minutos</strong>, não dias.</li>
+            <li>Justificativa obrigatória ficou registrada por flag — DPO tem evidência completa.</li>
+            <li>Audit log mostra quem flaggou o que e quando.</li>
+            <li>Propagação automática garante que se a coluna é LGPD, a tabela inteira aparece nos relatórios.</li>
+          </ul>
+          <h4 style="margin-top: 1.5rem;">Por que isso é único</h4>
+          <ul class="outcomes" style="border-left-color: var(--accent); background: rgba(255, 199, 44, 0.05);">
+            <li style="border-left: none;">
+              <span style="color: var(--accent); position: absolute; left: 1rem; top: 0.75rem;">★</span>
+              Compliance LGPD <strong>como cidadão de primeira classe</strong>, não relatório extraído ad-hoc.
+            </li>
+          </ul>
+        </div>
+      </div>
+      <footer class="scenario-footer">
+        <span class="pill-label">Módulos:</span>
+        <span class="pill">M5 Flags LGPD</span>
+        <span class="pill">Audit Log</span>
+        <span class="pill">Propagação automática (spec §4.5.2)</span>
+      </footer>
+    </article>
+  </section>
+
+  <!-- ═══════════════════════════════════ MAP ═══════════════════════════════ -->
+  <section>
+    <div class="section-header">
+      <span class="section-number">03</span>
+      <h2>Mapa de Funcionalidades</h2>
+    </div>
+    <p class="section-subtitle" style="margin-bottom: 2rem;">
+      Cada cenário cobre múltiplos módulos. Use esta tabela para responder "isso também?" durante a demo.
+    </p>
+
+    <table class="map-table">
+      <thead>
+        <tr>
+          <th>Necessidade do arquiteto</th>
+          <th>Módulo</th>
+          <th>Rota / Endpoint</th>
+          <th>Cobertura</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Descobrir tabelas novas no banco</td>
+          <td>M2 Engenharia Reversa</td>
+          <td><code>/extractions</code> + <code>runLakebaseExtraction</code></td>
+          <td>✅ Completo</td>
+        </tr>
+        <tr>
+          <td>Workflow de aprovação de mudanças</td>
+          <td>Tickets de Reconciliação</td>
+          <td><code>/tickets</code> · RBAC + audit trail</td>
+          <td>✅ Completo</td>
+        </tr>
+        <tr>
+          <td>Validar modelo vs banco real</td>
+          <td>M-LB Lakebase Sandbox</td>
+          <td><code>/diagram/{id}/validate-source</code></td>
+          <td>✅ Completo</td>
+        </tr>
+        <tr>
+          <td>Encontrar campo em qualquer lugar</td>
+          <td>Busca global (cross-cutting)</td>
+          <td><code>/api/search?q=...</code> · 7 dimensões</td>
+          <td>✅ Completo</td>
+        </tr>
+        <tr>
+          <td>Dicionário de termos &amp; sinônimos</td>
+          <td>M6 Dicionário Corporativo</td>
+          <td><code>/glossary</code> · termos N:N atributos</td>
+          <td>✅ Completo</td>
+        </tr>
+        <tr>
+          <td>Visualizar interdependências (DER)</td>
+          <td>M4 DER + Relacionamentos</td>
+          <td><code>/diagram/{id}</code> · React Flow + Dagre</td>
+          <td>✅ Completo</td>
+        </tr>
+        <tr>
+          <td>Linhagem upstream/downstream</td>
+          <td>M7 Linhagem</td>
+          <td><code>/lineage/entities/{id}/graph?depth=2</code></td>
+          <td>✅ Completo</td>
+        </tr>
+        <tr>
+          <td>Versionamento &amp; publicação</td>
+          <td>M8 Versionamento</td>
+          <td><code>/versions</code> · snapshot JSON imutável</td>
+          <td>✅ Completo</td>
+        </tr>
+        <tr>
+          <td>Sincronizar comentários no UC</td>
+          <td>M9 Sync Unity Catalog</td>
+          <td><code>/sync</code> · COMMENT + TAGS</td>
+          <td>✅ Completo</td>
+        </tr>
+        <tr>
+          <td>Exportar DDL multi-dialeto</td>
+          <td>M10 Exportação DDL</td>
+          <td><code>/ddl</code> · ANSI · TSQL · PLSQL · POSTGRES · MYSQL · SPARK</td>
+          <td>✅ Completo</td>
+        </tr>
+        <tr>
+          <td>Flags LGPD com propagação</td>
+          <td>M5 Flagueamento</td>
+          <td><code>/flags</code> · atributo → entidade auto</td>
+          <td>✅ Completo</td>
+        </tr>
+        <tr>
+          <td>Audit trail completo</td>
+          <td>Audit (cross-cutting)</td>
+          <td><code>/admin/audit</code> · middleware captura tudo</td>
+          <td>✅ Completo</td>
+        </tr>
+        <tr>
+          <td>RBAC com 4 papéis</td>
+          <td>RBAC</td>
+          <td>VIEWER · STEWARD · ARCHITECT · ADMIN</td>
+          <td>✅ Completo</td>
+        </tr>
+        <tr>
+          <td>Migração do ER/Studio existente</td>
+          <td>Embarcadero Import</td>
+          <td><code>runEmbarcaderoImport</code> · parser .erx XML</td>
+          <td>✅ Completo</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ═══════════════════════════════════ CHECKLIST ═════════════════════════ -->
+  <section>
+    <div class="section-header">
+      <span class="section-number">04</span>
+      <h2>Checklist do demonstrador</h2>
+    </div>
+    <p class="section-subtitle" style="margin-bottom: 2rem;">
+      Marque conforme avança na demo. Imprime bem (Ctrl+P) se quiser usar como apoio físico.
+    </p>
+
+    <ul class="checklist">
+      <li>
+        <input type="checkbox" />
+        <div>
+          <strong>Pré-voo (15 min antes)</strong>
+          <span class="hint">Confirmar que o app responde em nuclea-modeler.databricksapps.com · Login SSO funcionando · Lakebase sandbox no ar · Ao menos 1 sistema com 10+ entidades populadas para a demo</span>
+        </div>
+      </li>
+      <li>
+        <input type="checkbox" />
+        <div>
+          <strong>Abertura (2 min)</strong>
+          <span class="hint">Apresentar o Marcos como persona. Pedir para a audiência levantar a mão quem já viveu "tabela apareceu em produção sem aviso"</span>
+        </div>
+      </li>
+      <li>
+        <input type="checkbox" />
+        <div>
+          <strong>Cenário 1 — Extração + Reconciliação (8 min)</strong>
+          <span class="hint">Garantir que há 2-3 tabelas no Lakebase que NÃO estão no catálogo (preparação prévia). Mostrar diff completo. Aprovar e aplicar o ticket ao vivo.</span>
+        </div>
+      </li>
+      <li>
+        <input type="checkbox" />
+        <div>
+          <strong>Cenário 2 — Busca global + Glossário (5 min)</strong>
+          <span class="hint">Buscar "cpf" via Cmd+K. Mostrar termo "CPF do Cliente" com sinônimos. Navegar até mapeamentos físicos.</span>
+        </div>
+      </li>
+      <li>
+        <input type="checkbox" />
+        <div>
+          <strong>Cenário 3 — DER + Linhagem (7 min)</strong>
+          <span class="hint">Abrir entidade CLIENTE (ou equivalente). Demonstrar drag-edge no DER. Aumentar depth=2 na linhagem. Pausar e perguntar à audiência: "no ER/Studio vocês teriam isso?"</span>
+        </div>
+      </li>
+      <li>
+        <input type="checkbox" />
+        <div>
+          <strong>Cenário 4 — Round-trip Lakebase (6 min)</strong>
+          <span class="hint">Demonstrar Validate Source ao vivo. Mostrar diff coluna-a-coluna. Reforçar: "modelo encontra o erro ANTES da produção"</span>
+        </div>
+      </li>
+      <li>
+        <input type="checkbox" />
+        <div>
+          <strong>Cenário 5 — Publish + Sync UC (6 min)</strong>
+          <span class="hint">Publicar versão. Mostrar diff visual. Abrir Catalog Explorer em outra aba para mostrar COMMENTs sincronizados.</span>
+        </div>
+      </li>
+      <li>
+        <input type="checkbox" />
+        <div>
+          <strong>Cenário 6 — LGPD &amp; Auditoria (5 min)</strong>
+          <span class="hint">Mostrar flags LGPD. Demonstrar a propagação automática (aplica em atributo, aparece na entidade). Abrir audit log.</span>
+        </div>
+      </li>
+      <li>
+        <input type="checkbox" />
+        <div>
+          <strong>Fechamento &amp; CTA (3 min)</strong>
+          <span class="hint">Resumir: tudo isso em web, sem licença, integrado ao UC, com audit log nativo. Propor PoC de 2 semanas.</span>
+        </div>
+      </li>
+      <li>
+        <input type="checkbox" />
+        <div>
+          <strong>Q&amp;A (15 min)</strong>
+          <span class="hint">Perguntas típicas: SSO, RBAC, escala, custos, migração do ER/Studio existente, customização. Tenha as respostas prontas.</span>
+        </div>
+      </li>
+    </ul>
+  </section>
+
+  <!-- ═══════════════════════════════════ CTA ═══════════════════════════════ -->
+  <section>
+    <div class="cta">
+      <h2>Próximo passo: PoC dirigida</h2>
+      <p>
+        Em 2 semanas, com 1 sistema real da Núclea, validamos o app contra seu próprio
+        Embarcadero ER/Studio. Sucesso é medido em métricas objetivas, não em opinião.
+      </p>
+      <div class="cta-grid">
+        <div class="cta-card">
+          <strong>Semana 1 — Migração</strong>
+          <span>Importar 1 modelo .erx existente · Conectar ao Lakebase · Configurar RBAC dos 3 primeiros usuários</span>
+        </div>
+        <div class="cta-card">
+          <strong>Semana 2 — Validação</strong>
+          <span>Rodar round-trip · Identificar divergências · Publicar versão v1.0 · Sync para UC · Demo interna</span>
+        </div>
+        <div class="cta-card">
+          <strong>Critérios de sucesso</strong>
+          <span>100% das entidades importadas via .erx · 1 ciclo de sync UC validado · NPS dos modeladores ≥ 8/10</span>
+        </div>
+        <div class="cta-card">
+          <strong>Decisão Go/No-Go</strong>
+          <span>Reunião final com métricas objetivas comparando tempo de modelagem antes e depois</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p>
+      Núclea Modeler · Databricks-native data catalog &amp; modeling ·
+      <a href="https://github.com/lfmed/nuclea-modeler">github.com/lfmed/nuclea-modeler</a>
+    </p>
+    <p style="margin-top: 0.5rem;">
+      Gerado em 2026-05-26 · Versão da spec: 100% + extras (Tickets, Lakebase, Code Objects, Audit, Busca, Embarcadero, Home, Help)
+    </p>
+  </footer>
+
+</div>
+</body>
+</html>

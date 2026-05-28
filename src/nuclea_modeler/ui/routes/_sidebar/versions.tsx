@@ -29,6 +29,7 @@ import {
   Sparkles,
   XCircle,
 } from "lucide-react";
+import { EmptyState } from "@/components/apx/empty-state";
 
 export const Route = createFileRoute("/_sidebar/versions")({
   component: VersionsPage,
@@ -281,15 +282,17 @@ function VersionsTable({
 
   if (versions.length === 0) {
     return (
-      <Card className="border-dashed">
-        <CardContent className="pt-10 pb-10 text-center">
-          <FileClock className="mx-auto h-10 w-10 text-muted-foreground/50 mb-3" />
-          <p className="text-sm text-muted-foreground">
-            Nenhuma versão publicada{systemId ? " para este sistema" : ""} ainda.
-            Use o botão acima para criar a primeira.
-          </p>
-        </CardContent>
-      </Card>
+      <EmptyState
+        icon={<FileClock className="h-10 w-10" />}
+        title={systemId ? "Sem versões para este sistema" : "Nenhuma versão publicada"}
+        description={
+          <>
+            Versões são <strong>snapshots imutáveis</strong> do modelo (entidades, atributos,
+            relacionamentos, views). Use-as como marcos de aprovação trimestral, evidência de
+            compliance e ponto de restauração em caso de incidente.
+          </>
+        }
+      />
     );
   }
 

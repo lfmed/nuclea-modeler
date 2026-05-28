@@ -50,7 +50,7 @@ function Index() {
     <div className="relative min-h-screen w-full overflow-x-hidden flex flex-col bg-background">
       <Navbar />
 
-      <main className="flex-1">
+      <main id="main-content" role="main" className="flex-1">
         <Hero />
         <section className="mx-auto w-full max-w-6xl px-6 md:px-10 -mt-10 md:-mt-14 relative z-10">
           <KpiRow />

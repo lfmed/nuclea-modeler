@@ -28,6 +28,7 @@ import {
   Trash2,
   MinusCircle,
 } from "lucide-react";
+import { EmptyState } from "@/components/apx/empty-state";
 
 export const Route = createFileRoute("/_sidebar/lakebase")({
   component: LakebasePage,
@@ -105,18 +106,19 @@ function SandboxesList() {
       )}
 
       {sandboxes.length === 0 && !showNew ? (
-        <Card className="border-dashed">
-          <CardContent className="pt-10 pb-10 text-center">
-            <Database className="mx-auto h-10 w-10 text-muted-foreground/50 mb-3" />
-            <p className="text-sm text-muted-foreground mb-4">
-              Nenhum sandbox cadastrado. Conecte uma instância Lakebase do workspace para começar.
-            </p>
-            <Button onClick={() => setShowNew(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              Conectar primeiro sandbox
-            </Button>
-          </CardContent>
-        </Card>
+        <EmptyState
+          icon={<Database className="h-10 w-10" />}
+          title="Nenhum sandbox Lakebase conectado"
+          description={
+            <>
+              Sandboxes Lakebase são instâncias Postgres descartáveis usadas para
+              <strong> validação round-trip</strong>: o app gera DDL do modelo, executa no sandbox,
+              faz reverse-engineering e compara com o catálogo. Subem e descem em minutos.
+            </>
+          }
+          primaryAction={{ label: "Conectar primeiro sandbox", onClick: () => setShowNew(true) }}
+          secondaryAction={{ label: "Ver documentação", to: "/help" }}
+        />
       ) : (
         <div className="grid gap-3">
           {sandboxes.map((sb) => (

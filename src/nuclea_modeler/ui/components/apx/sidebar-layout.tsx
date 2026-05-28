@@ -36,25 +36,35 @@ function SidebarLayout({ children }: SidebarLayoutProps) {
         <SidebarRail />
       </Sidebar>
       <SidebarInset className="flex flex-col h-screen">
-        <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-sm border-b flex h-16 shrink-0 items-center gap-2 px-4">
-          <SidebarTrigger className="-ml-1 cursor-pointer" />
+        <header
+          role="banner"
+          className="sticky top-0 z-50 bg-background/80 backdrop-blur-sm border-b flex h-16 shrink-0 items-center gap-2 px-4"
+        >
+          <SidebarTrigger
+            className="-ml-1 cursor-pointer"
+            aria-label="Alternar visibilidade da barra lateral"
+          />
           <div className="flex-1" />
           <GlobalSearch />
           <Link
             to="/help"
             title="Ajuda"
-            aria-label="Ajuda"
-            className="inline-flex items-center justify-center rounded-md size-9 text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+            aria-label="Abrir centro de ajuda"
+            className="inline-flex items-center justify-center rounded-md size-9 text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
           >
-            <HelpCircle className="h-4 w-4" />
+            <HelpCircle className="h-4 w-4" aria-hidden="true" />
           </Link>
           <ModeToggle />
         </header>
-        <div className="flex flex-1 justify-center overflow-auto">
+        <main
+          id="main-content"
+          role="main"
+          className="flex flex-1 justify-center overflow-auto"
+        >
           <div className="flex flex-1 flex-col gap-4 p-6 max-w-7xl">
             <Outlet />
           </div>
-        </div>
+        </main>
       </SidebarInset>
     </SidebarProvider>
   );

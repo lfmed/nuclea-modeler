@@ -34,6 +34,7 @@ import {
   XCircle,
   Upload,
 } from "lucide-react";
+import { EmptyState } from "@/components/apx/empty-state";
 
 export const Route = createFileRoute("/_sidebar/extractions")({
   component: ExtractionsPage,
@@ -168,18 +169,17 @@ function LakebaseTab() {
 
   if (sandboxes.length === 0) {
     return (
-      <Card className="border-dashed">
-        <CardContent className="pt-10 pb-10 text-center">
-          <Database className="mx-auto h-10 w-10 text-muted-foreground/50 mb-3" />
-          <p className="text-sm text-muted-foreground mb-4">
-            Você ainda não conectou um sandbox Lakebase.{" "}
-            <Link to="/lakebase" className="text-nuclea-primary underline">
-              Conecte um agora
-            </Link>{" "}
-            para começar.
-          </p>
-        </CardContent>
-      </Card>
+      <EmptyState
+        icon={<Database className="h-10 w-10" />}
+        title="Conecte um sandbox Lakebase primeiro"
+        description={
+          <>
+            Engenharia reversa via Lakebase precisa de uma instância Postgres descartável.
+            Conecte uma e volte aqui — o app vai listar os schemas disponíveis automaticamente.
+          </>
+        }
+        primaryAction={{ label: "Conectar sandbox", to: "/lakebase" }}
+      />
     );
   }
 
@@ -449,14 +449,12 @@ function EmbarcaderoTab() {
 
   if (systems.length === 0) {
     return (
-      <Card className="border-dashed">
-        <CardContent className="pt-10 pb-10 text-center">
-          <FileBox className="mx-auto h-10 w-10 text-muted-foreground/50 mb-3" />
-          <p className="text-sm text-muted-foreground">
-            Cadastre um sistema antes de importar um modelo Embarcadero.
-          </p>
-        </CardContent>
-      </Card>
+      <EmptyState
+        icon={<FileBox className="h-10 w-10" />}
+        title="Nenhum sistema cadastrado"
+        description="Sistemas representam fontes (HINT/HEXT/PROD, CRM, SAP, etc.) e são o destino dos modelos importados. Cadastre o primeiro sistema antes de importar."
+        primaryAction={{ label: "Cadastrar sistema", to: "/entities" }}
+      />
     );
   }
 
@@ -600,12 +598,17 @@ function HistoryTab() {
   const { data: extractions } = useListExtractionsSuspense({}, selector());
   if (extractions.length === 0) {
     return (
-      <Card className="border-dashed">
-        <CardContent className="pt-10 pb-10 text-center">
-          <Inbox className="mx-auto h-10 w-10 text-muted-foreground/50 mb-3" />
-          <p className="text-sm text-muted-foreground">Sem extrações executadas ainda.</p>
-        </CardContent>
-      </Card>
+      <EmptyState
+        icon={<Inbox className="h-10 w-10" />}
+        title="Histórico de extrações vazio"
+        description={
+          <>
+            Cada extração fotografa o banco real, compara com o catálogo e abre um ticket de
+            reconciliação se houver divergências. Use uma das abas acima:
+            <strong> Lakebase · DDL · Embarcadero</strong>.
+          </>
+        }
+      />
     );
   }
   return (

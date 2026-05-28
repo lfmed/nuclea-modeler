@@ -30,6 +30,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Separator } from "@/components/ui/separator";
+import { EmptyState } from "@/components/apx/empty-state";
 import {
   AlertCircle,
   Database,
@@ -119,20 +120,18 @@ function ConnectionsTable({ onSelect }: { onSelect: (id: string) => void }) {
 
   if (!connections || connections.length === 0) {
     return (
-      <Card className="border-dashed">
-        <CardContent className="pt-10 pb-10 text-center">
-          <Database className="mx-auto h-10 w-10 text-muted-foreground/50 mb-3" />
-          <p className="text-sm text-muted-foreground mb-4">
-            Nenhuma conexão cadastrada. Comece criando uma conexão para HINT, HEXT ou PROD.
-          </p>
-          <Button asChild>
-            <Link to="/connections/new">
-              <Plus className="mr-2 h-4 w-4" />
-              Cadastrar primeira conexão
-            </Link>
-          </Button>
-        </CardContent>
-      </Card>
+      <EmptyState
+        icon={<Database className="h-10 w-10" />}
+        title="Nenhuma conexão cadastrada"
+        description={
+          <>
+            Conexões representam ambientes (<strong>HINT</strong>, <strong>HEXT</strong>, <strong>PROD</strong>)
+            catalogados pelo app. As credenciais ficam em Databricks Secrets — nunca em texto puro.
+          </>
+        }
+        primaryAction={{ label: "Cadastrar primeira conexão", to: "/connections/new" }}
+        secondaryAction={{ label: "Saiba mais", to: "/help" }}
+      />
     );
   }
 

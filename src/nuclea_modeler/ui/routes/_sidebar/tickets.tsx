@@ -20,6 +20,7 @@ import {
   Minus,
   RefreshCw,
 } from "lucide-react";
+import { EmptyState as SharedEmptyState } from "@/components/apx/empty-state";
 
 export const Route = createFileRoute("/_sidebar/tickets")({
   component: TicketsPage,
@@ -210,17 +211,26 @@ function DiffCounts({
 }
 
 function EmptyState({ filter }: { filter: TicketStatus | "ALL" }) {
+  const isOpen = filter === "OPEN" || filter === "ALL";
   return (
-    <Card className="border-dashed">
-      <CardContent className="pt-10 pb-10 text-center">
-        <Inbox className="mx-auto h-10 w-10 text-muted-foreground/50 mb-3" />
-        <p className="text-sm text-muted-foreground">
-          {filter === "OPEN"
-            ? "Nenhum ticket aberto. Rode uma engenharia reversa em /extractions para gerar um."
-            : `Nenhum ticket em ${filter.toLowerCase()}.`}
-        </p>
-      </CardContent>
-    </Card>
+    <SharedEmptyState
+      icon={<Inbox className="h-10 w-10" />}
+      title={isOpen ? "Inbox vazia — bom sinal!" : `Sem tickets ${filter.toLowerCase()}`}
+      description={
+        isOpen ? (
+          <>
+            Tickets de reconciliação são gerados <strong>automaticamente</strong> quando uma
+            engenharia reversa detecta divergências entre o banco real e o catálogo. Rode uma
+            extração para começar.
+          </>
+        ) : (
+          <>Não há tickets no estado <strong>{filter}</strong> no momento.</>
+        )
+      }
+      primaryAction={
+        isOpen ? { label: "Rodar engenharia reversa", to: "/extractions" } : undefined
+      }
+    />
   );
 }
 

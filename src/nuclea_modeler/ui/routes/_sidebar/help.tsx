@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useState } from "react";
 import {
   Card,
   CardContent,
@@ -7,7 +8,10 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { WelcomeTour, resetWelcomeTour } from "@/components/apx/welcome-tour";
+import { Sparkles } from "lucide-react";
 import {
   BookOpen,
   HelpCircle,
@@ -55,9 +59,10 @@ const SECTIONS = [
 ];
 
 function Help() {
+  const [tourOpen, setTourOpen] = useState(false);
   return (
     <div className="space-y-10">
-      <Header />
+      <Header onReplayTour={() => { resetWelcomeTour(); setTourOpen(true); }} />
       <QuickLinks />
       <Journey />
       <Concepts />
@@ -67,21 +72,30 @@ function Help() {
       <Faq />
       <Shortcuts />
       <About />
+      {tourOpen && <WelcomeTour forceOpen onClose={() => setTourOpen(false)} />}
     </div>
   );
 }
 
 // ─── Header ────────────────────────────────────────────────────────────────
-function Header() {
+function Header({ onReplayTour }: { onReplayTour: () => void }) {
   return (
     <div className="space-y-3">
-      <div className="inline-flex items-center gap-2 rounded-full border bg-card px-3 py-1 text-xs font-medium text-muted-foreground">
-        <BookOpen className="h-3.5 w-3.5 text-nuclea-primary" />
-        Centro de Ajuda
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="space-y-3">
+          <div className="inline-flex items-center gap-2 rounded-full border bg-card px-3 py-1 text-xs font-medium text-muted-foreground">
+            <BookOpen className="h-3.5 w-3.5 text-nuclea-primary" />
+            Centro de Ajuda
+          </div>
+          <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
+            Documentação do Núclea Modeler
+          </h1>
+        </div>
+        <Button variant="outline" size="sm" onClick={onReplayTour}>
+          <Sparkles className="mr-2 h-4 w-4 text-accent" aria-hidden="true" />
+          Refazer tour
+        </Button>
       </div>
-      <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
-        Documentação do Núclea Modeler
-      </h1>
       <p className="text-muted-foreground max-w-3xl">
         Guia in-app para quem precisa entender como cadastrar uma fonte,
         documentar entidades, aplicar flags LGPD, aprovar tickets e publicar

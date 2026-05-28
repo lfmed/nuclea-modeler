@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertCircle, FileText, Plus, RefreshCw } from "lucide-react";
+import { EmptyState } from "@/components/apx/empty-state";
 
 export const Route = createFileRoute("/_sidebar/entities")({
   component: EntitiesPage,
@@ -80,25 +81,19 @@ function EntitiesTable() {
 
   if (!entities || entities.length === 0) {
     return (
-      <Card className="border-dashed">
-        <CardContent className="pt-10 pb-10 text-center">
-          <FileText className="mx-auto h-10 w-10 text-muted-foreground/50 mb-3" />
-          <p className="text-sm text-muted-foreground mb-4">
-            Nenhuma entidade catalogada. Crie manualmente ou execute uma engenharia reversa.
-          </p>
-          <div className="flex justify-center gap-2">
-            <Button asChild>
-              <Link to="/entities/new">
-                <Plus className="mr-2 h-4 w-4" />
-                Nova entidade
-              </Link>
-            </Button>
-            <Button variant="outline" asChild>
-              <Link to="/extractions">Engenharia reversa</Link>
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      <EmptyState
+        icon={<FileText className="h-10 w-10" />}
+        title="Nenhuma entidade catalogada"
+        description={
+          <>
+            Entidades são as tabelas e views que vivem nos sistemas. Você pode criar uma
+            manualmente, importar de um arquivo <code className="text-xs font-mono bg-muted/60 px-1 py-0.5 rounded">.erx</code> do
+            ER/Studio, ou rodar uma engenharia reversa contra HINT/HEXT/PROD.
+          </>
+        }
+        primaryAction={{ label: "Nova entidade", to: "/entities/new" }}
+        secondaryAction={{ label: "Engenharia reversa", to: "/extractions" }}
+      />
     );
   }
 
