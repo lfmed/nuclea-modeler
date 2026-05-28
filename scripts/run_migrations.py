@@ -12,7 +12,6 @@ read-only, exporte NUCLEA_MIGRATIONS_AUTO_APPLY=false.
 """
 from __future__ import annotations
 
-import os
 import sys
 
 from databricks.sdk import WorkspaceClient
@@ -25,11 +24,9 @@ from nuclea_modeler.backend.core.sql import Sql, SqlConfig
 
 
 def main() -> int:
-    flag = os.getenv("NUCLEA_MIGRATIONS_AUTO_APPLY", "true").strip().lower()
-    if flag in ("false", "0", "no", "off"):
-        print("[migrations] disabled via NUCLEA_MIGRATIONS_AUTO_APPLY")
-        return 0
-
+    # NÃO checa NUCLEA_MIGRATIONS_AUTO_APPLY — essa flag é só pra desligar o
+    # caminho do lifespan do FastAPI. Este script CLI é a fonte autoritativa
+    # e sempre tenta aplicar quando é invocado.
     migrations_dir = find_migrations_dir()
     if not migrations_dir.exists():
         print(f"[migrations] directory not found: {migrations_dir}; skipping")
