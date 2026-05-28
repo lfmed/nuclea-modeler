@@ -1,4 +1,4 @@
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { QueryErrorResetBoundary, useQueryClient } from "@tanstack/react-query";
 import { ErrorBoundary } from "react-error-boundary";
 import { toast } from "sonner";
@@ -38,19 +38,14 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 
 /**
- * Wizard multi-step para criar um Novo Sistema com discovery opcional.
+ * Wizard de Novo Sistema em 2 passos:
+ *  1. Configurar (fonte + discovery + identificação consolidados)
+ *  2. Resumo + submit
  *
- * Fluxo:
- *  1. Identificação (nome, domínio, tecnologia)
- *  2. Escolha da fonte (vazio / Lakebase / Unity Catalog)
- *  3. Discovery (depende do passo 2 — pula se "vazio")
- *  4. Resumo + submit
- *
- * O submit final faz POST /systems e, conforme a fonte escolhida,
- * dispara POST /extractions/lakebase/run ou POST /extractions/uc/run
- * com o system_id recém-criado. Em caso de falha no discovery, o
- * sistema permanece criado (sem rollback) — o user pode rerodar
- * a extração depois pela página /extractions.
+ * Auto-sugestões:
+ *  - Lakebase: nome ← sandbox.name; tecnologia ← "PostgreSQL"
+ *  - UC: nome ← `<catalog>.<schema>`; tecnologia ← "Databricks"
+ *  Só preenche se o user ainda não tocou no campo.
  */
 
 type SourceKind = "NONE" | "LAKEBASE" | "UC";
@@ -73,7 +68,7 @@ export function NewSystemWizard({
 }: {
   open: boolean;
   onClose: () => void;
-  /** Chamado depois que o sistema é criado com sucesso. Recebe o sistema novo. */
+  /** Chamado depois que o sistema é criado com sucesso. */
   onCreated?: (system: SystemListOut) => void;
 }) {
   if (!open) return null;
@@ -88,21 +83,24 @@ function WizardInner({
   onCreated?: (system: SystemListOut) => void;
 }) {
   // ─── Step state ─────────────────────────────────────────────────────────────
-  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
+  const [step, setStep] = useState<1 | 2>(1);
 
-  // Step 1
+  // Identificação
   const [name, setName] = useState("");
+  const [nameTouched, setNameTouched] = useState(false);
   const [domain, setDomain] = useState("");
   const [technology, setTechnology] = useState("");
+  const [techTouched, setTechTouched] = useState(false);
 
-  // Step 2
+  // Fonte
   const [source, setSource] = useState<SourceKind>("NONE");
 
-  // Step 3 — Lakebase
+  // Lakebase
   const [sandboxId, setSandboxId] = useState("");
+  const [sandboxName, setSandboxName] = useState(""); // pra suggest nome
   const [lakebaseSchemas, setLakebaseSchemas] = useState<string[]>([]);
 
-  // Step 3 — UC
+  // UC
   const [ucCatalog, setUcCatalog] = useState("");
   const [ucSchema, setUcSchema] = useState("");
   const [ucTables, setUcTables] = useState<string[]>([]);
@@ -114,33 +112,32 @@ function WizardInner({
   const runLakebase = useRunLakebaseExtraction();
   const runUC = useRunUCExtraction();
 
-  // ─── Navegação ──────────────────────────────────────────────────────────────
-  const canNextStep1 = name.trim().length > 0;
-  const canNextStep2 = !!source;
-  const canNextStep3 =
+  // ─── Auto-sugestões ─────────────────────────────────────────────────────────
+  // Tecnologia automática quando muda fonte (só se user não tocou)
+  useEffect(() => {
+    if (techTouched) return;
+    if (source === "LAKEBASE") setTechnology("PostgreSQL");
+    else if (source === "UC") setTechnology("Databricks");
+  }, [source, techTouched]);
+
+  // Nome automático conforme escolhe sandbox/schema (só se user não tocou)
+  useEffect(() => {
+    if (nameTouched) return;
+    if (source === "LAKEBASE" && sandboxName) {
+      setName(sandboxName);
+    } else if (source === "UC" && ucCatalog && ucSchema) {
+      setName(`${ucCatalog}.${ucSchema}`);
+    } else if (source === "UC" && ucCatalog) {
+      setName(ucCatalog);
+    }
+  }, [source, sandboxName, ucCatalog, ucSchema, nameTouched]);
+
+  // ─── Validação pra avançar ──────────────────────────────────────────────────
+  const sourceReady =
     source === "NONE" ||
     (source === "LAKEBASE" && !!sandboxId && lakebaseSchemas.length > 0) ||
     (source === "UC" && !!ucCatalog && !!ucSchema && ucTables.length > 0);
-
-  function goNext() {
-    if (step === 1 && !canNextStep1) return;
-    if (step === 2 && !canNextStep2) return;
-    if (step === 2 && source === "NONE") {
-      // Pula o step de discovery
-      setStep(4);
-      return;
-    }
-    if (step === 3 && !canNextStep3) return;
-    setStep((s) => (Math.min(4, (s + 1)) as 1 | 2 | 3 | 4));
-  }
-
-  function goBack() {
-    if (step === 4 && source === "NONE") {
-      setStep(2);
-      return;
-    }
-    setStep((s) => (Math.max(1, (s - 1)) as 1 | 2 | 3 | 4));
-  }
+  const canNext = step === 1 && name.trim().length > 0 && sourceReady;
 
   // ─── Submit ─────────────────────────────────────────────────────────────────
   async function handleSubmit() {
@@ -188,7 +185,6 @@ function WizardInner({
         }
       }
 
-      // Invalida queries afetadas
       qc.invalidateQueries({ queryKey: ["listSystems"] });
       qc.invalidateQueries({ queryKey: ["listEntities"] });
       qc.invalidateQueries({ queryKey: ["getDiagram"] });
@@ -214,12 +210,9 @@ function WizardInner({
     }
   }
 
-  // ─── Render ─────────────────────────────────────────────────────────────────
-  const steps: { n: 1 | 2 | 3 | 4; label: string }[] = [
-    { n: 1, label: "Identificação" },
-    { n: 2, label: "Fonte" },
-    { n: 3, label: "Discovery" },
-    { n: 4, label: "Resumo" },
+  const steps: { n: 1 | 2; label: string }[] = [
+    { n: 1, label: "Configurar" },
+    { n: 2, label: "Revisar" },
   ];
 
   return (
@@ -253,7 +246,6 @@ function WizardInner({
             {steps.map((s, i) => {
               const active = step === s.n;
               const done = step > s.n;
-              const skipped = s.n === 3 && source === "NONE";
               return (
                 <li key={s.n} className="flex items-center gap-2">
                   <span
@@ -263,22 +255,12 @@ function WizardInner({
                         ? "bg-nuclea-primary text-white border-nuclea-primary"
                         : done
                           ? "bg-emerald-500 text-white border-emerald-500"
-                          : skipped
-                            ? "bg-muted text-muted-foreground border-muted-foreground/30"
-                            : "bg-background text-muted-foreground")
+                          : "bg-background text-muted-foreground")
                     }
                   >
                     {done ? <CheckCircle2 className="h-3 w-3" /> : s.n}
                   </span>
-                  <span
-                    className={
-                      active
-                        ? "font-medium"
-                        : skipped
-                          ? "line-through text-muted-foreground"
-                          : "text-muted-foreground"
-                    }
-                  >
+                  <span className={active ? "font-medium" : "text-muted-foreground"}>
                     {s.label}
                   </span>
                   {i < steps.length - 1 && (
@@ -291,88 +273,65 @@ function WizardInner({
         </div>
 
         {/* Body */}
-        <CardContent className="flex-1 overflow-auto px-6 py-6 min-h-[380px]">
+        <CardContent className="flex-1 overflow-auto px-6 py-6 min-h-[420px] space-y-6">
           {step === 1 && (
-            <Step1Identification
+            <StepConfigure
               name={name}
-              setName={setName}
+              setName={(v) => {
+                setName(v);
+                setNameTouched(true);
+              }}
               domain={domain}
               setDomain={setDomain}
               technology={technology}
-              setTechnology={setTechnology}
+              setTechnology={(v) => {
+                setTechnology(v);
+                setTechTouched(true);
+              }}
+              source={source}
+              setSource={(s) => {
+                setSource(s);
+                // Reset state da fonte anterior
+                if (s !== "LAKEBASE") {
+                  setSandboxId("");
+                  setSandboxName("");
+                  setLakebaseSchemas([]);
+                }
+                if (s !== "UC") {
+                  setUcCatalog("");
+                  setUcSchema("");
+                  setUcTables([]);
+                }
+              }}
+              sandboxId={sandboxId}
+              setSandboxId={setSandboxId}
+              setSandboxName={setSandboxName}
+              lakebaseSchemas={lakebaseSchemas}
+              setLakebaseSchemas={setLakebaseSchemas}
+              ucCatalog={ucCatalog}
+              setUcCatalog={(v) => {
+                setUcCatalog(v);
+                setUcSchema("");
+                setUcTables([]);
+              }}
+              ucSchema={ucSchema}
+              setUcSchema={(v) => {
+                setUcSchema(v);
+                setUcTables([]);
+              }}
+              ucTables={ucTables}
+              setUcTables={setUcTables}
             />
           )}
-          {step === 2 && <Step2Source source={source} setSource={setSource} />}
-          {step === 3 && source === "LAKEBASE" && (
-            <QueryErrorResetBoundary>
-              {({ reset }) => (
-                <ErrorBoundary
-                  onReset={reset}
-                  fallbackRender={({ error, resetErrorBoundary }) => (
-                    <BrowseError
-                      title="Não foi possível listar sandboxes"
-                      error={error}
-                      onRetry={resetErrorBoundary}
-                    />
-                  )}
-                >
-                  <Suspense fallback={<Skeleton className="h-40 w-full" />}>
-                    <Step3Lakebase
-                      sandboxId={sandboxId}
-                      setSandboxId={(v) => {
-                        setSandboxId(v);
-                        setLakebaseSchemas([]);
-                      }}
-                      selected={lakebaseSchemas}
-                      setSelected={setLakebaseSchemas}
-                    />
-                  </Suspense>
-                </ErrorBoundary>
-              )}
-            </QueryErrorResetBoundary>
-          )}
-          {step === 3 && source === "UC" && (
-            <QueryErrorResetBoundary>
-              {({ reset }) => (
-                <ErrorBoundary
-                  onReset={reset}
-                  fallbackRender={({ error, resetErrorBoundary }) => (
-                    <BrowseError
-                      title="Não foi possível navegar no Unity Catalog"
-                      hint="Verifique se o app tem permissão USE_CATALOG/USE_SCHEMA no Unity Catalog e se a rede permite acesso ao workspace."
-                      error={error}
-                      onRetry={resetErrorBoundary}
-                    />
-                  )}
-                >
-                  <Suspense fallback={<Skeleton className="h-40 w-full" />}>
-                    <Step3UC
-                      catalog={ucCatalog}
-                      setCatalog={(v) => {
-                        setUcCatalog(v);
-                        setUcSchema("");
-                        setUcTables([]);
-                      }}
-                      schema={ucSchema}
-                      setSchema={(v) => {
-                        setUcSchema(v);
-                        setUcTables([]);
-                      }}
-                      tables={ucTables}
-                      setTables={setUcTables}
-                    />
-                  </Suspense>
-                </ErrorBoundary>
-              )}
-            </QueryErrorResetBoundary>
-          )}
-          {step === 4 && (
-            <Step4Summary
+
+          {step === 2 && (
+            <StepSummary
               name={name}
               domain={domain}
               technology={technology}
               source={source}
               sandboxId={sandboxId}
+              sandboxName={sandboxName}
               lakebaseSchemas={lakebaseSchemas}
               ucCatalog={ucCatalog}
               ucSchema={ucSchema}
@@ -387,7 +346,7 @@ function WizardInner({
             type="button"
             variant="ghost"
             size="sm"
-            onClick={goBack}
+            onClick={() => setStep(1)}
             disabled={step === 1 || submitting}
           >
             <ArrowLeft className="mr-2 h-4 w-4" />
@@ -403,18 +362,21 @@ function WizardInner({
             >
               Cancelar
             </Button>
-            {step < 4 ? (
+            {step === 1 ? (
               <Button
                 type="button"
                 size="sm"
-                onClick={goNext}
-                disabled={
-                  (step === 1 && !canNextStep1) ||
-                  (step === 2 && !canNextStep2) ||
-                  (step === 3 && !canNextStep3)
+                onClick={() => setStep(2)}
+                disabled={!canNext}
+                title={
+                  !name.trim()
+                    ? "Defina o nome"
+                    : !sourceReady
+                      ? "Complete a seleção da fonte"
+                      : undefined
                 }
               >
-                Próximo
+                Revisar
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             ) : (
@@ -422,7 +384,7 @@ function WizardInner({
                 type="button"
                 size="sm"
                 onClick={handleSubmit}
-                disabled={submitting || !canNextStep1}
+                disabled={submitting || !name.trim()}
               >
                 {submitting ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -439,72 +401,135 @@ function WizardInner({
   );
 }
 
-// ─── Steps ────────────────────────────────────────────────────────────────────
+// ─── Step 1: Configurar (consolidado) ─────────────────────────────────────────
 
-function Step1Identification({
-  name,
-  setName,
-  domain,
-  setDomain,
-  technology,
-  setTechnology,
-}: {
+function StepConfigure(props: {
   name: string;
   setName: (v: string) => void;
   domain: string;
   setDomain: (v: string) => void;
   technology: string;
   setTechnology: (v: string) => void;
+  source: SourceKind;
+  setSource: (s: SourceKind) => void;
+  sandboxId: string;
+  setSandboxId: (v: string) => void;
+  setSandboxName: (v: string) => void;
+  lakebaseSchemas: string[];
+  setLakebaseSchemas: (v: string[]) => void;
+  ucCatalog: string;
+  setUcCatalog: (v: string) => void;
+  ucSchema: string;
+  setUcSchema: (v: string) => void;
+  ucTables: string[];
+  setUcTables: (v: string[]) => void;
 }) {
   return (
-    <div className="space-y-5 max-w-2xl">
-      <div>
-        <h3 className="text-base font-semibold">Identifique o sistema</h3>
-        <p className="text-sm text-muted-foreground">
-          Um sistema agrupa entidades e relacionamentos de um modelo de dados.
-        </p>
-      </div>
-      <div>
-        <label className="text-xs font-medium block mb-1">
-          Nome <span className="text-destructive">*</span>
-        </label>
-        <Input
-          autoFocus
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Cadastro de Clientes"
-        />
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <div className="space-y-6">
+      {/* Fonte */}
+      <section className="space-y-3">
         <div>
-          <label className="text-xs font-medium block mb-1">Domínio</label>
+          <h3 className="text-base font-semibold">De onde vem o modelo?</h3>
+          <p className="text-xs text-muted-foreground">
+            A escolha pré-preenche nome e tecnologia. Você pode ajustar depois.
+          </p>
+        </div>
+        <SourceCards source={props.source} setSource={props.setSource} />
+      </section>
+
+      {/* Discovery condicional */}
+      {props.source === "LAKEBASE" && (
+        <section className="space-y-3 rounded-md border bg-muted/20 p-4">
+          <QueryErrorResetBoundary>
+            {({ reset }) => (
+              <ErrorBoundary
+                onReset={reset}
+                fallbackRender={({ error, resetErrorBoundary }) => (
+                  <BrowseError
+                    title="Não foi possível listar sandboxes"
+                    error={error}
+                    onRetry={resetErrorBoundary}
+                  />
+                )}
+              >
+                <Suspense fallback={<Skeleton className="h-32 w-full" />}>
+                  <LakebaseDiscovery
+                    sandboxId={props.sandboxId}
+                    setSandboxId={props.setSandboxId}
+                    setSandboxName={props.setSandboxName}
+                    selected={props.lakebaseSchemas}
+                    setSelected={props.setLakebaseSchemas}
+                  />
+                </Suspense>
+              </ErrorBoundary>
+            )}
+          </QueryErrorResetBoundary>
+        </section>
+      )}
+
+      {props.source === "UC" && (
+        <section className="space-y-3 rounded-md border bg-muted/20 p-4">
+          <UCDiscovery
+            catalog={props.ucCatalog}
+            setCatalog={props.setUcCatalog}
+            schema={props.ucSchema}
+            setSchema={props.setUcSchema}
+            tables={props.ucTables}
+            setTables={props.setUcTables}
+          />
+        </section>
+      )}
+
+      {/* Identificação */}
+      <section className="space-y-3">
+        <div>
+          <h3 className="text-base font-semibold">Identifique o sistema</h3>
+          <p className="text-xs text-muted-foreground">
+            O nome foi sugerido a partir da fonte — edite à vontade.
+          </p>
+        </div>
+        <div>
+          <label className="text-xs font-medium block mb-1">
+            Nome <span className="text-destructive">*</span>
+          </label>
           <Input
-            value={domain}
-            onChange={(e) => setDomain(e.target.value)}
-            placeholder="Cadastro, Risco, Cobrança..."
+            autoFocus
+            value={props.name}
+            onChange={(e) => props.setName(e.target.value)}
+            placeholder="Cadastro de Clientes"
           />
         </div>
-        <div>
-          <label className="text-xs font-medium block mb-1">Tecnologia</label>
-          <select
-            value={technology}
-            onChange={(e) => setTechnology(e.target.value)}
-            className="w-full rounded-md border bg-background px-3 py-2 text-sm h-9"
-          >
-            <option value="">— selecione —</option>
-            {TECH_OPTIONS.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="text-xs font-medium block mb-1">Domínio</label>
+            <Input
+              value={props.domain}
+              onChange={(e) => props.setDomain(e.target.value)}
+              placeholder="Cadastro, Risco, Cobrança..."
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium block mb-1">Tecnologia</label>
+            <select
+              value={props.technology}
+              onChange={(e) => props.setTechnology(e.target.value)}
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm h-9"
+            >
+              <option value="">— selecione —</option>
+              {TECH_OPTIONS.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
-      </div>
+      </section>
     </div>
   );
 }
 
-function Step2Source({
+function SourceCards({
   source,
   setSource,
 }: {
@@ -520,78 +545,69 @@ function Step2Source({
     {
       value: "NONE",
       title: "Sem fonte (vazio)",
-      description:
-        "Crie um sistema vazio. Você pode adicionar entidades manualmente ou conectar uma fonte depois.",
+      description: "Cria sistema vazio. Adicione entidades manualmente no DER.",
       icon: <FileBox className="h-5 w-5" />,
     },
     {
       value: "LAKEBASE",
       title: "Lakebase sandbox",
-      description:
-        "Discovery automático a partir de uma sandbox Lakebase Postgres já cadastrada. Seleciona schemas para extração.",
+      description: "Descobre tabelas Postgres de uma sandbox cadastrada.",
       icon: <Database className="h-5 w-5" />,
     },
     {
       value: "UC",
       title: "Unity Catalog",
-      description:
-        "Discovery a partir de tabelas no Unity Catalog. Selecione catalog → schema → tables.",
+      description: "Descobre tabelas no UC: catalog → schema → tables.",
       icon: <Network className="h-5 w-5" />,
     },
   ];
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h3 className="text-base font-semibold">De onde vem o modelo?</h3>
-        <p className="text-sm text-muted-foreground">
-          Você pode pular o discovery e criar o sistema vazio.
-        </p>
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        {options.map((opt) => {
-          const selected = source === opt.value;
-          return (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => setSource(opt.value)}
-              className={
-                "text-left rounded-lg border p-4 transition-colors hover:bg-muted/40 " +
-                (selected
-                  ? "border-nuclea-primary ring-2 ring-nuclea-primary/40 bg-nuclea-primary/5"
-                  : "border-border")
-              }
-            >
-              <div className="flex items-center gap-2 mb-2">
-                <span
-                  className={
-                    selected ? "text-nuclea-primary" : "text-muted-foreground"
-                  }
-                >
-                  {opt.icon}
-                </span>
-                <span className="font-medium text-sm">{opt.title}</span>
-              </div>
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                {opt.description}
-              </p>
-            </button>
-          );
-        })}
-      </div>
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      {options.map((opt) => {
+        const selected = source === opt.value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => setSource(opt.value)}
+            className={
+              "text-left rounded-lg border p-4 transition-colors hover:bg-muted/40 " +
+              (selected
+                ? "border-nuclea-primary ring-2 ring-nuclea-primary/40 bg-nuclea-primary/5"
+                : "border-border")
+            }
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <span
+                className={
+                  selected ? "text-nuclea-primary" : "text-muted-foreground"
+                }
+              >
+                {opt.icon}
+              </span>
+              <span className="font-medium text-sm">{opt.title}</span>
+            </div>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              {opt.description}
+            </p>
+          </button>
+        );
+      })}
     </div>
   );
 }
 
-function Step3Lakebase({
+function LakebaseDiscovery({
   sandboxId,
   setSandboxId,
+  setSandboxName,
   selected,
   setSelected,
 }: {
   sandboxId: string;
   setSandboxId: (v: string) => void;
+  setSandboxName: (v: string) => void;
   selected: string[];
   setSelected: (v: string[]) => void;
 }) {
@@ -600,29 +616,29 @@ function Step3Lakebase({
 
   if (active.length === 0) {
     return (
-      <div className="rounded-md border border-amber-500/40 bg-amber-500/5 p-4 text-sm">
+      <div className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
         <p className="font-medium mb-1">Nenhuma sandbox Lakebase ativa</p>
         <p className="text-muted-foreground text-xs">
-          Cadastre uma sandbox em <strong>Lakebase</strong> antes de rodar
-          discovery. Você pode voltar e escolher "Sem fonte".
+          Cadastre uma sandbox em <strong>Lakebase Sandbox</strong> antes de
+          rodar discovery. Ou volte e escolha "Sem fonte".
         </p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h3 className="text-base font-semibold">Discovery — Lakebase</h3>
-        <p className="text-sm text-muted-foreground">
-          Escolha a sandbox e quais schemas extrair.
-        </p>
-      </div>
+    <div className="space-y-3">
       <div>
         <label className="text-xs font-medium block mb-1">Sandbox</label>
         <select
           value={sandboxId}
-          onChange={(e) => setSandboxId(e.target.value)}
+          onChange={(e) => {
+            const id = e.target.value;
+            setSandboxId(id);
+            const sb = active.find((s) => s.sandbox_id === id);
+            setSandboxName(sb?.name || "");
+            setSelected([]);
+          }}
           className="w-full rounded-md border bg-background px-3 py-2 text-sm h-9"
         >
           <option value="">— selecione —</option>
@@ -674,20 +690,6 @@ function LakebaseSchemasList({
   const capped = useMemo(() => schemas.slice(0, MAX_SCHEMAS), [schemas]);
   const truncated = schemas.length > MAX_SCHEMAS;
 
-  function toggle(s: string) {
-    setSelected(
-      selected.includes(s) ? selected.filter((x) => x !== s) : [...selected, s],
-    );
-  }
-
-  function selectAll() {
-    setSelected(capped);
-  }
-
-  function clearAll() {
-    setSelected([]);
-  }
-
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
@@ -697,22 +699,21 @@ function LakebaseSchemasList({
             ({selected.length}/{capped.length})
           </span>
         </label>
-        <div className="flex gap-2">
-          <Button type="button" size="sm" variant="ghost" onClick={selectAll}>
+        <div className="flex gap-1">
+          <Button type="button" size="sm" variant="ghost" onClick={() => setSelected(capped)}>
             Selecionar todos
           </Button>
-          <Button type="button" size="sm" variant="ghost" onClick={clearAll}>
+          <Button type="button" size="sm" variant="ghost" onClick={() => setSelected([])}>
             Limpar
           </Button>
         </div>
       </div>
       {truncated && (
         <p className="text-xs text-amber-600 dark:text-amber-400 mb-2">
-          Exibindo os primeiros {MAX_SCHEMAS} schemas para preservar a UI.
-          Use a página de Extractions para conjuntos maiores.
+          Mostrando os primeiros {MAX_SCHEMAS} schemas.
         </p>
       )}
-      <div className="rounded-md border max-h-64 overflow-auto">
+      <div className="rounded-md border max-h-56 overflow-auto bg-background">
         {capped.length === 0 ? (
           <p className="text-sm text-muted-foreground p-3">
             Nenhum schema visível para o app nessa sandbox.
@@ -720,11 +721,17 @@ function LakebaseSchemasList({
         ) : (
           <ul className="divide-y">
             {capped.map((s) => (
-              <li key={s} className="flex items-center gap-2 px-3 py-2">
+              <li key={s} className="flex items-center gap-2 px-3 py-1.5">
                 <input
                   type="checkbox"
                   checked={selected.includes(s)}
-                  onChange={() => toggle(s)}
+                  onChange={() =>
+                    setSelected(
+                      selected.includes(s)
+                        ? selected.filter((x) => x !== s)
+                        : [...selected, s],
+                    )
+                  }
                 />
                 <span className="text-sm font-mono">{s}</span>
               </li>
@@ -736,7 +743,7 @@ function LakebaseSchemasList({
   );
 }
 
-function Step3UC({
+function UCDiscovery({
   catalog,
   setCatalog,
   schema,
@@ -752,17 +759,26 @@ function Step3UC({
   setTables: (v: string[]) => void;
 }) {
   return (
-    <div className="space-y-4">
-      <div>
-        <h3 className="text-base font-semibold">Discovery — Unity Catalog</h3>
-        <p className="text-sm text-muted-foreground">
-          Navegue catalog → schema → tables. O app precisa de USE_CATALOG/USE_SCHEMA.
-        </p>
-      </div>
-
-      <Suspense fallback={<Skeleton className="h-9 w-full" />}>
-        <UCCatalogPicker catalog={catalog} setCatalog={setCatalog} />
-      </Suspense>
+    <div className="space-y-3">
+      <QueryErrorResetBoundary>
+        {({ reset }) => (
+          <ErrorBoundary
+            onReset={reset}
+            fallbackRender={({ error, resetErrorBoundary }) => (
+              <BrowseError
+                title="Não foi possível listar catalogs"
+                hint="Verifique se o app tem permissão USE_CATALOG no Unity Catalog."
+                error={error}
+                onRetry={resetErrorBoundary}
+              />
+            )}
+          >
+            <Suspense fallback={<Skeleton className="h-9 w-full" />}>
+              <UCCatalogPicker catalog={catalog} setCatalog={setCatalog} />
+            </Suspense>
+          </ErrorBoundary>
+        )}
+      </QueryErrorResetBoundary>
 
       {catalog && (
         <QueryErrorResetBoundary>
@@ -887,22 +903,6 @@ function UCTablesList({
 }) {
   const { data: tables } = useListUCTablesSuspense(catalog, schema, selector());
 
-  function toggle(name: string) {
-    setSelected(
-      selected.includes(name)
-        ? selected.filter((x) => x !== name)
-        : [...selected, name],
-    );
-  }
-
-  function selectAll() {
-    setSelected(tables.map((t) => t.name));
-  }
-
-  function clearAll() {
-    setSelected([]);
-  }
-
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
@@ -912,16 +912,21 @@ function UCTablesList({
             ({selected.length}/{tables.length})
           </span>
         </label>
-        <div className="flex gap-2">
-          <Button type="button" size="sm" variant="ghost" onClick={selectAll}>
+        <div className="flex gap-1">
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => setSelected(tables.map((t) => t.name))}
+          >
             Selecionar tudo
           </Button>
-          <Button type="button" size="sm" variant="ghost" onClick={clearAll}>
+          <Button type="button" size="sm" variant="ghost" onClick={() => setSelected([])}>
             Limpar
           </Button>
         </div>
       </div>
-      <div className="rounded-md border max-h-64 overflow-auto">
+      <div className="rounded-md border max-h-56 overflow-auto bg-background">
         {tables.length === 0 ? (
           <p className="text-sm text-muted-foreground p-3">
             Nenhuma tabela visível neste schema.
@@ -929,11 +934,17 @@ function UCTablesList({
         ) : (
           <ul className="divide-y">
             {tables.map((t) => (
-              <li key={t.name} className="flex items-center gap-2 px-3 py-2">
+              <li key={t.name} className="flex items-center gap-2 px-3 py-1.5">
                 <input
                   type="checkbox"
                   checked={selected.includes(t.name)}
-                  onChange={() => toggle(t.name)}
+                  onChange={() =>
+                    setSelected(
+                      selected.includes(t.name)
+                        ? selected.filter((x) => x !== t.name)
+                        : [...selected, t.name],
+                    )
+                  }
                 />
                 <TableProperties className="h-3.5 w-3.5 text-muted-foreground" />
                 <span className="text-sm font-mono">{t.name}</span>
@@ -949,12 +960,15 @@ function UCTablesList({
   );
 }
 
-function Step4Summary({
+// ─── Step 2: Resumo ───────────────────────────────────────────────────────────
+
+function StepSummary({
   name,
   domain,
   technology,
   source,
   sandboxId,
+  sandboxName,
   lakebaseSchemas,
   ucCatalog,
   ucSchema,
@@ -965,6 +979,7 @@ function Step4Summary({
   technology: string;
   source: SourceKind;
   sandboxId: string;
+  sandboxName: string;
   lakebaseSchemas: string[];
   ucCatalog: string;
   ucSchema: string;
@@ -996,14 +1011,10 @@ function Step4Summary({
         />
         {source === "LAKEBASE" && (
           <>
-            <SummaryRow label="Sandbox" value={sandboxId} />
+            <SummaryRow label="Sandbox" value={sandboxName || sandboxId} />
             <SummaryRow
               label="Schemas"
-              value={
-                lakebaseSchemas.length
-                  ? lakebaseSchemas.join(", ")
-                  : "—"
-              }
+              value={lakebaseSchemas.length ? lakebaseSchemas.join(", ") : "—"}
             />
           </>
         )}
