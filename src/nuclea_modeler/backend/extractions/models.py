@@ -21,19 +21,30 @@ class LakebaseExtractionIn(BaseModel):
 
 
 class DDLImportIn(BaseModel):
-    """Trigger an extraction from raw DDL text."""
+    """Trigger an extraction from raw DDL text.
+
+    Size cap: 5 MB. Mais do que isso indica dump-de-banco-inteiro que deveria
+    vir via Lakebase round-trip, não import manual. Cap protege contra
+    parser DoS (sqlglot é pure-Python — payloads patológicos podem causar
+    loops longos).
+    """
 
     system_id: str
     dialect: str = "ANSI"
-    ddl_text: str = Field(min_length=1)
+    ddl_text: str = Field(min_length=1, max_length=5_000_000)
     open_ticket: bool = True
 
 
 class EmbarcaderoImportIn(BaseModel):
-    """Trigger an extraction from an Embarcadero ER/Studio .erx XML file."""
+    """Trigger an extraction from an Embarcadero ER/Studio .erx XML file.
+
+    Size cap: 10 MB. Arquivos .erx típicos da Núclea são <2MB.
+    Cap protege contra DoS no parser XML (defusedxml já bloqueia
+    XXE/billion-laughs, mas tamanho bruto ainda pode degradar performance).
+    """
 
     system_id: str
-    xml_text: str = Field(min_length=1)
+    xml_text: str = Field(min_length=1, max_length=10_000_000)
     open_ticket: bool = True
 
 

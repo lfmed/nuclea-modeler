@@ -31,13 +31,14 @@ Triagem + plano de correção em até **10 dias úteis** para alto/crítico.
 - Engenharia social / phishing
 - Ataques físicos
 
-## Defesa em profundidade (atualizado v0.2.0)
+## Defesa em profundidade (atualizado v0.2.1)
 
 | Camada | Mecanismo |
 |---|---|
 | **Auth** | Databricks SSO (OAuth). Sem auth local. |
 | **Authorization** | RBAC com 4 papéis (`VIEWER`, `STEWARD`, `ARCHITECT`, `ADMIN`). `require_role()` decorator em rotas sensíveis. |
-| **Input validation** | Pydantic em todo endpoint. `_require_ident()` para identifiers SQL não-parametrizáveis. |
+| **Input validation** | Pydantic em todo endpoint. `_require_ident()` para identifiers SQL não-parametrizáveis. **Size caps:** DDL upload 5 MB, .erx XML upload 10 MB (cap parser DoS). |
+| **XML parsing** | `defusedxml` (não stdlib `xml.etree`) em todo parser .erx — bloqueia XXE, billion-laughs, DTD recursion. |
 | **SQL injection** | 100% das queries com input do usuário usam `delta.param()` (binding nomeado `:name`). f-strings com input do usuário são bloqueadas em CI via ruff custom rule. |
 | **XSS** | React escapa por default; sem `dangerouslySetInnerHTML` em código próprio. |
 | **CSRF** | SameSite cookies via Databricks SSO; CORS opt-in via `NUCLEA_CORS_ALLOW_ORIGINS`. |
