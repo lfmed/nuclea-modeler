@@ -60,9 +60,10 @@ jobs:
       - name: Deps sync check (pyproject vs requirements)
         run: uv run python -m scripts.check_deps_sync
 
+      # Format check (ruff). HARD-GATE — código está formatado e CI valida drift.
+      # Para corrigir local: `uv run ruff format src/ tests/`.
       - name: Format check (ruff)
         run: uv run ruff format --check src/ tests/
-        continue-on-error: true  # warn-only; turn off once code is formatted
 
       # Bandit: static security analyser. HARD-GATE.
       # Skips (B101/B404/B603/B608) documentados em pyproject.toml — todos

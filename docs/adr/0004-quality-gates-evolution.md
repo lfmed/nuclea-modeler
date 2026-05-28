@@ -80,6 +80,7 @@ Anti-pattern: skip "porque é ruidoso". Se é ruidoso ao ponto de querer skipar,
 | **v0.2.1** | **OpenAPI snapshot** | **promovido hard-gate condicional** |
 | **v0.2.1** | **deps-sync (novo)** | **hard-gate desde criação** |
 | **v0.2.1** | **pytest-cov** | **promovido ≥75%** (real ~81%) |
+| **v0.2.1** | **ruff format** | **promovido hard-gate** (drift validado em CI matrix) |
 
 ### 5. Achados reais que justificaram a abordagem
 
