@@ -43,7 +43,7 @@ import {
   Clock,
 } from "lucide-react";
 
-export const Route = createFileRoute("/_sidebar/connections")({
+export const Route = createFileRoute("/_sidebar/connections/")({
   component: ConnectionsPage,
 });
 

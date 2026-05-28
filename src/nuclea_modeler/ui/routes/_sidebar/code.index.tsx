@@ -28,7 +28,7 @@ import {
 
 type Tab = "views" | "procedures" | "triggers" | "sequences";
 
-export const Route = createFileRoute("/_sidebar/code")({
+export const Route = createFileRoute("/_sidebar/code/")({
   component: CodePage,
 });
 

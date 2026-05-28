@@ -29,7 +29,7 @@ import {
 } from "lucide-react";
 import { EmptyState } from "@/components/apx/empty-state";
 
-export const Route = createFileRoute("/_sidebar/glossary")({
+export const Route = createFileRoute("/_sidebar/glossary/")({
   component: GlossaryPage,
 });
 

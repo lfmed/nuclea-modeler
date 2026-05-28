@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import { EmptyState as SharedEmptyState } from "@/components/apx/empty-state";
 
-export const Route = createFileRoute("/_sidebar/tickets")({
+export const Route = createFileRoute("/_sidebar/tickets/")({
   component: TicketsPage,
 });
 

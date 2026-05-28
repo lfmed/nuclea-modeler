@@ -13,7 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { AlertCircle, FileText, Plus, RefreshCw } from "lucide-react";
 import { EmptyState } from "@/components/apx/empty-state";
 
-export const Route = createFileRoute("/_sidebar/entities")({
+export const Route = createFileRoute("/_sidebar/entities/")({
   component: EntitiesPage,
 });
 

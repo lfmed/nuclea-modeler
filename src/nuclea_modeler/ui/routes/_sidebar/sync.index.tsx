@@ -35,7 +35,7 @@ import {
   Clock,
 } from "lucide-react";
 
-export const Route = createFileRoute("/_sidebar/sync")({
+export const Route = createFileRoute("/_sidebar/sync/")({
   component: SyncPage,
 });
 

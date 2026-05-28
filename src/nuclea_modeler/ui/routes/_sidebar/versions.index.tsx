@@ -31,7 +31,7 @@ import {
 } from "lucide-react";
 import { EmptyState } from "@/components/apx/empty-state";
 
-export const Route = createFileRoute("/_sidebar/versions")({
+export const Route = createFileRoute("/_sidebar/versions/")({
   component: VersionsPage,
 });
 
