@@ -243,6 +243,15 @@ export const useListSystemsSuspense = (s?: Selector<SystemListOut[]>) =>
     ...s?.query,
   });
 
+export const useCreateSystem = (
+  opts?: Opts<SystemOut, { data: SystemIn }>,
+) =>
+  useMutation({
+    mutationFn: async ({ data }) =>
+      (await api.post<SystemOut>("/systems", data)).data,
+    ...opts?.mutation,
+  });
+
 export const useListConnectionsSuspense = (s?: Selector<ConnectionListOut[]>) =>
   useSuspenseQuery({
     queryKey: ["listConnections"],

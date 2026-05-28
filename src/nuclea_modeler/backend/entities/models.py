@@ -30,6 +30,7 @@ class EntityIn(BaseModel):
     entity_type: EntityType = "TABLE"
     native_comment: str | None = None
     row_count_approx: int | None = None
+    is_shared: bool = False  # entity compartilhada: pode ser target cross-system
 
 
 class EntityOut(BaseModel):
@@ -55,6 +56,7 @@ class EntityOut(BaseModel):
     updated_at: datetime
     updated_by: str
     attributes_count: int | None = None
+    is_shared: bool = False
     # Editorial overlay — só preenchido em endpoints que aplicam overlay
     # de sessão; reads "frias" deixam None.
     pending_op: PendingOp | None = None
@@ -73,6 +75,7 @@ class EntityListOut(BaseModel):
     criticality: Criticality | None = None
     attributes_count: int | None = None
     updated_at: datetime
+    is_shared: bool = False
     pending_op: PendingOp | None = None
     pending_ticket_id: str | None = None
 

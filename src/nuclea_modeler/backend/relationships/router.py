@@ -97,19 +97,15 @@ def _select_rel_query(where_clause: str = "") -> str:
 
 def _validate_entities(sql: SqlDependency, system_id: str,
                        source_entity_id: str, target_entity_id: str) -> None:
-    """Confere que os entities existem no catálogo e pertencem ao system.
-
-    Atenção: este modelo editorial permite que entities estejam apenas staged
-    (no ticket OPEN), não ainda no catálogo. Para essa primeira versão exigimos
-    que ambos existam no catálogo — se forem entities recém-criadas na sessão,
-    o user precisa aplicar o ticket antes de criar relationships entre elas.
-    Issue separado pra suportar referências a entities pre_allocated.
+    """Confere que os entities existem e que cross-system só é permitido
+    quando o target é uma entidade marcada como `is_shared=true` (entidade
+    compartilhada, exposta como biblioteca pra outros modelos).
     """
     s = get_settings()
     rows = delta.fetch_all_params(
         sql,
         f"""
-        SELECT entity_id, system_id
+        SELECT entity_id, system_id, COALESCE(is_shared, false) AS is_shared
         FROM {s.fq_table('entities')}
         WHERE entity_id IN (:source_id, :target_id)
         """,
@@ -118,23 +114,28 @@ def _validate_entities(sql: SqlDependency, system_id: str,
             delta.param("target_id", target_entity_id),
         ],
     )
-    found = {r[0]: r[1] for r in rows}
+    found = {r[0]: {"system_id": r[1], "is_shared": bool(r[2])} for r in rows}
     if source_entity_id not in found:
         raise HTTPException(400, f"source_entity_id '{source_entity_id}' not found")
     if target_entity_id not in found:
         raise HTTPException(400, f"target_entity_id '{target_entity_id}' not found")
-    if found[source_entity_id] != system_id:
+    if found[source_entity_id]["system_id"] != system_id:
+        # Source sempre tem que ser do system do relationship
         raise HTTPException(
             400,
-            f"source entity belongs to system '{found[source_entity_id]}', "
+            f"source entity belongs to system '{found[source_entity_id]['system_id']}', "
             f"not '{system_id}'",
         )
-    if found[target_entity_id] != system_id:
-        raise HTTPException(
-            400,
-            f"target entity belongs to system '{found[target_entity_id]}', "
-            f"not '{system_id}'",
-        )
+    if found[target_entity_id]["system_id"] != system_id:
+        # Target pode ser de outro system desde que seja compartilhada
+        if not found[target_entity_id]["is_shared"]:
+            raise HTTPException(
+                400,
+                f"target entity está em outro sistema "
+                f"('{found[target_entity_id]['system_id']}') e não está marcada "
+                f"como compartilhada (is_shared=true). Marque-a como compartilhada "
+                f"no sistema de origem ou crie a referência no sistema dela.",
+            )
 
 
 def _relationship_in_to_payload(

@@ -24,6 +24,7 @@ import { toPng } from "html-to-image";
 
 import {
   useCreateRelationship,
+  useCreateSystem,
   useGetDiagramSuspense,
   useGetSessionStatusSuspense,
   useDiscardSession,
@@ -137,6 +138,20 @@ function Header() {
 function DiagramBody() {
   const { data: systems } = useListSystemsSuspense(selector());
   const [systemId, setSystemId] = useState(systems[0]?.system_id || "");
+  const [showNewSystem, setShowNewSystem] = useState(false);
+  const qc = useQueryClient();
+
+  const createSystem = useCreateSystem({
+    mutation: {
+      onSuccess: (sys) => {
+        qc.invalidateQueries({ queryKey: ["listSystems"] });
+        setSystemId(sys.system_id);
+        setShowNewSystem(false);
+        toast.success(`Sistema "${sys.system_name}" criado`);
+      },
+      onError: (e) => toast.error(String(e)),
+    },
+  });
 
   if (systems.length === 0) {
     return (
@@ -164,7 +179,7 @@ function DiagramBody() {
           <div className="flex flex-wrap items-end gap-3">
             <div className="flex-1 min-w-[240px]">
               <label className="text-xs font-medium text-muted-foreground mb-1 block">
-                Sistema
+                Sistema (modelo)
               </label>
               <select
                 value={systemId}
@@ -178,9 +193,25 @@ function DiagramBody() {
                 ))}
               </select>
             </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowNewSystem(true)}
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Novo sistema
+            </Button>
           </div>
         </CardContent>
       </Card>
+
+      {showNewSystem && (
+        <NewSystemDialog
+          onClose={() => setShowNewSystem(false)}
+          onSubmit={(data) => createSystem.mutate({ data })}
+          submitting={createSystem.isPending}
+        />
+      )}
 
       {systemId && (
         <Suspense fallback={<Skeleton className="h-[600px] w-full" />}>
@@ -1040,6 +1071,8 @@ function CreateRelationshipDialog({
   const [sourceCard, setSourceCard] = useState<Cardinality>("OPTIONAL");
   const [targetCard, setTargetCard] = useState<Cardinality>("MANDATORY");
   const [description, setDescription] = useState("");
+  const [sourceAttrIds, setSourceAttrIds] = useState<string[]>([]);
+  const [targetAttrIds, setTargetAttrIds] = useState<string[]>([]);
 
   const { mutate: create, isPending, error } = useCreateRelationship({
     mutation: { onSuccess: () => onCreated() },
@@ -1050,6 +1083,13 @@ function CreateRelationshipDialog({
   const label = (e?: DiagramEntity) =>
     e ? `${e.schema_name}.${e.technical_name}` : "?";
 
+  const toggleAttr = (which: "src" | "tgt", attrId: string) => {
+    const setter = which === "src" ? setSourceAttrIds : setTargetAttrIds;
+    setter((prev) =>
+      prev.includes(attrId) ? prev.filter((x) => x !== attrId) : [...prev, attrId],
+    );
+  };
+
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     create({
@@ -1057,6 +1097,8 @@ function CreateRelationshipDialog({
         system_id: systemId,
         source_entity_id: source,
         target_entity_id: target,
+        source_attr_ids: sourceAttrIds,
+        target_attr_ids: targetAttrIds,
         rel_type: relType,
         source_cardinality: sourceCard,
         target_cardinality: targetCard,
@@ -1170,6 +1212,54 @@ function CreateRelationshipDialog({
             </div>
           </div>
 
+          {/* Picker de colunas (FK explícita coluna-a-coluna). Opcional. */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-sm font-medium block mb-1.5">
+                Colunas origem ({sourceAttrIds.length})
+              </label>
+              <div className="max-h-32 overflow-y-auto border rounded-md p-2 space-y-1 text-xs">
+                {srcEnt?.attributes?.length ? (
+                  srcEnt.attributes.map((a) => (
+                    <label key={a.attribute_id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 px-1 rounded">
+                      <input
+                        type="checkbox"
+                        checked={sourceAttrIds.includes(a.attribute_id)}
+                        onChange={() => toggleAttr("src", a.attribute_id)}
+                      />
+                      <code className="font-mono">{a.technical_name}</code>
+                      {a.is_primary_key && <span className="text-amber-600">🔑</span>}
+                    </label>
+                  ))
+                ) : (
+                  <span className="text-muted-foreground italic">sem colunas</span>
+                )}
+              </div>
+            </div>
+            <div>
+              <label className="text-sm font-medium block mb-1.5">
+                Colunas destino ({targetAttrIds.length})
+              </label>
+              <div className="max-h-32 overflow-y-auto border rounded-md p-2 space-y-1 text-xs">
+                {tgtEnt?.attributes?.length ? (
+                  tgtEnt.attributes.map((a) => (
+                    <label key={a.attribute_id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 px-1 rounded">
+                      <input
+                        type="checkbox"
+                        checked={targetAttrIds.includes(a.attribute_id)}
+                        onChange={() => toggleAttr("tgt", a.attribute_id)}
+                      />
+                      <code className="font-mono">{a.technical_name}</code>
+                      {a.is_primary_key && <span className="text-amber-600">🔑</span>}
+                    </label>
+                  ))
+                ) : (
+                  <span className="text-muted-foreground italic">sem colunas</span>
+                )}
+              </div>
+            </div>
+          </div>
+
           <div>
             <label className="text-sm font-medium block mb-1.5">Descrição</label>
             <textarea
@@ -1240,6 +1330,9 @@ function EditEntityDialog({
   const [schema, setSchema] = useState(entity.schema_name);
   const [domain, setDomain] = useState(entity.domain || "");
   const [criticality, setCriticality] = useState(entity.criticality || "");
+  const [isShared, setIsShared] = useState(
+    Boolean((entity as { is_shared?: boolean }).is_shared),
+  );
 
   const updateEntity = useUpdateEntity({
     mutation: {
@@ -1263,6 +1356,7 @@ function EditEntityDialog({
         criticality: (criticality || null) as any,
         entity_type: entity.entity_type as any,
         tags: [],
+        is_shared: isShared,
       },
     });
   };
@@ -1321,6 +1415,25 @@ function EditEntityDialog({
                   <option value="LOW">Baixa</option>
                 </select>
               </Field>
+            </div>
+            <div className="rounded-md border bg-muted/30 p-3">
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isShared}
+                  onChange={(e) => setIsShared(e.target.checked)}
+                  className="mt-0.5"
+                />
+                <div className="text-xs">
+                  <div className="font-medium">Entidade compartilhada</div>
+                  <div className="text-muted-foreground">
+                    Permite que esta entidade seja referenciada como destino
+                    de relacionamentos em <strong>outros sistemas/modelos</strong>.
+                    Útil pra entities canônicas (Cliente, Conta, etc) que
+                    múltiplos domínios consomem.
+                  </div>
+                </div>
+              </label>
             </div>
             <div className="flex justify-end">
               <Button onClick={onSave} disabled={updateEntity.isPending} size="sm">
@@ -1502,6 +1615,102 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
         {label}
       </label>
       {children}
+    </div>
+  );
+}
+
+function NewSystemDialog({
+  onClose,
+  onSubmit,
+  submitting,
+}: {
+  onClose: () => void;
+  onSubmit: (data: import("@/lib/api").SystemIn) => void;
+  submitting: boolean;
+}) {
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [domain, setDomain] = useState("");
+  const [technology, setTechnology] = useState("");
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <Card
+        className="w-full max-w-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <Plus className="h-5 w-5 text-nuclea-primary" />
+              Novo sistema (modelo)
+            </CardTitle>
+            <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <CardDescription>
+            Um sistema agrupa entidades e relacionamentos de um modelo de dados.
+            Pode evoluir sem fonte conectada; depois você pode validar contra
+            Lakebase/ODBC.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div>
+            <label className="text-xs font-medium block mb-1">Nome *</label>
+            <Input
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Cadastro de Clientes"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium block mb-1">Domínio</label>
+            <Input
+              value={domain}
+              onChange={(e) => setDomain(e.target.value)}
+              placeholder="Cadastro, Risco, Cobrança..."
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium block mb-1">Tecnologia</label>
+            <Input
+              value={technology}
+              onChange={(e) => setTechnology(e.target.value)}
+              placeholder="PostgreSQL, Oracle, SQL Server..."
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium block mb-1">Descrição</label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={onClose}>Cancelar</Button>
+            <Button
+              onClick={() =>
+                onSubmit({
+                  system_name: name,
+                  description: description || null,
+                  domain: domain || null,
+                  technology: technology || null,
+                })
+              }
+              disabled={submitting || !name.trim()}
+            >
+              {submitting ? "Criando..." : "Criar sistema"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

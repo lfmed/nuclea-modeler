@@ -229,6 +229,7 @@ def apply_ticket(
                         "native_comment": payload.get("native_comment"),
                         "row_count_approx": payload.get("row_count_approx"),
                         "tags": payload.get("tags", []),
+                        "is_shared": bool(payload.get("is_shared", False)),
                         "last_extracted_at": now,
                         "created_at": now, "created_by": applied_by,
                         "updated_at": now, "updated_by": applied_by,
@@ -330,7 +331,10 @@ def apply_ticket(
                     # 2. attribute_add:NAME → INSERT em attributes
                     # 3. attribute_remove:NAME → DELETE em attributes
                     # 4. attribute:NAME.update → UPDATE em attributes
-                    if fld in {"logical_name", "description_md", "native_comment", "row_count_approx", "domain"}:
+                    if fld in {
+                        "logical_name", "description_md", "native_comment",
+                        "row_count_approx", "domain", "is_shared",
+                    }:
                         updates[fld] = new_val
                     elif fld and fld.startswith("attribute_add:"):
                         attr_payload = new_val or {}

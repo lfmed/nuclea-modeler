@@ -41,6 +41,7 @@ _ENT_COLS = [
     "criticality", "tags", "notes", "entity_type", "native_comment",
     "row_count_approx", "last_extracted_at",
     "created_at", "created_by", "updated_at", "updated_by",
+    "is_shared",
 ]
 
 _ATTR_COLS = [
@@ -57,7 +58,7 @@ _ATTR_COLS = [
 _ENT_DIFF_FIELDS = [
     "logical_name", "description_md", "domain", "business_owner",
     "technical_owner", "criticality", "tags", "notes", "entity_type",
-    "native_comment", "row_count_approx",
+    "native_comment", "row_count_approx", "is_shared",
 ]
 
 
@@ -71,6 +72,7 @@ def _ent_row_to_out(r: list, system_name: str | None = None, attr_count: int | N
         notes=r[11], entity_type=r[12] or "TABLE",
         native_comment=r[13], row_count_approx=r[14], last_extracted_at=r[15],
         created_at=r[16], created_by=r[17], updated_at=r[18], updated_by=r[19],
+        is_shared=bool(r[20]) if len(r) > 20 and r[20] is not None else False,
         attributes_count=attr_count,
     )
 
@@ -118,6 +120,7 @@ def _entity_in_to_payload(payload: EntityIn) -> dict:
         "entity_type": payload.entity_type,
         "native_comment": payload.native_comment,
         "row_count_approx": payload.row_count_approx,
+        "is_shared": bool(payload.is_shared),
     }
 
 
@@ -159,6 +162,7 @@ def _virtual_entity_out(
         updated_at=now,
         updated_by=actor,
         attributes_count=0,
+        is_shared=bool(payload.is_shared),
         pending_op=pending_op,  # type: ignore[arg-type]
         pending_ticket_id=pending_ticket_id,
     )
