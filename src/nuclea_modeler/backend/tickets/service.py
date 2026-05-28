@@ -160,7 +160,13 @@ def apply_ticket(
     errors: list[str] = []
     now = datetime.utcnow()
 
-    for ent_change in diff.get("entities", []):
+    # Ordem: entities primeiro, relationships depois — pra que FKs com source
+    # virtual encontrem a entity recém-materializada com o id pré-alocado.
+    entries_sorted = sorted(
+        diff.get("entities", []),
+        key=lambda e: 1 if e.get("schema_name") == "__relationship__" else 0,
+    )
+    for ent_change in entries_sorted:
         op = ent_change.get("op")
         schema_name = ent_change.get("schema_name", "")
         technical_name = ent_change.get("technical_name", "")
@@ -213,7 +219,10 @@ def apply_ticket(
                 if existing:
                     continue
                 payload = ent_change.get("payload") or {}
-                eid = delta.new_id("ent-")
+                # Respeita o entity_id pré-alocado na sessão. Crítico pra que
+                # relationships criados na mesma sessão (que apontam pra esse
+                # source_entity_id virtual) batam após o apply.
+                eid = payload.get("pre_allocated_entity_id") or delta.new_id("ent-")
                 delta.insert(
                     sql,
                     s.fq_table("entities"),
@@ -238,7 +247,8 @@ def apply_ticket(
                 applied_entities += 1
                 # Insert attributes (if provided in `attributes`)
                 for idx, attr in enumerate(ent_change.get("attributes") or []):
-                    aid = delta.new_id("attr-")
+                    # Mesma lógica: respeita attribute_id se foi pré-alocado.
+                    aid = attr.get("attribute_id") or delta.new_id("attr-")
                     delta.insert(
                         sql,
                         s.fq_table("attributes"),

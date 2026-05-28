@@ -95,11 +95,49 @@ def _select_rel_query(where_clause: str = "") -> str:
     """
 
 
-def _validate_entities(sql: SqlDependency, system_id: str,
-                       source_entity_id: str, target_entity_id: str) -> None:
-    """Confere que os entities existem e que cross-system só é permitido
-    quando o target é uma entidade marcada como `is_shared=true` (entidade
-    compartilhada, exposta como biblioteca pra outros modelos).
+def _virtual_entity_in_session(
+    sql: SqlDependency, user_email: str, system_id: str, entity_id: str,
+) -> dict | None:
+    """Procura uma entity virtual (op=add com pre_allocated_entity_id) na
+    sessão OPEN do user pro sistema. Retorna {system_id, is_shared} ou None.
+
+    Permite que o frontend referencie entities ainda staged (não committed)
+    como source/target de relacionamentos — o relacionamento entra na MESMA
+    sessão e tudo é materializado junto no apply.
+    """
+    from ..tickets.session import find_open_session_ticket  # avoid circular
+
+    found = find_open_session_ticket(sql, user_email, system_id)
+    if not found:
+        return None
+    _, diff = found
+    for e in diff.get("entities", []) or []:
+        if not isinstance(e, dict) or e.get("op") != "add":
+            continue
+        if e.get("schema_name") == "__relationship__":
+            continue
+        payload = e.get("payload") or {}
+        pid = payload.get("pre_allocated_entity_id")
+        if pid == entity_id:
+            return {
+                "system_id": system_id,
+                "is_shared": bool(payload.get("is_shared", False)),
+                "virtual": True,
+            }
+    return None
+
+
+def _validate_entities(
+    sql: SqlDependency,
+    system_id: str,
+    source_entity_id: str,
+    target_entity_id: str,
+    *,
+    actor: str | None = None,
+) -> None:
+    """Confere que os entities existem (no catálogo OU virtuais na sessão do
+    user atual) e que cross-system só é permitido quando o target é marcado
+    como `is_shared=true`.
     """
     s = get_settings()
     rows = delta.fetch_all_params(
@@ -114,20 +152,32 @@ def _validate_entities(sql: SqlDependency, system_id: str,
             delta.param("target_id", target_entity_id),
         ],
     )
-    found = {r[0]: {"system_id": r[1], "is_shared": bool(r[2])} for r in rows}
+    found: dict[str, dict] = {
+        r[0]: {"system_id": r[1], "is_shared": bool(r[2]), "virtual": False}
+        for r in rows
+    }
+    # Fallback: source/target podem estar virtuais na sessão OPEN do user
+    if actor:
+        if source_entity_id not in found:
+            vsrc = _virtual_entity_in_session(sql, actor, system_id, source_entity_id)
+            if vsrc:
+                found[source_entity_id] = vsrc
+        if target_entity_id not in found:
+            vtgt = _virtual_entity_in_session(sql, actor, system_id, target_entity_id)
+            if vtgt:
+                found[target_entity_id] = vtgt
+
     if source_entity_id not in found:
         raise HTTPException(400, f"source_entity_id '{source_entity_id}' not found")
     if target_entity_id not in found:
         raise HTTPException(400, f"target_entity_id '{target_entity_id}' not found")
     if found[source_entity_id]["system_id"] != system_id:
-        # Source sempre tem que ser do system do relationship
         raise HTTPException(
             400,
             f"source entity belongs to system '{found[source_entity_id]['system_id']}', "
             f"not '{system_id}'",
         )
     if found[target_entity_id]["system_id"] != system_id:
-        # Target pode ser de outro system desde que seja compartilhada
         if not found[target_entity_id]["is_shared"]:
             raise HTTPException(
                 400,
@@ -265,10 +315,11 @@ def create_relationship(
     user_ws: Dependencies.UserClient,
 ) -> RelationshipOut:
     """Stage criação de relationship. NÃO grava no catálogo — vai pro ticket OPEN."""
+    actor = _current_email(user_ws) or "unknown"
     _validate_entities(
         sql, payload.system_id, payload.source_entity_id, payload.target_entity_id,
+        actor=actor,
     )
-    actor = _current_email(user_ws) or "unknown"
     rid = delta.new_id("rel-")
     ticket_id, diff = get_or_create_session_ticket(sql, actor, payload.system_id)
     rel_payload = _relationship_in_to_payload(payload, origin="MANUAL")
@@ -297,10 +348,11 @@ def update_relationship(
     user_ws: Dependencies.UserClient,
 ) -> RelationshipOut:
     """Stage update de relationship no ticket OPEN."""
+    actor = _current_email(user_ws) or "unknown"
     _validate_entities(
         sql, payload.system_id, payload.source_entity_id, payload.target_entity_id,
+        actor=actor,
     )
-    actor = _current_email(user_ws) or "unknown"
     ticket_id, diff = get_or_create_session_ticket(sql, actor, payload.system_id)
     rel_payload = _relationship_in_to_payload(payload)
     rel_payload["relationship_id"] = relationship_id
