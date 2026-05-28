@@ -34,7 +34,8 @@ from nuclea_modeler.backend.audit.middleware import _extract_client_ip, _parse_o
         # Action sub-paths — heurística aceita action 6+ chars como "id"
         ("/api/tickets/tk-1/approve", ("tickets", "approve")),     # heurística
         ("/api/entities/ent-1/attributes", ("entities", "attributes")),  # idem
-        ("/api/entities/ent-abc/attr-9", ("entities", None)),       # 5 chars, não bate
+        ("/api/entities/ent-abc/at-1", ("entities", None)),         # 4 chars, não bate
+        ("/api/entities/ent-abc/attr-9", ("entities", "attr-9")),   # 6 chars, bate
         # Query strings são strippadas antes do parse
         ("/api/entities?domain=Comercial", ("entities", None)),
         ("/api/entities/ent-abc123?refresh=true", ("entities", "ent-abc123")),
