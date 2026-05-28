@@ -1,0 +1,72 @@
+name: 💡 Feature Request
+description: Sugerir uma feature ou melhoria
+title: "[feat] "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Antes de abrir, considere se isso encaixa em algum [módulo existente](../docs/spec/)
+        ou se vale uma nova feature flag em vez de hardcoded.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Qual problema isso resolve?
+      description: Comece pela dor, não pela solução. "Como [persona], quero [outcome], porque [valor]."
+      placeholder: |
+        Como steward, quero filtrar entidades por owner_team, porque hoje
+        preciso scrollar 200 linhas para achar as do meu time.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Solução proposta (opcional)
+      description: Se você já pensou em como, descreva. Senão, deixe em branco — discutimos juntos.
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternativas consideradas
+      description: O que você já tentou? Por que não serve?
+
+  - type: dropdown
+    id: module
+    attributes:
+      label: Módulo afetado
+      multiple: true
+      options:
+        - M1 Conexões
+        - M2 Engenharia Reversa
+        - M3 Documentação (Entidades/Atributos)
+        - M4 DER (Diagrama)
+        - M5 Flags LGPD
+        - M6 Glossário
+        - M7 Linhagem
+        - M8 Versionamento
+        - M9 Sync UC
+        - M10 Export DDL
+        - Tickets
+        - Lakebase Sandbox
+        - Audit / Admin
+        - Cross-cutting (busca, perfil, help)
+        - Infra / DevEx
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Urgência
+      options:
+        - "Nice to have — pode entrar em backlog"
+        - "Médio — bloqueia produtividade mas tem workaround"
+        - "Alto — bloqueia uso completo do app"
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Contexto adicional
+      description: Screenshots, mockups, links para discussões.

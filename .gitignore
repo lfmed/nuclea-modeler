@@ -18,6 +18,7 @@ venv/
 .basedpyright/
 htmlcov/
 .coverage
+coverage.xml
 
 # Version / metadata — written by hand for direct-source deploy (no apx build)
 # (kept tracked; do NOT ignore)

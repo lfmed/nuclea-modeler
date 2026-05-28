@@ -42,8 +42,25 @@ jobs:
         run: uv run ruff format --check src/ tests/
         continue-on-error: true  # warn-only; turn off once code is formatted
 
-      - name: Run tests
-        run: uv run pytest tests/ -q --tb=short
+      - name: Run tests with coverage
+        # pytest config (pyproject.toml) já passa --cov --cov-fail-under=60
+        run: uv run pytest tests/
+
+      - name: Upload coverage XML
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          retention-days: 14
+
+      # Verifies docs/openapi.json matches the live code. If a PR changes a
+      # route signature without updating the snapshot, this surfaces it.
+      # Warn-only inicialmente — primeiro run gera o snapshot real, operator
+      # commita, depois remove continue-on-error.
+      - name: OpenAPI snapshot drift check
+        run: uv run python -m scripts.dump_openapi --check
+        continue-on-error: true
 
   frontend:
     name: Frontend (build + bundle size)

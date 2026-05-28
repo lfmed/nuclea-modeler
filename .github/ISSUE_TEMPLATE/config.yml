@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 🔒 Vulnerabilidade de segurança
+    url: https://github.com/lfmed/nuclea-modeler/security/advisories/new
+    about: Reportar privadamente, NÃO em issue pública. Vide SECURITY.md.
+  - name: 📚 Centro de Ajuda do app
+    url: https://nuclea-modeler-7474646973581105.aws.databricksapps.com/help
+    about: Documentação in-app cobre os fluxos comuns.
+  - name: 🧭 Roteiro de demo (HTML)
+    url: https://github.com/lfmed/nuclea-modeler/blob/main/docs/demo/jornada-arquiteto-de-dados.html
+    about: Tour da jornada do arquiteto de dados.

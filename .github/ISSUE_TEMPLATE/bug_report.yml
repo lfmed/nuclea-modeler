@@ -1,0 +1,91 @@
+name: 🐛 Bug Report
+description: Reportar comportamento inesperado do Núclea Modeler
+title: "[bug] "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Obrigado por reportar! Para acelerar o fix, inclua quanto mais detalhes melhor.
+        Para vulnerabilidades de segurança, **não use issue pública** — vide [SECURITY.md](../SECURITY.md).
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: O que aconteceu?
+      description: Comportamento observado, sem rodeios.
+      placeholder: "Cliquei em 'Publicar versão' e o app retornou 500."
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-expected
+    attributes:
+      label: O que era esperado?
+      placeholder: "Versão publicada e redirecionamento para /versions/{id}."
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Como reproduzir
+      description: Passos numerados ou curl.
+      placeholder: |
+        1. Acesse /versions
+        2. Selecione sistema X
+        3. Clique "Publicar"
+        4. Observe erro 500
+    validations:
+      required: true
+
+  - type: input
+    id: error-id
+    attributes:
+      label: error_id (se 5xx)
+      description: Aparece no header `X-Error-ID` da response. Visível também no toast da UI.
+      placeholder: "b7e1f2334455"
+
+  - type: input
+    id: request-id
+    attributes:
+      label: request_id
+      description: Aparece no header `X-Request-ID` de toda response.
+      placeholder: "a3f8c9d12345"
+
+  - type: input
+    id: version
+    attributes:
+      label: Versão do app
+      description: GET /api/version retorna isso. Também visível no Help.
+      placeholder: "v0.2.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Ambiente
+      options:
+        - Produção (databricksapps.com)
+        - Staging
+        - Dev local
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Impacto
+      options:
+        - "🔴 Bloqueador — não consigo trabalhar"
+        - "🟡 Degradação — workaround existe"
+        - "🟢 Cosmético / leve"
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Contexto adicional
+      description: Screenshots, logs, links — qualquer coisa que ajude.

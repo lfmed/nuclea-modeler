@@ -19,6 +19,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0.0",
+    "pytest-cov>=5.0.0",
     "ruff>=0.6.0",
     "starlette>=0.40.0",  # used by tests via TestClient (also a FastAPI dep)
     "httpx>=0.28.0",      # used by tests + REST tester
@@ -58,7 +59,38 @@ ignore = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-addopts = "-q --tb=short"
+# Coverage thresholds:
+# - 60% minimum global — fails the build below this.
+# - The threshold is INTENTIONALLY modest. The catalog/router layer is hard
+#   to cover without a live SQL Warehouse — the meaningful coverage lives in
+#   the pure-logic modules (ddl/generators, core/delta, core/security,
+#   core/logging, core/features, core/metrics, connections/testers).
+addopts = "-q --tb=short --cov=nuclea_modeler --cov-report=term-missing --cov-report=xml --cov-fail-under=60"
+
+[tool.coverage.run]
+source = ["src/nuclea_modeler"]
+omit = [
+    # Auto-generated / metadata-only
+    "src/nuclea_modeler/_version.py",
+    "src/nuclea_modeler/_metadata.py",
+    "src/nuclea_modeler/__dist__/*",
+    # Hard to unit-test without a Warehouse — covered by smoke tests instead
+    "src/nuclea_modeler/backend/core/_factory.py",
+    "src/nuclea_modeler/backend/core/_static.py",
+    "src/nuclea_modeler/backend/core/_defaults.py",
+    "src/nuclea_modeler/backend/core/_base.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "@overload",
+    'if __name__ == "__main__":',
+]
+show_missing = true
+skip_covered = false
 
 # APX metadata retained for reference. Not used by the Databricks Apps runtime.
 [tool.apx.metadata]

@@ -1,0 +1,26 @@
+name: ❓ Pergunta / Discussão
+description: Pergunta sobre uso, comportamento ou roadmap
+title: "[q] "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Antes de abrir, dá uma olhada:
+        - [Centro de Ajuda do app](https://nuclea-modeler-7474646973581105.aws.databricksapps.com/help) — guias in-app
+        - [CONTRIBUTING.md](../blob/main/CONTRIBUTING.md) — convenções de dev
+        - [API Recipes](../blob/main/docs/api/RECIPES.md) — exemplos curl
+        - [docs/adr/](../tree/main/docs/adr) — decisões de arquitetura
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Sua pergunta
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Contexto
+      description: Onde você se perdeu? O que tentou? O que está tentando fazer no app?
