@@ -9,11 +9,14 @@ Workflow:
 from __future__ import annotations
 
 import json
+import logging
 import time
 from datetime import datetime
 from typing import Any
 
 from databricks.sdk import WorkspaceClient
+
+log = logging.getLogger(__name__)
 
 from ..core import delta
 from ..core._nuclea_config import get_settings
@@ -827,3 +830,263 @@ def run_embarcadero_import(
         ),
         errors=parse_warnings,
     )
+
+
+# ---------------------------------------------------------------------------
+# Unity Catalog extraction
+# ---------------------------------------------------------------------------
+
+
+def _uc_table_type_to_entity_type(table_type: str | None) -> str:
+    """Mapeia `TableType` UC -> nosso `entity_type` interno.
+
+    Espelha `uc.router._map_table_type` (duplicado de propósito para evitar
+    ciclo de import entre módulos de domínio).
+    """
+    if not table_type:
+        return "TABLE"
+    t = table_type.upper()
+    if t == "VIEW":
+        return "VIEW"
+    if t == "MATERIALIZED_VIEW":
+        return "MATERIALIZED_VIEW"
+    if t in ("EXTERNAL", "EXTERNAL_SHALLOW_CLONE", "FOREIGN"):
+        return "EXTERNAL"
+    return "TABLE"
+
+
+def extract_from_uc(
+    ws: WorkspaceClient,
+    *,
+    catalog: str,
+    schema: str,
+    table_names: list[str] | None,
+    system_id: str,
+) -> tuple[ExtractionSnapshot, list[str]]:
+    """Puxa snapshot de tabelas + colunas via Unity Catalog SDK.
+
+    Estratégia:
+      - Se `table_names` está vazio/None, lista todas as tabelas do schema
+        com `tables.list(omit_columns=False)` (já vem com colunas em uma
+        única chamada).
+      - Se `table_names` veio explícito, faz `tables.get(full_name=…)` por
+        tabela (paga 1 round-trip por tabela mas evita iterar tudo).
+
+    Retorna (snapshot, warnings) — warnings contém erros não-fatais
+    (tabela não encontrada, etc).
+    """
+    entities: list[ExtractedEntity] = []
+    warnings: list[str] = []
+
+    # 1) Coleta os TableInfos relevantes.
+    if table_names:
+        # Subset explícito.
+        for tname in table_names:
+            full_name = f"{catalog}.{schema}.{tname}"
+            try:
+                t = ws.tables.get(full_name=full_name)
+            except Exception as exc:
+                warnings.append(f"tabela {full_name} não acessível: {exc}")
+                log.warning("uc.extract get failed %s: %s", full_name, exc)
+                continue
+            entities.append(_table_info_to_entity(t, fallback_schema=schema))
+    else:
+        # Todas as tabelas do schema.
+        try:
+            for t in ws.tables.list(
+                catalog_name=catalog,
+                schema_name=schema,
+                omit_columns=False,
+            ):
+                entities.append(_table_info_to_entity(t, fallback_schema=schema))
+        except Exception as exc:
+            # Falha de listagem é fatal — propaga.
+            raise RuntimeError(
+                f"Falha ao listar tabelas de {catalog}.{schema}: {exc}"
+            ) from exc
+
+    snapshot = ExtractionSnapshot(
+        source_kind="UC",
+        system_id=system_id,
+        captured_at=datetime.utcnow(),
+        # `schemas` em UC é só o schema único pedido (não há multi-schema
+        # em uma única extração UC — quem quer multi precisa rodar N vezes).
+        schemas=[schema],
+        entities=entities,
+    )
+    return snapshot, warnings
+
+
+def _table_info_to_entity(t: Any, *, fallback_schema: str) -> ExtractedEntity:
+    """Converte um `TableInfo` do SDK em `ExtractedEntity` interno."""
+    table_type_str = str(t.table_type.value) if t.table_type else None
+    entity_type = _uc_table_type_to_entity_type(table_type_str)
+
+    attributes: list[ExtractedAttribute] = []
+    for c in t.columns or []:
+        # `type_text` (ex: "decimal(10,2)", "string") é o mais próximo do
+        # `native_data_type` que usamos para Lakebase. `type_name` é o enum
+        # (DECIMAL, STRING…) — guardamos `type_text` como fonte primária.
+        native = c.type_text
+        if not native and c.type_name:
+            native = str(c.type_name.value)
+        attributes.append(
+            ExtractedAttribute(
+                technical_name=c.name or "",
+                ordinal_position=(int(c.position) + 1) if c.position is not None else None,
+                native_data_type=native,
+                is_nullable=c.nullable,
+                default_value=None,  # UC não expõe default em ColumnInfo
+                # PKs em UC vêm via `table_constraints` (não retornado pela
+                # API). Manter False — a sessão de reconciliação pode marcar
+                # PK manualmente no modeler.
+                is_primary_key=False,
+                native_comment=c.comment,
+            )
+        )
+    # Ordena por position (UC usa 0-based, já convertemos para 1-based).
+    attributes.sort(key=lambda a: (a.ordinal_position is None, a.ordinal_position or 0))
+
+    return ExtractedEntity(
+        schema_name=t.schema_name or fallback_schema,
+        technical_name=t.name or "",
+        entity_type=entity_type,  # type: ignore[arg-type]
+        native_comment=t.comment,
+        row_count_approx=None,  # UC não expõe row count cheap
+        attributes=attributes,
+    )
+
+
+def run_uc_extraction(
+    sql: Sql,
+    ws: WorkspaceClient,
+    *,
+    system_id: str,
+    catalog: str,
+    schema: str,
+    table_names: list[str] | None,
+    actor: str,
+    open_ticket_on_diff: bool,
+) -> ExtractionResult:
+    """Pipeline completo: snapshot UC + diff vs catálogo + (opcional) ticket."""
+    started = datetime.utcnow()
+    start_clock = time.monotonic()
+
+    try:
+        snapshot, parse_warnings = extract_from_uc(
+            ws,
+            catalog=catalog,
+            schema=schema,
+            table_names=table_names,
+            system_id=system_id,
+        )
+        diff, summary = compute_diff_against_catalog(sql, system_id, snapshot)
+        ended = datetime.utcnow()
+        duration_ms = int((time.monotonic() - start_clock) * 1000)
+        has_changes = summary["new"] + summary["changed"] + summary["removed"] > 0
+
+        ticket_id: str | None = None
+        if has_changes and open_ticket_on_diff:
+            tnames_block = (
+                f"Tabelas pedidas: {', '.join(table_names)}\n"
+                if table_names
+                else "Tabelas: (todas do schema)\n"
+            )
+            warnings_block = (
+                "\n\n**Avisos:**\n" + "\n".join(f"- {w}" for w in parse_warnings[:20])
+                if parse_warnings
+                else ""
+            )
+            ticket_id = open_ticket(
+                sql,
+                title=(
+                    f"Reconciliação UC ({catalog}.{schema}) — "
+                    f"{summary['new']} novos, {summary['changed']} alterados, "
+                    f"{summary['removed']} removidos"
+                ),
+                system_id=system_id,
+                source_type="REVERSE_ENG",
+                diff=diff,
+                extraction_id=None,
+                summary_md=(
+                    f"Fonte: Unity Catalog `{catalog}.{schema}`\n"
+                    f"{tnames_block}\n"
+                    f"- **{summary['new']}** entidades novas\n"
+                    f"- **{summary['changed']}** entidades alteradas\n"
+                    f"- **{summary['removed']}** entidades removidas\n"
+                    f"{warnings_block}"
+                ),
+                created_by=actor,
+            )
+
+        # `requested_schemas` reaproveita o campo do Lakebase (CSV) — aqui
+        # sempre 1 schema. `requested_kinds` segue ["TABLE","VIEW"] já que
+        # UC retorna ambos na mesma listagem.
+        ext_id = persist_extraction(
+            sql,
+            source_kind="UC",
+            system_id=system_id,
+            actor=actor,
+            requested_schemas=[f"{catalog}.{schema}"],
+            requested_kinds=["TABLE", "VIEW"],
+            lakebase_sandbox_id=None,
+            connection_id=None,
+            status="SUCCESS" if not parse_warnings else "PARTIAL",
+            started_at=started,
+            ended_at=ended,
+            objects_found=summary["found"],
+            objects_new=summary["new"],
+            objects_changed=summary["changed"],
+            objects_removed=summary["removed"],
+            snapshot=snapshot,
+            diff_summary=summary,
+            error_summary="; ".join(parse_warnings)[:500] if parse_warnings else None,
+            ticket_id=ticket_id,
+        )
+        return ExtractionResult(
+            extraction_id=ext_id,
+            status="SUCCESS" if not parse_warnings else "PARTIAL",
+            objects_found=summary["found"],
+            objects_new=summary["new"],
+            objects_changed=summary["changed"],
+            objects_removed=summary["removed"],
+            duration_ms=duration_ms,
+            ticket_id=ticket_id,
+            summary_md=(
+                f"Extraídos {summary['found']} objetos de "
+                f"`{catalog}.{schema}`. +{summary['new']} novos, "
+                f"~{summary['changed']} alterados, -{summary['removed']} removidos."
+            ),
+            errors=parse_warnings,
+        )
+    except Exception as exc:
+        ended = datetime.utcnow()
+        duration_ms = int((time.monotonic() - start_clock) * 1000)
+        log.exception("run_uc_extraction failed catalog=%s schema=%s", catalog, schema)
+        persist_extraction(
+            sql,
+            source_kind="UC",
+            system_id=system_id,
+            actor=actor,
+            requested_schemas=[f"{catalog}.{schema}"],
+            requested_kinds=["TABLE", "VIEW"],
+            lakebase_sandbox_id=None,
+            connection_id=None,
+            status="FAILED",
+            started_at=started,
+            ended_at=ended,
+            objects_found=0, objects_new=0, objects_changed=0, objects_removed=0,
+            snapshot=None,
+            diff_summary=None,
+            error_summary=str(exc)[:500],
+            ticket_id=None,
+        )
+        return ExtractionResult(
+            extraction_id="",
+            status="FAILED",
+            objects_found=0, objects_new=0, objects_changed=0, objects_removed=0,
+            duration_ms=duration_ms,
+            ticket_id=None,
+            summary_md=f"Falha na extração UC: {exc}",
+            errors=[str(exc)[:500]],
+        )

@@ -19,8 +19,14 @@ from .models import (
     ExtractionResult,
     ExtractionSnapshot,
     LakebaseExtractionIn,
+    UCExtractionIn,
 )
-from .service import run_ddl_import, run_embarcadero_import, run_lakebase_extraction
+from .service import (
+    run_ddl_import,
+    run_embarcadero_import,
+    run_lakebase_extraction,
+    run_uc_extraction,
+)
 
 router = APIRouter(prefix=f"{api_prefix}/extractions", tags=["extractions"])
 
@@ -148,6 +154,33 @@ def run_lakebase(
         system_id=payload.system_id,
         schemas=payload.schemas,
         object_kinds=payload.object_kinds,
+        actor=actor,
+        open_ticket_on_diff=payload.open_ticket,
+    )
+
+
+@router.post(
+    "/uc/run",
+    response_model=ExtractionResult,
+    operation_id="runUCExtraction",
+)
+def run_uc(
+    payload: UCExtractionIn,
+    sql: SqlDependency,
+    user_ws: Dependencies.UserClient,
+    app_ws: Dependencies.Client,
+) -> ExtractionResult:
+    # Mesma decisão arquitetural do Lakebase: usamos o SP do app (`app_ws`)
+    # para falar com a UC (permissões consistentes via app.yml), e só o
+    # `user_ws` para resolver o actor que aparece no audit log.
+    actor = _current_email(user_ws)
+    return run_uc_extraction(
+        sql,
+        app_ws,
+        system_id=payload.system_id,
+        catalog=payload.catalog,
+        schema=payload.schema,
+        table_names=payload.table_names,
         actor=actor,
         open_ticket_on_diff=payload.open_ticket,
     )

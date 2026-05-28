@@ -6,7 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-SourceKind = Literal["LAKEBASE", "DDL_FILE", "EMBARCADERO", "ODBC", "REST"]
+SourceKind = Literal["LAKEBASE", "DDL_FILE", "EMBARCADERO", "ODBC", "REST", "UC"]
 ExtractionStatus = Literal["RUNNING", "SUCCESS", "PARTIAL", "FAILED"]
 
 
@@ -17,6 +17,21 @@ class LakebaseExtractionIn(BaseModel):
     system_id: str
     schemas: list[str] = Field(default_factory=list, description="empty list = all visible schemas")
     object_kinds: list[Literal["TABLE", "VIEW"]] = Field(default_factory=lambda: ["TABLE", "VIEW"])
+    open_ticket: bool = True
+
+
+class UCExtractionIn(BaseModel):
+    """Trigger an extraction from a Unity Catalog catalog.schema.
+
+    Se `table_names` é vazio, descobre todas as tabelas do schema. Caso
+    contrário, restringe ao subset informado (útil para schemas grandes
+    onde só algumas tabelas interessam ao sistema modelado).
+    """
+
+    system_id: str
+    catalog: str = Field(min_length=1, max_length=255)
+    schema: str = Field(min_length=1, max_length=255)
+    table_names: list[str] | None = None
     open_ticket: bool = True
 
 
