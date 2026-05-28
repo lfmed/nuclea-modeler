@@ -30,6 +30,11 @@ jobs:
       fail-fast: false
       matrix:
         python: ["3.11", "3.12"]
+    # UV_PYTHON garante que TODO `uv run` / `uv pip` use a versão da matrix,
+    # não o default do sistema. Sem isso, `uv venv` cria a .venv certa mas
+    # `uv run` cai no Python default.
+    env:
+      UV_PYTHON: ${{ matrix.python }}
     steps:
       - uses: actions/checkout@v6
 
@@ -43,7 +48,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv venv --python ${{ matrix.python }}
+          uv venv
           uv pip install -e ".[dev]"
           # psycopg used by extractions/lakebase service is optional at module load
           # but required for full test coverage. Install the binary wheel.
