@@ -425,44 +425,18 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
   }, [systemId, view, nodes]);
 
   // Quick add entity + FK helper
+  // Usa mutateAsync no callback do dialog (em vez de pendingFks state) pra
+  // evitar closure stale entre múltiplos quickAdd consecutivos.
   const [showAddEntity, setShowAddEntity] = useState(false);
-  const [pendingFks, setPendingFks] = useState<
-    { sourceColName: string; targetEntityId: string; targetAttrId: string }[]
-  >([]);
   const createFk = useCreateRelationship();
 
   const quickAdd = useQuickAddEntity({
     mutation: {
-      onSuccess: (created) => {
+      onSuccess: () => {
         qc.invalidateQueries({ queryKey: ["getDiagram", systemId] });
         qc.invalidateQueries({ queryKey: ["listEntities"] });
         setShowAddEntity(false);
         toast.success("Entidade adicionada");
-        // Pra cada FK marcada na tabela, cria um relationship sintético
-        // na mesma sessão. source_attr_ids fica vazio porque a coluna source
-        // ainda está staged no ticket — o user pode editar o relacionamento
-        // depois pra preencher quando o ticket for aplicado.
-        if (pendingFks.length > 0 && created) {
-          const fks = pendingFks;
-          setPendingFks([]);
-          for (const fk of fks) {
-            createFk.mutate({
-              data: {
-                system_id: systemId,
-                source_entity_id: (created as { entity_id: string }).entity_id,
-                target_entity_id: fk.targetEntityId,
-                source_attr_ids: [],
-                target_attr_ids: [fk.targetAttrId],
-                rel_type: "1:N",
-                source_cardinality: "MANDATORY",
-                target_cardinality: "OPTIONAL",
-                description: `FK lógica: coluna "${fk.sourceColName}" → alvo`,
-              },
-            });
-          }
-          // Invalida de novo após FKs serem criadas
-          qc.invalidateQueries({ queryKey: ["getSessionStatus", systemId] });
-        }
       },
       onError: (e) => toast.error(String(e)),
     },
@@ -544,9 +518,39 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
             systemTechnology={systemTechnology}
             existingEntities={view.entities}
             onClose={() => setShowAddEntity(false)}
-            onSubmit={(data, fks) => {
-              setPendingFks(fks);
-              quickAdd.mutate({ systemId, data });
+            onSubmit={async (data, fks) => {
+              try {
+                const created = await quickAdd.mutateAsync({ systemId, data });
+                for (const fk of fks) {
+                  try {
+                    await createFk.mutateAsync({
+                      data: {
+                        system_id: systemId,
+                        source_entity_id: (created as { entity_id: string }).entity_id,
+                        target_entity_id: fk.targetEntityId,
+                        source_attr_ids: [],
+                        target_attr_ids: [fk.targetAttrId],
+                        rel_type: "1:N",
+                        source_cardinality: "MANDATORY",
+                        target_cardinality: "OPTIONAL",
+                        description: `FK lógica: coluna "${fk.sourceColName}" → alvo`,
+                      },
+                    });
+                  } catch (err) {
+                    toast.error(`Falha ao criar FK para coluna "${fk.sourceColName}"`, {
+                      description: err instanceof Error ? err.message : String(err),
+                    });
+                  }
+                }
+                if (fks.length > 0) {
+                  qc.invalidateQueries({ queryKey: ["getDiagram", systemId] });
+                  qc.invalidateQueries({ queryKey: ["getSessionStatus", systemId] });
+                  toast.success(`${fks.length} relacionamento(s) criados`);
+                }
+              } catch (err) {
+                // quickAdd.onError já mostra toast — só captura pra não quebrar a promise
+                console.error("quickAdd failed", err);
+              }
             }}
             submitting={quickAdd.isPending}
           />
