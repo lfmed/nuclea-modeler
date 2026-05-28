@@ -113,11 +113,17 @@ function WizardInner({
   const runUC = useRunUCExtraction();
 
   // ─── Auto-sugestões ─────────────────────────────────────────────────────────
-  // Tecnologia automática quando muda fonte (só se user não tocou)
+  // Tecnologia FIXA pela fonte: Lakebase=PostgreSQL, UC=Databricks. NONE deixa
+  // o user escolher. techTouched só importa quando source=NONE (pra preservar
+  // escolha manual entre toggles de NONE → outras fontes → NONE).
   useEffect(() => {
-    if (techTouched) return;
-    if (source === "LAKEBASE") setTechnology("PostgreSQL");
-    else if (source === "UC") setTechnology("Databricks");
+    if (source === "LAKEBASE") {
+      setTechnology("PostgreSQL");
+    } else if (source === "UC") {
+      setTechnology("Databricks");
+    } else if (!techTouched) {
+      setTechnology("");
+    }
   }, [source, techTouched]);
 
   // Nome automático conforme escolhe sandbox/schema (só se user não tocou)
@@ -509,11 +515,19 @@ function StepConfigure(props: {
             />
           </div>
           <div>
-            <label className="text-xs font-medium block mb-1">Tecnologia</label>
+            <label className="text-xs font-medium block mb-1">
+              Tecnologia
+              {props.source !== "NONE" && (
+                <span className="ml-2 text-[10px] uppercase tracking-wider text-muted-foreground font-normal">
+                  determinada pela fonte
+                </span>
+              )}
+            </label>
             <select
               value={props.technology}
               onChange={(e) => props.setTechnology(e.target.value)}
-              className="w-full rounded-md border bg-background px-3 py-2 text-sm h-9"
+              disabled={props.source !== "NONE"}
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm h-9 disabled:opacity-70 disabled:cursor-not-allowed"
             >
               <option value="">— selecione —</option>
               {TECH_OPTIONS.map((t) => (
