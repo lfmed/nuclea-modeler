@@ -97,7 +97,11 @@ Paleta Núclea (placeholder, validar visualmente após primeiro deploy):
 | `GET /api/version` | Build pipeline | Versão semântica do package |
 | `GET /api/entities/page?page=1&page_size=50` | UI listas grandes | `PaginatedEntities` |
 | `GET /api/audit/page?page=1&page_size=50` | Admin audit | `PaginatedAudit` |
+| `GET /api/features` | UI + scripts | Flags ativas no processo (env-driven) |
+| `GET /api/metrics` | Admin / dashboards | Contadores per route + p50/p95 (in-memory) |
+| `GET /docs` · `GET /redoc` | Devs / integração | OpenAPI navegável (Swagger + ReDoc) |
 | `X-Request-ID` (header) | Toda response | Correlation id curto (12 chars) ou inbound sanitizado (64) |
+| `X-Error-ID` (header) | Quando 500 | UUID curto quotável para reportar bugs (sem leak de stack) |
 | `Retry-After` (header) | Quando 429 | Segundos até retry (rate limit por rota/IP) |
 
 ## Migrations
@@ -125,8 +129,14 @@ Tracking via `schema_migrations` Delta com SHA-256. Drift detectado mas não re-
 
 **Performance degradada**
 1. Verificar `/api/readyz` → latência do warehouse
-2. Verificar `/api/health` → `delta_tables_count` cresceu muito? Trocar listagem por `/page`
-3. Logs com `NUCLEA_LOG_JSON=true` permitem filtrar por `request_id` para rastrear request lento
+2. Verificar `/api/metrics` (admin) → p95 por rota + counts 5xx
+3. Verificar `/api/health` → `delta_tables_count` cresceu muito? Trocar listagem por `/page`
+4. Logs com `NUCLEA_LOG_JSON=true` permitem filtrar por `request_id` para rastrear request lento
+
+**Bug reportado pelo usuário**
+- Pedir o `error_id` (sai no header `X-Error-ID` em qualquer 500 ou no Toast da UI)
+- Buscar no log: `grep <error_id> logs.json` → request_id, path, traceback completo
+- Logs JSON têm `request_id`, `method`, `path`, `exception_type` como campos top-level
 
 **Restauração**
 - Delta Time Travel: `SELECT * FROM table TIMESTAMP AS OF '2026-05-01'`
@@ -150,6 +160,25 @@ Tracking via `schema_migrations` Delta com SHA-256. Drift detectado mas não re-
 | `NUCLEA_MIGRATIONS_DIR` | (auto) | Override do path de `databricks/sql/` |
 | `NUCLEA_LOG_JSON` | `false` | Emite logs em JSON single-line |
 | `NUCLEA_LOG_LEVEL` | `INFO` | Nível raiz de logging |
+| `NUCLEA_CORS_ALLOW_ORIGINS` | (vazio) | CSV de origens permitidas pelo CORS (opt-in, default same-origin) |
+| `NUCLEA_FEATURE_*` | `false` | Feature flags individuais — vide `core/features.py` para a lista |
+
+### Feature flags
+
+Flags são booleanas e default-off. Ative com `NUCLEA_FEATURE_<NOME>=true`:
+
+| Flag | Módulo | O que ativa |
+|---|---|---|
+| `der_minimap` | M4 | Minimap no canvas do diagrama |
+| `der_auto_layout_v2` | M4 | Tweaks experimentais no auto-layout Dagre |
+| `embarcadero_v2` | M2 | Parser .erx de nova geração com heurísticas de namespace |
+| `ddl_import_dry_run` | M2 | Preview de DDL antes de persistir |
+| `versions_signed` | M8 | Assinatura criptográfica em versões publicadas |
+| `sync_column_lineage` | M9 | Tentativa de escrever lineage column-level no UC |
+| `global_search_v2` | Cross | UI de busca de nova geração (placeholder) |
+| `structured_logs` | Ops | Alias legado — use `NUCLEA_LOG_JSON` |
+
+Frontend consome via `useFeatures()` em `ui/lib/features.ts`.
 
 ## Documentação
 
