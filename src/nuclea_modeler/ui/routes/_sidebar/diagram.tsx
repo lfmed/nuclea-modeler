@@ -25,6 +25,8 @@ import { toPng } from "html-to-image";
 import {
   useCreateRelationship,
   useGetDiagramSuspense,
+  useGetSessionStatusSuspense,
+  useDiscardSession,
   useListSystemsSuspense,
   useListSandboxesSuspense,
   useSaveLayout,
@@ -53,6 +55,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   AlertCircle,
   CheckCircle2,
+  ClipboardList,
   Download,
   Eye,
   EyeOff,
@@ -192,8 +195,31 @@ function DiagramBody() {
 
 function DiagramCanvas({ systemId }: { systemId: string }) {
   const { data: view } = useGetDiagramSuspense(systemId, "default", selector());
+  const { data: session } = useGetSessionStatusSuspense(systemId, selector());
   const qc = useQueryClient();
   const canvasRef = useRef<HTMLDivElement>(null);
+
+  // Descarte da sessão atual — invalida o diagrama e a query da sessão para
+  // refletir o rollback imediato no canvas.
+  const discardSession = useDiscardSession({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: ["getDiagram", systemId] });
+        qc.invalidateQueries({ queryKey: ["getSessionStatus", systemId] });
+        qc.invalidateQueries({ queryKey: ["listEntities"] });
+        qc.invalidateQueries({ queryKey: ["listTickets"] });
+        toast.success("Sessão descartada");
+      },
+      onError: (e) =>
+        toast.error("Erro ao descartar sessão", {
+          description: e instanceof Error ? e.message : String(e),
+        }),
+    },
+  });
+
+  const totalChanges = session
+    ? session.additions + session.changes + session.removals
+    : 0;
 
   const [expanded, setExpanded] = useState(true);
   const [filter, setFilter] = useState("");
@@ -458,7 +484,18 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
   }
 
   return (
-    <Card>
+    <div className="space-y-3">
+      {session && totalChanges > 0 && (
+        <SessionBanner
+          session={session}
+          totalChanges={totalChanges}
+          onDiscard={() =>
+            discardSession.mutate({ systemId } as { systemId?: string })
+          }
+          discarding={discardSession.isPending}
+        />
+      )}
+      <Card>
       <CardHeader>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -645,6 +682,75 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
         />
       )}
     </Card>
+    </div>
+  );
+}
+
+/**
+ * Banner exibido acima do canvas quando há mudanças pendentes na sessão atual
+ * do usuário. Resume contadores (add/change/remove), oferece link para
+ * revisar o ticket e botão para descartar a sessão inteira.
+ */
+function SessionBanner({
+  session,
+  totalChanges,
+  onDiscard,
+  discarding,
+}: {
+  session: { ticket_id: string; additions: number; removals: number; changes: number };
+  totalChanges: number;
+  onDiscard: () => void;
+  discarding: boolean;
+}) {
+  return (
+    <div className="rounded-md border border-nuclea-primary/40 bg-nuclea-primary/10 p-3 flex flex-wrap items-center justify-between gap-3">
+      <div className="flex items-center gap-3">
+        <div className="rounded-full bg-nuclea-primary/20 text-nuclea-primary p-1.5">
+          <ClipboardList className="h-4 w-4" />
+        </div>
+        <div>
+          <p className="text-sm font-medium">
+            {totalChanges} mudança{totalChanges !== 1 ? "s" : ""} não aprovada
+            {totalChanges !== 1 ? "s" : ""} nesta sessão
+          </p>
+          <p className="text-xs text-muted-foreground flex flex-wrap items-center gap-2">
+            {session.additions > 0 && (
+              <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400">
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                {session.additions} adição{session.additions !== 1 ? "ões" : ""}
+              </span>
+            )}
+            {session.changes > 0 && (
+              <span className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-400">
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500" />
+                {session.changes} alteração{session.changes !== 1 ? "ões" : ""}
+              </span>
+            )}
+            {session.removals > 0 && (
+              <span className="inline-flex items-center gap-1 text-rose-700 dark:text-rose-400">
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-rose-500" />
+                {session.removals} remoção{session.removals !== 1 ? "ões" : ""}
+              </span>
+            )}
+          </p>
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        <Button asChild size="sm">
+          <Link to="/tickets/$id" params={{ id: session.ticket_id }}>
+            Revisar e aprovar
+          </Link>
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onDiscard}
+          disabled={discarding}
+        >
+          {discarding ? "Descartando..." : "Descartar"}
+        </Button>
+      </div>
+    </div>
   );
 }
 

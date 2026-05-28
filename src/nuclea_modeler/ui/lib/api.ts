@@ -123,6 +123,9 @@ export interface EntityListOut {
   criticality?: Criticality | null;
   attributes_count?: number | null;
   updated_at: string;
+  // Editorial session — quando há mudança pendente no ticket de sessão
+  pending_op?: "add" | "change" | "remove" | null;
+  pending_ticket_id?: string | null;
 }
 
 export interface EntityOut extends EntityListOut {
@@ -1645,6 +1648,63 @@ export const useDeleteDownstream = (
     ...opts?.mutation,
   });
 
+// ─── Editorial Sessions (modelo "ticket de sessão") ──────────────────────────
+
+/**
+ * SessionStatusOut: resumo do ticket aberto da sessão atual do usuário em um
+ * dado sistema. Backend retorna `null` quando não há sessão ativa — o select
+ * normaliza pra `SessionStatusOut | null` no consumidor.
+ */
+export interface SessionStatusOut {
+  ticket_id: string;
+  additions: number;
+  removals: number;
+  changes: number;
+}
+
+/**
+ * Lê o status do ticket de sessão atual para um sistema. Retorna `null` quando
+ * o backend responder sem sessão ativa — não dispara erro nesse caso.
+ */
+export const useGetSessionStatusSuspense = (
+  systemId: string,
+  s?: Selector<SessionStatusOut | null>,
+) =>
+  useSuspenseQuery({
+    queryKey: ["getSessionStatus", systemId],
+    queryFn: () =>
+      api.get<SessionStatusOut | null>("/sessions/current", {
+        params: { system_id: systemId },
+        // 404 ou null body — devolve null em vez de jogar erro.
+        validateStatus: (st) => (st >= 200 && st < 300) || st === 404,
+      }),
+    select: (r) => (r.status === 404 ? null : (r.data ?? null)),
+    ...s?.query,
+  });
+
+/**
+ * Descarta a sessão atual (apaga o ticket OPEN do usuário no sistema).
+ */
+export const useDiscardSession = (
+  opts?: Opts<{ discarded: string | null }, { systemId?: string } | void>,
+) =>
+  useMutation({
+    mutationFn: async (vars) => {
+      const systemId =
+        vars && "systemId" in (vars as Record<string, unknown>)
+          ? (vars as { systemId?: string }).systemId
+          : undefined;
+      return (
+        await api.post<{ discarded: string | null }>(
+          "/sessions/discard",
+          {},
+          { params: systemId ? { system_id: systemId } : undefined },
+        )
+      ).data;
+    },
+    ...opts?.mutation,
+  });
+
 // ─── Diagram (Módulo 4 — DER) ────────────────────────────────────────────────
 
 export interface DiagramAttribute {
@@ -1656,6 +1716,9 @@ export interface DiagramAttribute {
   is_nullable?: boolean | null;
   ordinal_position?: number | null;
   has_lgpd_flag: boolean;
+  // Editorial session — atributo com mudança pendente
+  pending_op?: "add" | "change" | "remove" | null;
+  pending_ticket_id?: string | null;
 }
 
 export interface DiagramEntity {
@@ -1669,6 +1732,9 @@ export interface DiagramEntity {
   criticality?: string | null;
   attributes: DiagramAttribute[];
   has_lgpd_flag: boolean;
+  // Editorial session — entidade com mudança pendente no ticket atual
+  pending_op?: "add" | "change" | "remove" | null;
+  pending_ticket_id?: string | null;
 }
 
 export interface DiagramRelationship {
