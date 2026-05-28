@@ -129,3 +129,20 @@ class TicketApplyIn(BaseModel):
     # Necessário quando alguma decisão tem action="reverse" — sandbox onde
     # rodar os DDLs propagados (em geral o mesmo da extração que gerou o ticket).
     reverse_sandbox_id: str | None = None
+
+
+class SessionStateOut(BaseModel):
+    """Estado da sessão editorial OPEN do user atual para um sistema.
+
+    Retornado por GET /sessions/current. Permite frontend mostrar barra de
+    "rascunho com N mudanças pendentes" e botão revisar/aprovar.
+    """
+
+    ticket_id: str
+    system_id: str
+    additions: int = 0
+    changes: int = 0
+    removals: int = 0
+    entities_added: list[dict[str, Any]] = Field(default_factory=list)
+    entities_changed: list[dict[str, Any]] = Field(default_factory=list)
+    entities_removed: list[dict[str, Any]] = Field(default_factory=list)

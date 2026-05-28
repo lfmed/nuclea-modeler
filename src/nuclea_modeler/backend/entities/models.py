@@ -10,6 +10,7 @@ Criticality = Literal["HIGH", "MEDIUM", "LOW"]
 EntityType = Literal["TABLE", "VIEW", "MATERIALIZED_VIEW", "EXTERNAL"]
 RelType = Literal["1:1", "1:N", "N:M", "INHERIT"]
 Cardinality = Literal["OPTIONAL", "MANDATORY"]
+PendingOp = Literal["add", "change", "remove"]
 
 
 # -------------------- Entities --------------------
@@ -54,6 +55,10 @@ class EntityOut(BaseModel):
     updated_at: datetime
     updated_by: str
     attributes_count: int | None = None
+    # Editorial overlay — só preenchido em endpoints que aplicam overlay
+    # de sessão; reads "frias" deixam None.
+    pending_op: PendingOp | None = None
+    pending_ticket_id: str | None = None
 
 
 class EntityListOut(BaseModel):
@@ -68,6 +73,8 @@ class EntityListOut(BaseModel):
     criticality: Criticality | None = None
     attributes_count: int | None = None
     updated_at: datetime
+    pending_op: PendingOp | None = None
+    pending_ticket_id: str | None = None
 
 
 class PaginatedEntities(BaseModel):
@@ -117,3 +124,4 @@ class AttributeOut(BaseModel):
     created_by: str
     updated_at: datetime
     updated_by: str
+    pending_op: PendingOp | None = None

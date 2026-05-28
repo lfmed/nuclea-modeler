@@ -7,6 +7,9 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
+PendingOp = Literal["add", "change", "remove"]
+
+
 class DiagramAttribute(BaseModel):
     attribute_id: str
     technical_name: str
@@ -16,6 +19,9 @@ class DiagramAttribute(BaseModel):
     is_nullable: bool | None = None
     ordinal_position: int | None = None
     has_lgpd_flag: bool = False
+    # Editorial overlay — set quando o atributo tem mudança pendente na
+    # sessão atual do usuário. NÃO é estado committed.
+    pending_op: PendingOp | None = None
 
 
 class DiagramEntity(BaseModel):
@@ -29,6 +35,10 @@ class DiagramEntity(BaseModel):
     criticality: str | None = None
     attributes: list[DiagramAttribute] = Field(default_factory=list)
     has_lgpd_flag: bool = False  # propagated from columns or applied at entity level
+    # Editorial overlay — preenchido quando há ticket OPEN do user com
+    # mudança pendente. Frontend renderiza com badge/opacidade.
+    pending_op: PendingOp | None = None
+    pending_ticket_id: str | None = None
 
 
 class DiagramRelationship(BaseModel):

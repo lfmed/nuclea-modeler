@@ -27,6 +27,7 @@ from .code_objects.router import (
 )
 from .audit.router import router as audit_router
 from .audit.middleware import AuditMiddleware
+from .sessions.router import router as sessions_router
 import os
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -67,6 +68,7 @@ app = create_app(
         sequences_router,
         audit_router,
         search_router,
+        sessions_router,
     ]
 )
 
