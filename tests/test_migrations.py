@@ -11,6 +11,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from databricks.sdk.service.sql import StatementState
+
 from nuclea_modeler.backend.core import migrations
 
 
@@ -110,7 +112,7 @@ def _make_mock_sql(applied: dict[str, str] | None = None):
         if "schema_migrations" in statement and "SELECT" in statement.upper():
             rows = [[k, v] for k, v in (applied or {}).items()]
             return SimpleNamespace(
-                status=SimpleNamespace(state="SUCCEEDED", error=None),
+                status=SimpleNamespace(state=StatementState.SUCCEEDED, error=None),
                 result=SimpleNamespace(data_array=rows),
             )
         # All other statements succeed silently
@@ -219,13 +221,13 @@ def test_apply_migrations_stops_on_first_failure(tmp_path: Path, patched_state):
         # Empty schema_migrations
         if "schema_migrations" in statement and "SELECT" in statement.upper():
             return SimpleNamespace(
-                status=SimpleNamespace(state="SUCCEEDED", error=None),
+                status=SimpleNamespace(state=StatementState.SUCCEEDED, error=None),
                 result=SimpleNamespace(data_array=[]),
             )
         # 002 fails
         if "BROKEN_SYNTAX" in statement:
             return SimpleNamespace(
-                status=SimpleNamespace(state="FAILED", error=SimpleNamespace(message="syntax")),
+                status=SimpleNamespace(state=StatementState.FAILED, error=SimpleNamespace(message="syntax")),
                 result=None,
             )
         return SimpleNamespace(

@@ -11,6 +11,7 @@ Pendentes da auditoria de produção que **não entraram no v0.2.0**:
 - **Sentry / Datadog APM** — exception handler local + /metrics in-process cobrem 80% do que importa, mas correlation cross-service exige APM.
 - **OpenAPI snapshot enforcement** — `docs/openapi.json` está committed mas o check no CI é warn-only. Tornar hard-gate quando snapshot estiver estável.
 - **i18n EN/ES** — todo PT-BR hardcoded. Extrair strings para `i18next`.
+- **CodeQL** — workflow criado em `.github/workflows/codeql.yml.disabled`. Requer GitHub Advanced Security ativado (privado é pago). Enquanto isso, cobertura via ruff + bandit + npm audit + TruffleHog.
 
 ## Backlog técnico
 

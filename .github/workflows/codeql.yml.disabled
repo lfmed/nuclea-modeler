@@ -1,5 +1,22 @@
 name: CodeQL
 
+# DESABILITADO — este workflow falha com "Code scanning is not enabled
+# for this repository" porque o repo lfmed/nuclea-modeler é privado e
+# GitHub Advanced Security (que inclui CodeQL para privados) não está
+# habilitado.
+#
+# Para reativar:
+# 1. Habilitar GitHub Advanced Security em Settings → Code security
+#    (requer plano GitHub Enterprise ou licença GHAS adicional)
+# 2. `git mv .github/workflows/codeql.yml.disabled .github/workflows/codeql.yml`
+# 3. Commit + push
+#
+# Enquanto isso, cobrimos análise estática via:
+# - ruff (lint Python)
+# - bandit (SAST Python específico)
+# - npm audit / Dependabot (deps JS)
+# - TruffleHog (secret scan)
+
 # GitHub's static analyser for security vulnerabilities.
 # Free for public repos and for repos with GitHub Advanced Security enabled.
 # Complements bandit (Python only) + npm audit (JS deps) by catching

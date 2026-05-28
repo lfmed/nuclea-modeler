@@ -3,7 +3,6 @@
 > Catálogo e modelagem de dados corporativa — Databricks App nativo para a **Núclea**.
 
 [![CI](https://github.com/lfmed/nuclea-modeler/actions/workflows/ci.yml/badge.svg)](https://github.com/lfmed/nuclea-modeler/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/lfmed/nuclea-modeler/actions/workflows/codeql.yml/badge.svg)](https://github.com/lfmed/nuclea-modeler/actions/workflows/codeql.yml)
 [![Release](https://img.shields.io/github/v/release/lfmed/nuclea-modeler?include_prereleases&label=release&color=7B2D8E)](https://github.com/lfmed/nuclea-modeler/releases)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue)](https://www.python.org)
 [![License](https://img.shields.io/badge/license-Privado-lightgrey)](#)
