@@ -1,0 +1,77 @@
+# Changelog
+
+Convenção: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
+Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
+
+## [Unreleased]
+
+### Added
+- Histórico futuro entra aqui.
+
+## [0.2.0] — 2026-05-28
+
+Sprint de produção (`production-hardening`). App deixa de ser MVP — todas as
+capacidades necessárias para uso pelo cliente estão em produção.
+
+### Added
+- **Migrations runner** (`core/migrations.py`) — auto-apply de `databricks/sql/*.sql` no startup com tracking SHA-256 em `schema_migrations`. CLI: `python -m nuclea_modeler.backend.core.migrations`.
+- **Security middleware** (`core/security.py`) — `SecurityHeadersMiddleware` (X-Frame DENY, Referrer-Policy, HSTS condicional) e `RateLimitMiddleware` sliding window por (IP, rota).
+- **Request correlation** (`core/logging.py`) — `RequestIdMiddleware` gera/honra `X-Request-ID`, propaga via contextvar, reusado pelo audit middleware.
+- **JSON logging opt-in** — `NUCLEA_LOG_JSON=true` ativa `JsonFormatter` single-line para log aggregators.
+- **Health probes separadas** — `/api/livez` (sem deps) e `/api/readyz` (warehouse probe, cache 5s).
+- **Exception handler global** (`core/exceptions.py`) — captura uncaught, gera `error_id`, retorna 500 sanitizado com `X-Error-ID` header, loga ERROR estruturado com traceback. Mensagem do exception nunca vaza.
+- **Metrics in-process** (`core/metrics.py`) — `MetricsMiddleware` agrega counts por (route_pattern, status_class) + latency ring p50/p95/max. `/api/metrics` admin-only.
+- **Feature flags env-driven** (`core/features.py`) — 8 flags declaradas, `NUCLEA_FEATURE_*`. `/api/features` endpoint + hook `useFeatures` no frontend.
+- **CORS middleware opt-in** — `NUCLEA_CORS_ALLOW_ORIGINS` env (CSV), default same-origin no-op.
+- **ODBC + REST testers reais** (`connections/testers.py`) — `pyodbc.connect()` + `httpx.GET`, secrets via Databricks Secrets API. ImportError gracioso.
+- **Paginação** — `GET /api/entities/page` e `GET /api/audit/page` com `PaginatedX` model.
+- **404 customizada** — `components/apx/not-found.tsx` com layout Núclea, 3 CTAs.
+- **Welcome tour** — `components/apx/welcome-tour.tsx`, 5 passos guiados, persistência localStorage. Refazer via Help.
+- **EmptyState component** — `components/apx/empty-state.tsx` reutilizável; 10 rotas refatoradas.
+- **Admin metrics dashboard** — `/admin/metrics` (ADMIN-only) com cards de resumo + tabela de tráfego, refresh 10s.
+- **Bundle splitting** — `vite.config.ts` manualChunks (monaco/diagram/tanstack/react/ui/misc). Monaco também via React.lazy em SqlEditor.
+- **OpenAPI customizado** — `/docs` e `/redoc` com 15 tags 1-por-módulo, version, contact, license.
+- **A11y pass** — skip-to-content link, role landmarks, aria-labels, focus-visible com outline, `prefers-reduced-motion`.
+- **CI/CD** — `.github/workflows/ci.yml` (Python + Frontend + Secret scan), `e2e.yml` opt-in via label, `dependabot.yml`.
+- **E2E Playwright** — `tests/e2e/smoke.spec.ts` com 5 testes (home, 404, tour, Cmd+K, skip-link).
+- **Backup CLI** — `scripts/backup.py` copia 25 tabelas para Volume UC em Parquet.
+- **CONTRIBUTING.md** — onboarding completo para time Núclea + parceiros.
+- **ADR-0003** — `docs/adr/0003-production-hardening.md` documentando 8 decisões do sprint.
+
+### Changed
+- **SQL parametrizado 100%** — eliminadas 100+ ocorrências de `_q()` / f-string com input do usuário. Helpers `delta.param()` + `delta.run_params()`. `_quote_lit` agora tz-aware (normaliza datetime para UTC).
+- **/api/health** — probe barata (`SELECT 1`) + counts cacheadas TTL 30s.
+- **README** — tabela de endpoints operacionais + runbook (app não sobe, performance, restauração, secrets, error_id) + env vars + feature flags.
+
+### Fixed
+- Pre-push secret scanning passa em Sprint 0 (TruffleHog modo diff para PR, full para push).
+- `ruff` config em pyproject.toml com `per-file-ignores` para `tests/` (E402, F401 — pytest.importorskip pattern).
+- Vite build precede `tsc` no CI (TanStack Router gera `routeTree.gen.ts` no build).
+- Test recursion: `httpx.Client` capturado antes de patch para evitar recursão infinita.
+
+### Security
+- Defense in depth: rate limit + security headers + sanitização de exception response + parametrização universal de SQL + ODBC/REST timeouts duros.
+- `X-Error-ID` para correlation sem leak de stack.
+- `.claude/` agent state gitignored.
+
+## [0.1.0] — 2026-05-23
+
+MVP funcional. Spec 100% + extras.
+
+### Added
+- 10 módulos da spec funcional implementados (M1-M10).
+- Tickets de Reconciliação (cross-cutting).
+- Lakebase Sandbox para validação round-trip.
+- Code Objects (Views, Procedures, Triggers, Sequences) com Monaco editor.
+- Audit log com middleware Starlette.
+- Busca global cross-cutting (Cmd+K) em 7 dimensões.
+- Importer Embarcadero ER/Studio `.erx`.
+- Home page rica + Centro de Ajuda in-app.
+- Stack: FastAPI + React 19 + TanStack Router + shadcn/ui + Tailwind 4 + Delta Lake + Unity Catalog.
+- Deploy: Databricks Apps (svc @ fevm-stable-classic-pg4xe1).
+- Persistência: 100% Delta/UC, sem Postgres operacional.
+- Lakebase: usado apenas como sandbox de validação.
+
+[Unreleased]: https://github.com/lfmed/nuclea-modeler/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/lfmed/nuclea-modeler/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/lfmed/nuclea-modeler/releases/tag/v0.1.0
