@@ -110,6 +110,7 @@ function WizardInner({
   const [domain, setDomain] = useState("");
   const [technology, setTechnology] = useState("");
   const [techTouched, setTechTouched] = useState(false);
+  const [environment, setEnvironment] = useState<"DEV" | "HINT" | "PRD" | "">("");
 
   // Fonte
   const [source, setSource] = useState<SourceKind>("NONE");
@@ -202,6 +203,7 @@ function WizardInner({
           system_name: name.trim(),
           domain: domain.trim() || null,
           technology: technology || null,
+          environment: environment || null,
         },
       });
 
@@ -371,6 +373,8 @@ function WizardInner({
                 setTechnology(v);
                 setTechTouched(true);
               }}
+              environment={environment}
+              setEnvironment={setEnvironment}
               source={source}
               setSource={(s) => {
                 setSource(s);
@@ -516,6 +520,8 @@ function StepConfigure(props: {
   setDomain: (v: string) => void;
   technology: string;
   setTechnology: (v: string) => void;
+  environment: "DEV" | "HINT" | "PRD" | "";
+  setEnvironment: (v: "DEV" | "HINT" | "PRD" | "") => void;
   source: SourceKind;
   setSource: (s: SourceKind) => void;
   sandboxId: string;
@@ -672,9 +678,49 @@ function StepConfigure(props: {
             </select>
           </div>
         </div>
+        <div>
+          <label className="text-xs font-medium block mb-1">
+            Ambiente
+            <span className="ml-2 text-[10px] uppercase tracking-wider text-muted-foreground font-normal">
+              opcional
+            </span>
+          </label>
+          <div className="flex gap-2">
+            {(["", "DEV", "HINT", "PRD"] as const).map((env) => (
+              <button
+                key={env || "none"}
+                type="button"
+                onClick={() => props.setEnvironment(env)}
+                className={
+                  "rounded-md border px-3 py-1.5 text-xs font-medium transition-colors " +
+                  (props.environment === env
+                    ? envBadgeClasses(env, true)
+                    : envBadgeClasses(env, false))
+                }
+              >
+                {env || "— nenhum —"}
+              </button>
+            ))}
+          </div>
+          <p className="text-[11px] text-muted-foreground mt-1">
+            O mesmo modelo pode coexistir em DEV/HINT/PRD como sistemas
+            separados — útil pra rastrear divergências entre ambientes.
+          </p>
+        </div>
       </section>
     </div>
   );
+}
+
+function envBadgeClasses(
+  env: "" | "DEV" | "HINT" | "PRD",
+  active: boolean,
+): string {
+  if (!active) return "border-border text-muted-foreground hover:bg-muted/40";
+  if (env === "DEV") return "border-blue-500 bg-blue-500/10 text-blue-700 dark:text-blue-300";
+  if (env === "HINT") return "border-amber-500 bg-amber-500/10 text-amber-700 dark:text-amber-300";
+  if (env === "PRD") return "border-emerald-500 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+  return "border-nuclea-primary bg-nuclea-primary/10 text-nuclea-primary";
 }
 
 function SourceCards({

@@ -16,7 +16,7 @@ router = APIRouter(prefix=f"{api_prefix}/systems", tags=["systems"])
 
 _COLS = ["system_id", "system_name", "description", "domain", "owner_team",
          "technology", "is_active", "created_at", "created_by",
-         "updated_at", "updated_by"]
+         "updated_at", "updated_by", "environment"]
 
 
 def _row_to_out(r: list) -> SystemOut:
@@ -24,6 +24,7 @@ def _row_to_out(r: list) -> SystemOut:
         system_id=r[0], system_name=r[1], description=r[2], domain=r[3],
         owner_team=r[4], technology=r[5], is_active=bool(r[6]),
         created_at=r[7], created_by=r[8], updated_at=r[9], updated_by=r[10],
+        environment=r[11] if len(r) > 11 else None,
     )
 
 
@@ -41,7 +42,7 @@ def list_systems(sql: SqlDependency) -> list[SystemListOut]:
     rows = delta.fetch_all(
         sql,
         f"""
-        SELECT system_id, system_name, domain, technology, is_active
+        SELECT system_id, system_name, domain, technology, is_active, environment
         FROM {s.fq_table('systems')}
         ORDER BY system_name
         """,
@@ -50,6 +51,7 @@ def list_systems(sql: SqlDependency) -> list[SystemListOut]:
         SystemListOut(
             system_id=r[0], system_name=r[1], domain=r[2],
             technology=r[3], is_active=bool(r[4]),
+            environment=r[5] if len(r) > 5 else None,
         )
         for r in rows
     ]
@@ -89,6 +91,7 @@ def create_system(
             "domain": payload.domain,
             "owner_team": payload.owner_team,
             "technology": payload.technology,
+            "environment": payload.environment,
             "is_active": payload.is_active,
             "created_at": now, "created_by": actor,
             "updated_at": now, "updated_by": actor,
@@ -117,6 +120,7 @@ def update_system(
             "domain": payload.domain,
             "owner_team": payload.owner_team,
             "technology": payload.technology,
+            "environment": payload.environment,
             "is_active": payload.is_active,
             "updated_at": datetime.utcnow(),
             "updated_by": actor,

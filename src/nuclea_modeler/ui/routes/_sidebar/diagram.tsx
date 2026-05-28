@@ -176,7 +176,7 @@ function DiagramBody() {
               >
                 {systems.map((s) => (
                   <option key={s.system_id} value={s.system_id}>
-                    {s.system_name}
+                    {s.environment ? `[${s.environment}] ` : ""}{s.system_name}
                   </option>
                 ))}
               </select>
@@ -561,7 +561,26 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
       <CardHeader>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <CardTitle>{view.system_name || view.system_id}</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              {view.system_name || view.system_id}
+              {(() => {
+                const sys = systems.find((x) => x.system_id === systemId);
+                if (!sys?.environment) return null;
+                const colors: Record<string, string> = {
+                  DEV: "bg-blue-500/15 text-blue-700 border-blue-500/30 dark:text-blue-300",
+                  HINT: "bg-amber-500/15 text-amber-700 border-amber-500/30 dark:text-amber-300",
+                  PRD: "bg-emerald-500/15 text-emerald-700 border-emerald-500/30 dark:text-emerald-300",
+                };
+                return (
+                  <Badge
+                    variant="outline"
+                    className={`font-mono text-[10px] ${colors[sys.environment] || ""}`}
+                  >
+                    {sys.environment}
+                  </Badge>
+                );
+              })()}
+            </CardTitle>
             <CardDescription>
               {filteredEntities.length} / {view.entities.length} entidades ·{" "}
               {edges.length} / {view.relationships.length} relacionamentos

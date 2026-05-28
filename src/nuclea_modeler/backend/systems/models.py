@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
+
+SystemEnvironment = Literal["DEV", "HINT", "PRD"]
 
 
 class SystemIn(BaseModel):
@@ -12,6 +15,7 @@ class SystemIn(BaseModel):
     domain: str | None = None
     owner_team: str | None = None
     technology: str | None = None
+    environment: SystemEnvironment | None = None
     is_active: bool = True
 
 
@@ -22,6 +26,7 @@ class SystemOut(BaseModel):
     domain: str | None = None
     owner_team: str | None = None
     technology: str | None = None
+    environment: SystemEnvironment | None = None
     is_active: bool
     created_at: datetime
     created_by: str
@@ -34,4 +39,5 @@ class SystemListOut(BaseModel):
     system_name: str
     domain: str | None = None
     technology: str | None = None
+    environment: SystemEnvironment | None = None
     is_active: bool

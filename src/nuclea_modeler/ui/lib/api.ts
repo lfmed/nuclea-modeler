@@ -36,11 +36,14 @@ export type Environment = "HINT" | "HEXT" | "PROD";
 export type ConnectionType = "ODBC" | "REST" | "DDL_IMPORT";
 export type TestStatus = "success" | "failure" | "never";
 
+export type SystemEnvironment = "DEV" | "HINT" | "PRD";
+
 export interface SystemListOut {
   system_id: string;
   system_name: string;
   domain?: string | null;
   technology?: string | null;
+  environment?: SystemEnvironment | null;
   is_active: boolean;
 }
 
@@ -59,6 +62,7 @@ export interface SystemIn {
   domain?: string | null;
   owner_team?: string | null;
   technology?: string | null;
+  environment?: SystemEnvironment | null;
   is_active?: boolean;
 }
 
@@ -1762,6 +1766,50 @@ export interface SessionStatusOut {
   removals: number;
   changes: number;
 }
+
+// ─── Dashboard ───────────────────────────────────────────────────────────────
+
+export interface DashboardEnvCount {
+  environment: SystemEnvironment | null;
+  count: number;
+}
+
+export interface DashboardTicketStats {
+  open: number;
+  approved: number;
+  applied: number;
+  rejected: number;
+}
+
+export interface DashboardRecentItem {
+  kind: string;
+  id: string;
+  label: string;
+  actor?: string | null;
+  at?: string | null;
+  status?: string | null;
+}
+
+export interface DashboardSummary {
+  systems_total: number;
+  systems_active: number;
+  systems_by_env: DashboardEnvCount[];
+  entities_total: number;
+  entities_shared: number;
+  attributes_total: number;
+  relationships_total: number;
+  tickets: DashboardTicketStats;
+  extractions_last_7d: number;
+  recent: DashboardRecentItem[];
+}
+
+export const useDashboardSummarySuspense = (s?: Selector<DashboardSummary>) =>
+  useSuspenseQuery({
+    queryKey: ["dashboardSummary"],
+    queryFn: () => api.get<DashboardSummary>("/dashboard/summary"),
+    select: (r) => r.data,
+    ...s?.query,
+  });
 
 /**
  * Lê o status do ticket de sessão atual para um sistema. Retorna `null` quando
