@@ -91,7 +91,9 @@ Rotação: atualizar valor no Secrets API → re-testar conexão em `/connection
 
 ## Histórico de vulnerabilidades
 
-Nenhuma vulnerabilidade pública reportada até a data.
+| Data | Categoria | Detalhe | Status |
+|---|---|---|---|
+| 2026-05-28 | XXE (CWE-20, bandit B314) | `xml.etree.ElementTree.fromstring` no parser `.erx` do Embarcadero (upload do usuário) era vulnerável a XML External Entity attacks, billion-laughs DoS e DTD recursion. Detectado pelo bandit hard-gate em CI. Substituído por `defusedxml.ElementTree`. | ✅ Corrigido em main, próxima versão v0.2.1 |
 
 ## Agradecimentos
 

@@ -5,8 +5,28 @@ Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+### Security
+- **XXE / XML External Entity fix** — parser `.erx` do Embarcadero (`extractions/embarcadero.py`)
+  agora usa `defusedxml.ElementTree.fromstring` ao invés de `xml.etree.ElementTree.fromstring`,
+  proibindo entities externas, billion-laughs DoS e DTD recursion. Detectado pelo
+  bandit hard-gate. Tests novos em `tests/test_embarcadero_security.py` validam
+  rejeição de 3 payloads maliciosos.
+
 ### Added
-- Histórico futuro entra aqui.
+- 11 tests novos para `audit/service.py` (list_audit + count_audit filtros/clamps/offset)
+- Tests de migrations runner agora passam (mock state usa enum `StatementState`)
+- Dependency `defusedxml>=0.7.1`
+
+### Changed
+- **Bandit é hard-gate** no CI (removido `continue-on-error`). B608 (low-confidence SQL)
+  adicionado a skips com justificativa em `pyproject.toml` (vide ADR-0003).
+- **OpenAPI snapshot drift check** é hard-gate condicional — stub é tolerado, mismatch real bloqueia.
+- **Node.js 24** forçado em todos os 4 workflows via `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true`
+  (preempt da deprecação Junho/2026).
+
+### Removed
+- `.github/workflows/codeql.yml` renomeado para `.disabled` — repo privado requer
+  GitHub Advanced Security (pago). Reativar via `git mv` quando GHAS for habilitado.
 
 ## [0.2.0] — 2026-05-28
 

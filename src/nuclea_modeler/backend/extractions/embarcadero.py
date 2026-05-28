@@ -9,7 +9,12 @@ Public API:
 """
 from __future__ import annotations
 
-import xml.etree.ElementTree as ET
+# defusedxml previne ataques XXE / billion laughs / DTD recursion comuns em
+# arquivos .erx vindos de fontes não-confiáveis (upload do usuário).
+# A API é drop-in compatível com xml.etree.ElementTree.
+import xml.etree.ElementTree as ET  # noqa: F401 — usado para type hints `ET.Element`
+
+from defusedxml import ElementTree as _DefusedET
 from datetime import datetime
 from typing import Iterable
 
@@ -240,7 +245,9 @@ def parse_erx(xml_text: str, system_id: str) -> tuple[ExtractionSnapshot, list[s
         raise ValueError("XML content is empty")
 
     try:
-        root = ET.fromstring(cleaned)
+        # defusedxml.ElementTree.fromstring desabilita XXE/billion-laughs/DTD
+        # recursion. Retorna o mesmo tipo ET.Element do stdlib.
+        root = _DefusedET.fromstring(cleaned)
     except ET.ParseError as exc:
         raise ValueError(f"XML inválido: {exc}") from exc
 
