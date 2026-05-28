@@ -35,6 +35,7 @@ import {
   Upload,
 } from "lucide-react";
 import { EmptyState } from "@/components/apx/empty-state";
+import { SystemPicker } from "@/components/apx/system-picker";
 
 export const Route = createFileRoute("/_sidebar/extractions")({
   component: ExtractionsPage,
@@ -229,17 +230,8 @@ function LakebaseTab() {
                 ))}
               </select>
             </Field>
-            <Field label="Sistema-alvo do diff" required>
-              <select
-                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                value={systemId}
-                onChange={(e) => setSystemId(e.target.value)}
-                required
-              >
-                {systems.map((s) => (
-                  <option key={s.system_id} value={s.system_id}>{s.system_name}</option>
-                ))}
-              </select>
+            <Field label="Sistema-alvo do diff (ou criar novo)" required>
+              <SystemPicker value={systemId} onChange={setSystemId} required />
             </Field>
           </div>
           <Field
@@ -327,17 +319,8 @@ function DDLTab() {
       <CardContent>
         <form onSubmit={submit} className="space-y-4">
           <div className="grid md:grid-cols-2 gap-4">
-            <Field label="Sistema-alvo do diff" required>
-              <select
-                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                value={systemId}
-                onChange={(e) => setSystemId(e.target.value)}
-                required
-              >
-                {systems.map((s) => (
-                  <option key={s.system_id} value={s.system_id}>{s.system_name}</option>
-                ))}
-              </select>
+            <Field label="Sistema-alvo do diff (ou criar novo)" required>
+              <SystemPicker value={systemId} onChange={setSystemId} required />
             </Field>
             <Field label="Dialeto">
               <select
@@ -470,17 +453,8 @@ function EmbarcaderoTab() {
       </CardHeader>
       <CardContent>
         <form onSubmit={submit} className="space-y-4">
-          <Field label="Sistema-alvo do diff" required>
-            <select
-              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-              value={systemId}
-              onChange={(e) => setSystemId(e.target.value)}
-              required
-            >
-              {systems.map((s) => (
-                <option key={s.system_id} value={s.system_id}>{s.system_name}</option>
-              ))}
-            </select>
+          <Field label="Sistema-alvo do diff (ou criar novo)" required>
+            <SystemPicker value={systemId} onChange={setSystemId} required />
           </Field>
           <Field label="Arquivo .erx (máximo 10 MB)" required>
             <Input
