@@ -513,7 +513,29 @@ export interface TicketApplyResult {
   status: TicketStatus;
   applied_entities: number;
   applied_attributes: number;
+  reversed_items?: number;
+  ignored_items?: number;
   errors: string[];
+}
+
+export type DecisionAction = "apply" | "ignore" | "reverse";
+
+export interface FieldDecision {
+  field: string;
+  action: DecisionAction;
+}
+
+export interface EntityDecision {
+  schema_name: string;
+  technical_name: string;
+  op: "add" | "remove" | "change";
+  action: DecisionAction;
+  field_decisions: FieldDecision[];
+}
+
+export interface TicketApplyIn {
+  decisions?: EntityDecision[] | null;
+  reverse_sandbox_id?: string | null;
 }
 
 export const useListTicketsSuspense = (
@@ -557,11 +579,16 @@ export const useRejectTicket = (
   });
 
 export const useApplyTicket = (
-  opts?: Opts<TicketApplyResult, { ticketId: string }>,
+  opts?: Opts<TicketApplyResult, { ticketId: string; data?: TicketApplyIn }>,
 ) =>
   useMutation({
-    mutationFn: async ({ ticketId }) =>
-      (await api.post<TicketApplyResult>(`/tickets/${encodeURIComponent(ticketId)}/apply`)).data,
+    mutationFn: async ({ ticketId, data }) =>
+      (
+        await api.post<TicketApplyResult>(
+          `/tickets/${encodeURIComponent(ticketId)}/apply`,
+          data ?? {},
+        )
+      ).data,
     ...opts?.mutation,
   });
 

@@ -13,6 +13,7 @@ from ..core.sql import SqlDependency
 from ..rbac.router import _current_email
 from ..rbac.service import TICKET_APPLIERS, TICKET_APPROVERS, require_role
 from .models import (
+    TicketApplyIn,
     TicketApplyResult,
     TicketApprove,
     TicketDiff,
@@ -221,7 +222,18 @@ def apply(
     ticket_id: str,
     sql: SqlDependency,
     user_ws: Dependencies.UserClient,
+    app_ws: Dependencies.Client,
+    payload: TicketApplyIn | None = None,
 ) -> TicketApplyResult:
     actor = _current_email(user_ws)
     require_role(sql, actor, *TICKET_APPLIERS)
-    return apply_ticket(sql, ticket_id, actor)
+    # SP do app é quem conecta no Postgres (tem scope postgres via app.yml).
+    # user_ws fica só pro audit.
+    decisions = payload.decisions if payload else None
+    reverse_sandbox_id = payload.reverse_sandbox_id if payload else None
+    return apply_ticket(
+        sql, ticket_id, actor,
+        decisions=decisions,
+        ws=app_ws,
+        reverse_sandbox_id=reverse_sandbox_id,
+    )

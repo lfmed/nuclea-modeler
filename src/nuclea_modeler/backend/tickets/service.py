@@ -2,13 +2,45 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime
 from typing import Any
+
+from databricks.sdk import WorkspaceClient
 
 from ..core import delta
 from ..core._nuclea_config import get_settings
 from ..core.sql import Sql
-from .models import TicketApplyResult, TicketDiff, TicketSource
+from .models import EntityDecision, FieldDecision, TicketApplyResult, TicketDiff, TicketSource
+
+log = logging.getLogger(__name__)
+
+
+def _decision_for_entity(
+    decisions: list[EntityDecision] | None,
+    schema_name: str,
+    technical_name: str,
+    op: str,
+) -> EntityDecision | None:
+    """Lookup decisão para um entity diff. Retorna None se não há decisão (= default apply)."""
+    if not decisions:
+        return None
+    for d in decisions:
+        if d.schema_name == schema_name and d.technical_name == technical_name and d.op == op:
+            return d
+    return None
+
+
+def _decision_for_field(
+    entity_dec: EntityDecision | None, field: str
+) -> str:
+    """Para op=change, busca decisão por field. Fallback é a action da entity, default 'apply'."""
+    if not entity_dec:
+        return "apply"
+    for fd in entity_dec.field_decisions:
+        if fd.field == field:
+            return fd.action
+    return entity_dec.action  # fallback
 
 
 def open_ticket(
@@ -48,8 +80,23 @@ def open_ticket(
     return tid
 
 
-def apply_ticket(sql: Sql, ticket_id: str, applied_by: str) -> TicketApplyResult:
+def apply_ticket(
+    sql: Sql,
+    ticket_id: str,
+    applied_by: str,
+    *,
+    decisions: list[EntityDecision] | None = None,
+    ws: WorkspaceClient | None = None,
+    reverse_sandbox_id: str | None = None,
+) -> TicketApplyResult:
     """Apply the diff in the ticket to the entities/attributes catalog.
+
+    `decisions`: lista opcional de decisões por entity. Se None ou vazio, comporta-se
+    como antes (apply tudo seguindo a fonte). Decisões individuais podem ser:
+      - "apply" (default): cataloga segue a fonte
+      - "ignore": skip — catálogo fica como está
+      - "reverse": gera DDL e propaga do catálogo PRA fonte (Postgres do Lakebase).
+        Requer `ws` e `reverse_sandbox_id`.
 
     Idempotent at the entity level: existing entities with same (system_id,
     schema_name, technical_name) are skipped on `add` ops.
@@ -77,8 +124,39 @@ def apply_ticket(sql: Sql, ticket_id: str, applied_by: str) -> TicketApplyResult
                                  applied_entities=0, applied_attributes=0,
                                  errors=[f"invalid diff_json: {exc}"])
 
+    # Resolve sandbox info uma única vez se vai precisar de reverse
+    sandbox_info = None
+    if decisions and any(
+        d.action == "reverse" or any(fd.action == "reverse" for fd in d.field_decisions)
+        for d in decisions
+    ):
+        if not ws or not reverse_sandbox_id:
+            return TicketApplyResult(
+                ticket_id=ticket_id, status=status,
+                applied_entities=0, applied_attributes=0,
+                errors=["reverse requested but ws/reverse_sandbox_id missing"],
+            )
+        sb = delta.fetch_one_params(
+            sql,
+            f"SELECT instance_name, database_name FROM {s.fq_table('lakebase_sandboxes')} "
+            f"WHERE sandbox_id = :sandbox_id",
+            [delta.param("sandbox_id", reverse_sandbox_id)],
+        )
+        if not sb:
+            return TicketApplyResult(
+                ticket_id=ticket_id, status=status,
+                applied_entities=0, applied_attributes=0,
+                errors=[f"sandbox '{reverse_sandbox_id}' not found"],
+            )
+        sandbox_info = {
+            "instance_name": sb[0],
+            "database": sb[1] or "databricks_postgres",
+        }
+
     applied_entities = 0
     applied_attributes = 0
+    reversed_items = 0
+    ignored_items = 0
     errors: list[str] = []
     now = datetime.utcnow()
 
@@ -86,6 +164,21 @@ def apply_ticket(sql: Sql, ticket_id: str, applied_by: str) -> TicketApplyResult
         op = ent_change.get("op")
         schema_name = ent_change.get("schema_name", "")
         technical_name = ent_change.get("technical_name", "")
+        ent_dec = _decision_for_entity(decisions, schema_name, technical_name, op)
+
+        # Para op=add/remove: decisão é da entity inteira (sem field-level split).
+        # Para op=change: decisão é por field — entity-level action é fallback.
+        if op in ("add", "remove") and ent_dec and ent_dec.action == "ignore":
+            ignored_items += 1
+            continue
+        if op in ("add", "remove") and ent_dec and ent_dec.action == "reverse":
+            try:
+                _apply_reverse_entity(ws, sandbox_info, ent_change)  # type: ignore[arg-type]
+                reversed_items += 1
+            except Exception as exc:
+                errors.append(f"reverse {op} {schema_name}.{technical_name}: {exc}")
+            continue
+
         try:
             if op == "add":
                 # Skip if an entity with same key already exists
@@ -177,6 +270,26 @@ def apply_ticket(sql: Sql, ticket_id: str, applied_by: str) -> TicketApplyResult
                 for fc in ent_change.get("field_changes") or []:
                     fld = fc.get("field")
                     new_val = fc.get("after")
+                    field_action = _decision_for_field(ent_dec, fld or "")
+
+                    if field_action == "ignore":
+                        ignored_items += 1
+                        continue
+                    if field_action == "reverse":
+                        try:
+                            _apply_reverse_field(
+                                ws, sandbox_info,  # type: ignore[arg-type]
+                                schema_name, technical_name, fc, sql, eid,
+                            )
+                            reversed_items += 1
+                        except Exception as exc:
+                            errors.append(
+                                f"reverse {schema_name}.{technical_name}.{fld}: {exc}"
+                            )
+                        continue
+                    # action == "apply" (default): só metadados de entity vão para Delta.
+                    # attribute_add/_remove/change não são auto-aplicados ainda (igual ao
+                    # comportamento anterior).
                     if fld in {"logical_name", "description_md", "native_comment", "row_count_approx", "domain"}:
                         updates[fld] = new_val
                 if updates:
@@ -206,5 +319,178 @@ def apply_ticket(sql: Sql, ticket_id: str, applied_by: str) -> TicketApplyResult
         status=final_status,
         applied_entities=applied_entities,
         applied_attributes=applied_attributes,
+        reversed_items=reversed_items,
+        ignored_items=ignored_items,
         errors=errors,
     )
+
+
+# ─── Reverse engineering helpers ─────────────────────────────────────────────
+# Para propagar mudanças do catálogo para a fonte (Postgres do Lakebase).
+# Cobre os casos comuns; combinações exóticas retornam erro pra revisão manual.
+
+
+def _pg_ident(name: str) -> str:
+    """Quote a Postgres identifier safely."""
+    if not name or not all(c.isalnum() or c == "_" for c in name):
+        raise ValueError(f"identifier inválido: {name!r}")
+    return '"' + name + '"'
+
+
+def _pg_type_for(catalog_type: str | None) -> str:
+    """Map a catalog data_type to a reasonable Postgres type.
+    Defensive: se vier vazio ou desconhecido, default TEXT."""
+    if not catalog_type:
+        return "TEXT"
+    t = catalog_type.strip().upper()
+    # Tipos comuns mapeados; o resto vai como está se parecer válido.
+    table = {
+        "STRING": "TEXT", "VARCHAR": "TEXT", "CHAR": "TEXT",
+        "INT": "INTEGER", "INTEGER": "INTEGER", "BIGINT": "BIGINT",
+        "FLOAT": "REAL", "DOUBLE": "DOUBLE PRECISION",
+        "BOOLEAN": "BOOLEAN", "BOOL": "BOOLEAN",
+        "DATE": "DATE", "TIMESTAMP": "TIMESTAMPTZ",
+        "DECIMAL": "NUMERIC", "NUMERIC": "NUMERIC",
+    }
+    if t in table:
+        return table[t]
+    # VARCHAR(N) e similares — repassar
+    if t.startswith(("VARCHAR(", "CHAR(", "DECIMAL(", "NUMERIC(")):
+        return t
+    return "TEXT"
+
+
+def _apply_reverse_field(
+    ws: WorkspaceClient | None,
+    sandbox_info: dict | None,
+    schema_name: str,
+    technical_name: str,
+    field_change: dict,
+    sql: Sql,
+    entity_id: str,
+) -> None:
+    """Propagar uma mudança de field do catálogo para a fonte Postgres.
+
+    Cobre:
+    - field='attribute_remove:X' → catálogo tem coluna que falta na fonte;
+      reverse = ALTER TABLE schema.t ADD COLUMN X <type>;
+    - field='attribute:X.native_data_type' → tipo diverge;
+      reverse = ALTER TABLE schema.t ALTER COLUMN X TYPE <new_type>; (perigoso, valida)
+
+    Outras formas levantam ValueError para revisão manual.
+    """
+    from ..lakebase.service import open_connection
+
+    if not ws or not sandbox_info:
+        raise ValueError("ws/sandbox_info ausente — reverse precisa de conexão Postgres")
+
+    field = field_change.get("field") or ""
+    schema_sql = _pg_ident(schema_name)
+    table_sql = _pg_ident(technical_name)
+
+    if field.startswith("attribute_remove:"):
+        # Coluna está no catálogo mas não na fonte → ADD COLUMN.
+        col_name = field.split(":", 1)[1]
+        col_sql = _pg_ident(col_name)
+        # Buscar tipo do catálogo
+        s = get_settings()
+        attr_row = delta.fetch_one_params(
+            sql,
+            f"SELECT native_data_type FROM {s.fq_table('attributes')} "
+            f"WHERE entity_id = :entity_id AND technical_name = :name",
+            [delta.param("entity_id", entity_id), delta.param("name", col_name)],
+        )
+        cat_type = attr_row[0] if attr_row else None
+        pg_type = _pg_type_for(cat_type)
+        ddl = f"ALTER TABLE {schema_sql}.{table_sql} ADD COLUMN IF NOT EXISTS {col_sql} {pg_type}"
+        log.info(f"[ticket-reverse] executing: {ddl}")
+        with open_connection(
+            ws,
+            instance_name=sandbox_info["instance_name"],
+            database=sandbox_info["database"],
+            user_email=None,
+        ) as conn:
+            with conn.cursor() as cur:
+                cur.execute(ddl)
+        return
+
+    if field.startswith("attribute:") and field.endswith(".native_data_type"):
+        col_name = field.split(":", 1)[1].rsplit(".", 1)[0]
+        before = field_change.get("before")
+        # Catálogo quer "before" — então o ALTER faz a fonte voltar pro before do diff.
+        # (No diff, before=catalog, after=source)
+        pg_type = _pg_type_for(before)
+        col_sql = _pg_ident(col_name)
+        ddl = f"ALTER TABLE {schema_sql}.{table_sql} ALTER COLUMN {col_sql} TYPE {pg_type}"
+        log.info(f"[ticket-reverse] executing: {ddl}")
+        with open_connection(
+            ws,
+            instance_name=sandbox_info["instance_name"],
+            database=sandbox_info["database"],
+            user_email=None,
+        ) as conn:
+            with conn.cursor() as cur:
+                cur.execute(ddl)
+        return
+
+    raise ValueError(f"reverse não suportado para field={field!r}")
+
+
+def _apply_reverse_entity(
+    ws: WorkspaceClient | None,
+    sandbox_info: dict | None,
+    ent_change: dict,
+) -> None:
+    """Propagar add/remove de entity inteira para a fonte.
+
+    - op='remove' (entity no catálogo, falta na fonte) → CREATE TABLE.
+    - op='add' (entity na fonte, falta no catálogo) → reverse não faz sentido (já existe);
+      levanta ValueError pra forçar o user a escolher apply ou ignore.
+    """
+    from ..lakebase.service import open_connection
+
+    if not ws or not sandbox_info:
+        raise ValueError("ws/sandbox_info ausente — reverse precisa de conexão Postgres")
+
+    op = ent_change.get("op")
+    schema_name = ent_change.get("schema_name", "")
+    technical_name = ent_change.get("technical_name", "")
+
+    if op == "add":
+        raise ValueError("reverse de op=add não faz sentido (entity já está na fonte)")
+
+    if op == "remove":
+        # entity está no catálogo mas não na fonte → CREATE TABLE.
+        # Atributos do diff vêm em ent_change['attributes'].
+        attrs = ent_change.get("attributes") or []
+        if not attrs:
+            raise ValueError("entity sem atributos no diff — CREATE TABLE precisa de colunas")
+        cols_sql = []
+        for a in attrs:
+            n = a.get("technical_name")
+            t = _pg_type_for(a.get("native_data_type"))
+            nullable = "" if a.get("is_nullable", True) else " NOT NULL"
+            cols_sql.append(f"{_pg_ident(n)} {t}{nullable}")
+        # PRIMARY KEY?
+        pks = [a.get("technical_name") for a in attrs if a.get("is_primary_key")]
+        if pks:
+            cols_sql.append("PRIMARY KEY (" + ", ".join(_pg_ident(p) for p in pks) + ")")
+        schema_sql = _pg_ident(schema_name)
+        table_sql = _pg_ident(technical_name)
+        ddl = (
+            f"CREATE TABLE IF NOT EXISTS {schema_sql}.{table_sql} (\n  "
+            + ",\n  ".join(cols_sql)
+            + "\n)"
+        )
+        log.info(f"[ticket-reverse] executing:\n{ddl}")
+        with open_connection(
+            ws,
+            instance_name=sandbox_info["instance_name"],
+            database=sandbox_info["database"],
+            user_email=None,
+        ) as conn:
+            with conn.cursor() as cur:
+                cur.execute(ddl)
+        return
+
+    raise ValueError(f"reverse não suportado para op={op!r}")

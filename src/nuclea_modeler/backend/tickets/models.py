@@ -101,4 +101,31 @@ class TicketApplyResult(BaseModel):
     status: TicketStatus
     applied_entities: int
     applied_attributes: int
+    reversed_items: int = 0  # quantas decisões "reverse" foram executadas com sucesso
+    ignored_items: int = 0   # quantas decisões "ignore" foram pulares
     errors: list[str] = Field(default_factory=list)
+
+
+# Decisão por field dentro de um op=change. `field` é o mesmo string do
+# field_change ("attribute_remove:Teste", "logical_name", etc.).
+class FieldDecision(BaseModel):
+    field: str
+    action: Literal["apply", "ignore", "reverse"] = "apply"
+
+
+# Decisão por entity. Para op=add/remove a action aplica ao item inteiro.
+# Para op=change, action é fallback e field_decisions detalha por field.
+class EntityDecision(BaseModel):
+    schema_name: str
+    technical_name: str
+    op: Literal["add", "remove", "change"]
+    action: Literal["apply", "ignore", "reverse"] = "apply"
+    field_decisions: list[FieldDecision] = Field(default_factory=list)
+
+
+class TicketApplyIn(BaseModel):
+    # Se None ou vazio, comporta-se como antes (apply tudo seguindo a fonte).
+    decisions: list[EntityDecision] | None = None
+    # Necessário quando alguma decisão tem action="reverse" — sandbox onde
+    # rodar os DDLs propagados (em geral o mesmo da extração que gerou o ticket).
+    reverse_sandbox_id: str | None = None

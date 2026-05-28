@@ -10,8 +10,11 @@ import {
   useRejectTicket,
   useApplyTicket,
   useMyRolesSuspense,
+  useListSandboxesSuspense,
   type TicketStatus,
   type DiffEntity,
+  type DecisionAction,
+  type EntityDecision,
 } from "@/lib/api";
 import selector from "@/lib/selector";
 
@@ -37,28 +40,7 @@ export const Route = createFileRoute("/_sidebar/tickets/$id")({
   component: TicketDetailPage,
 });
 
-// Telemetry helper: avisa o backend que esse route component montou.
-// Permite confirmar pelos logs se o detail page está sendo renderizado.
-function _reportMount(stage: string, extra?: Record<string, unknown>) {
-  try {
-    fetch("/api/_client_log", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        level: "info",
-        message: `[ticket-detail] ${stage}`,
-        url: window.location.href,
-        extra: extra || null,
-      }),
-      keepalive: true,
-    }).catch(() => {});
-  } catch {
-    /* swallow */
-  }
-}
-
 function TicketDetailPage() {
-  _reportMount("TicketDetailPage:render");
   return (
     <div className="space-y-6">
       <Button variant="ghost" size="sm" asChild>
@@ -98,12 +80,65 @@ function TicketDetailPage() {
 
 function TicketDetail() {
   const { id } = Route.useParams();
-  _reportMount("TicketDetail:render", { id });
   const qc = useQueryClient();
   const { data: ticket } = useGetTicketSuspense(id, selector());
-  _reportMount("TicketDetail:ticketLoaded", { id, status: ticket?.status });
   const { data: me } = useMyRolesSuspense(selector());
-  _reportMount("TicketDetail:meLoaded", { id, roles: me?.roles });
+  const { data: sandboxes } = useListSandboxesSuspense(selector());
+
+  // Estado de decisões: keyed por "schema.technical_name.op", e dentro de cada
+  // entity, um map field → action. Default é 'apply' (= comportamento atual).
+  type EntityDecMap = Map<string, EntityDecision>;
+  const decisionsKey = (e: DiffEntity) => `${e.schema_name}.${e.technical_name}.${e.op}`;
+  const [decisions, setDecisions] = useState<EntityDecMap>(() => {
+    const m = new Map<string, EntityDecision>();
+    for (const e of ticket.diff?.entities ?? []) {
+      m.set(decisionsKey(e), {
+        schema_name: e.schema_name,
+        technical_name: e.technical_name,
+        op: e.op,
+        action: "apply",
+        field_decisions: (e.field_changes ?? []).map((fc) => ({
+          field: String((fc as { field: string }).field),
+          action: "apply" as DecisionAction,
+        })),
+      });
+    }
+    return m;
+  });
+
+  const setEntityAction = (e: DiffEntity, action: DecisionAction) => {
+    setDecisions((prev) => {
+      const next = new Map(prev);
+      const cur = next.get(decisionsKey(e));
+      if (cur) next.set(decisionsKey(e), { ...cur, action });
+      return next;
+    });
+  };
+
+  const setFieldAction = (e: DiffEntity, field: string, action: DecisionAction) => {
+    setDecisions((prev) => {
+      const next = new Map(prev);
+      const cur = next.get(decisionsKey(e));
+      if (!cur) return prev;
+      next.set(decisionsKey(e), {
+        ...cur,
+        field_decisions: cur.field_decisions.map((fd) =>
+          fd.field === field ? { ...fd, action } : fd,
+        ),
+      });
+      return next;
+    });
+  };
+
+  // Se alguma decisão é "reverse", precisamos de um sandbox alvo.
+  // Default = primeira sandbox disponível (se houver).
+  const [reverseSandboxId, setReverseSandboxId] = useState<string>(
+    sandboxes[0]?.sandbox_id || "",
+  );
+
+  const hasReverse = Array.from(decisions.values()).some(
+    (d) => d.action === "reverse" || d.field_decisions.some((fd) => fd.action === "reverse"),
+  );
 
   const { mutate: approve, isPending: approving } = useApproveTicket({
     mutation: {
@@ -176,11 +211,20 @@ function TicketDetail() {
           )}
           {canApply && (
             <Button
-              onClick={() => apply({ ticketId: id })}
-              disabled={applying}
+              onClick={() =>
+                apply({
+                  ticketId: id,
+                  data: {
+                    decisions: Array.from(decisions.values()),
+                    reverse_sandbox_id: hasReverse ? reverseSandboxId : null,
+                  },
+                })
+              }
+              disabled={applying || (hasReverse && !reverseSandboxId)}
+              title={hasReverse && !reverseSandboxId ? "Selecione uma sandbox abaixo para reverter" : undefined}
             >
               <PlayCircle className="mr-2 h-4 w-4" />
-              {applying ? "Aplicando..." : "Aplicar"}
+              {applying ? "Aplicando..." : "Aplicar com decisões"}
             </Button>
           )}
           {canReject && (
@@ -228,6 +272,33 @@ function TicketDetail() {
         </Card>
       )}
 
+      {hasReverse && canApply && (
+        <Card className="border-nuclea-primary/30 bg-nuclea-primary/5">
+          <CardContent className="pt-4 text-sm space-y-2">
+            <div className="flex items-center gap-2 text-nuclea-primary font-medium">
+              <PlayCircle className="h-4 w-4" />
+              Reverso para a fonte
+            </div>
+            <p className="text-muted-foreground text-xs">
+              Algumas decisões pedem que o catálogo propague mudanças para a base.
+              Selecione a sandbox Lakebase onde o ALTER/CREATE TABLE será executado:
+            </p>
+            <select
+              value={reverseSandboxId}
+              onChange={(e) => setReverseSandboxId(e.target.value)}
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+            >
+              <option value="">— selecione uma sandbox —</option>
+              {sandboxes.map((sb) => (
+                <option key={sb.sandbox_id} value={sb.sandbox_id}>
+                  {sb.name} ({sb.instance_name} · {sb.database_name})
+                </option>
+              ))}
+            </select>
+          </CardContent>
+        </Card>
+      )}
+
       {applyResult && applyResult.errors.length === 0 && (
         <Card className="border-emerald-500/50 bg-emerald-500/5">
           <CardContent className="pt-4 text-sm">
@@ -236,8 +307,10 @@ function TicketDetail() {
               <strong>Aplicado com sucesso</strong>
             </div>
             <p>
-              {applyResult.applied_entities} entidades e {applyResult.applied_attributes}{" "}
-              atributos criados/atualizados no catálogo.
+              {applyResult.applied_entities} entidades, {applyResult.applied_attributes}{" "}
+              atributos
+              {applyResult.reversed_items ? <>, {applyResult.reversed_items} revertidos para a fonte</> : null}
+              {applyResult.ignored_items ? <>, {applyResult.ignored_items} ignorados</> : null}.
             </p>
           </CardContent>
         </Card>
@@ -291,7 +364,13 @@ function TicketDetail() {
                 tone="negative"
               />
             </div>
-            <DiffList entities={ticket.diff?.entities || []} />
+            <DiffList
+              entities={ticket.diff?.entities || []}
+              decisions={decisions}
+              onEntityAction={setEntityAction}
+              onFieldAction={setFieldAction}
+              editable={canApply}
+            />
           </CardContent>
         </Card>
 
@@ -393,20 +472,83 @@ function CounterChip({
   );
 }
 
-function DiffList({ entities }: { entities: DiffEntity[] }) {
+type DiffListProps = {
+  entities: DiffEntity[];
+  decisions: Map<string, EntityDecision>;
+  onEntityAction: (e: DiffEntity, a: DecisionAction) => void;
+  onFieldAction: (e: DiffEntity, field: string, a: DecisionAction) => void;
+  editable: boolean;
+};
+
+function DiffList({ entities, decisions, onEntityAction, onFieldAction, editable }: DiffListProps) {
   if (entities.length === 0) {
     return <p className="text-sm text-muted-foreground italic">Sem mudanças detalhadas.</p>;
   }
   return (
     <div className="divide-y rounded-md border">
-      {entities.map((e, i) => (
-        <DiffRow key={i} entity={e} />
-      ))}
+      {entities.map((e, i) => {
+        const key = `${e.schema_name}.${e.technical_name}.${e.op}`;
+        const dec = decisions.get(key);
+        return (
+          <DiffRow
+            key={i}
+            entity={e}
+            entityAction={dec?.action ?? "apply"}
+            fieldActions={dec ? new Map(dec.field_decisions.map((fd) => [fd.field, fd.action])) : new Map()}
+            onEntityAction={(a) => onEntityAction(e, a)}
+            onFieldAction={(field, a) => onFieldAction(e, field, a)}
+            editable={editable}
+          />
+        );
+      })}
     </div>
   );
 }
 
-function DiffRow({ entity }: { entity: DiffEntity }) {
+type DiffRowProps = {
+  entity: DiffEntity;
+  entityAction: DecisionAction;
+  fieldActions: Map<string, DecisionAction>;
+  onEntityAction: (a: DecisionAction) => void;
+  onFieldAction: (field: string, a: DecisionAction) => void;
+  editable: boolean;
+};
+
+function DecisionSelect({
+  value,
+  onChange,
+  disabled,
+  variant = "default",
+}: {
+  value: DecisionAction;
+  onChange: (a: DecisionAction) => void;
+  disabled: boolean;
+  variant?: "default" | "compact";
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value as DecisionAction)}
+      disabled={disabled}
+      className={`rounded-md border bg-background text-xs ${
+        variant === "compact" ? "px-1.5 py-0.5" : "px-2 py-1"
+      } ${disabled ? "opacity-60" : ""}`}
+    >
+      <option value="apply">Aplicar (segue a fonte)</option>
+      <option value="ignore">Ignorar</option>
+      <option value="reverse">Reverter (propaga p/ fonte)</option>
+    </select>
+  );
+}
+
+function DiffRow({
+  entity,
+  entityAction,
+  fieldActions,
+  onEntityAction,
+  onFieldAction,
+  editable,
+}: DiffRowProps) {
   const opConfig = {
     add: { icon: <Plus className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />, label: "adicionar" },
     remove: { icon: <Minus className="h-4 w-4 text-destructive" />, label: "remover" },
@@ -415,35 +557,61 @@ function DiffRow({ entity }: { entity: DiffEntity }) {
 
   const attrsCount = entity.attributes?.length ?? 0;
   const fcsCount = entity.field_changes?.length ?? 0;
+  const isChange = entity.op === "change";
 
   return (
     <div className="p-3">
       <div className="flex items-start gap-3">
         <span className="mt-0.5">{opConfig.icon}</span>
         <div className="flex-1 min-w-0">
-          <p className="text-sm">
-            <strong className="font-mono">
-              {entity.schema_name}.{entity.technical_name}
-            </strong>{" "}
-            <span className="text-muted-foreground">— {opConfig.label}</span>
-            {entity.entity_type && entity.entity_type !== "TABLE" && (
-              <Badge variant="outline" className="ml-2 text-xs">{entity.entity_type}</Badge>
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <p className="text-sm">
+              <strong className="font-mono">
+                {entity.schema_name}.{entity.technical_name}
+              </strong>{" "}
+              <span className="text-muted-foreground">— {opConfig.label}</span>
+              {entity.entity_type && entity.entity_type !== "TABLE" && (
+                <Badge variant="outline" className="ml-2 text-xs">{entity.entity_type}</Badge>
+              )}
+            </p>
+            {/* Para add/remove de entity inteira, mostrar select aqui.
+                Para change, o select da entity é só fallback — fields têm os próprios. */}
+            {!isChange && (
+              <DecisionSelect
+                value={entityAction}
+                onChange={onEntityAction}
+                disabled={!editable}
+              />
             )}
-          </p>
+          </div>
           {attrsCount > 0 && (
             <p className="text-xs text-muted-foreground mt-1">
               + {attrsCount} atributo{attrsCount !== 1 ? "s" : ""}
             </p>
           )}
           {fcsCount > 0 && entity.field_changes && (
-            <ul className="text-xs text-muted-foreground mt-1 ml-2 space-y-0.5">
-              {entity.field_changes.map((fc, i) => (
-                <li key={i}>
-                  <code>{String(fc.field)}</code>:{" "}
-                  <span className="text-destructive">{String(fc.before || "—")}</span> →{" "}
-                  <span className="text-emerald-600 dark:text-emerald-400">{String(fc.after || "—")}</span>
-                </li>
-              ))}
+            <ul className="text-xs text-muted-foreground mt-2 ml-2 space-y-1">
+              {entity.field_changes.map((fc, i) => {
+                const fieldStr = String((fc as { field: string }).field);
+                const action = fieldActions.get(fieldStr) ?? "apply";
+                return (
+                  <li key={i} className="flex items-center justify-between gap-2">
+                    <span>
+                      <code>{fieldStr}</code>:{" "}
+                      <span className="text-destructive">{String((fc as { before: unknown }).before || "—")}</span> →{" "}
+                      <span className="text-emerald-600 dark:text-emerald-400">
+                        {String((fc as { after: unknown }).after || "—")}
+                      </span>
+                    </span>
+                    <DecisionSelect
+                      value={action}
+                      onChange={(a) => onFieldAction(fieldStr, a)}
+                      disabled={!editable}
+                      variant="compact"
+                    />
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>
