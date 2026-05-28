@@ -44,6 +44,9 @@ jobs:
       - name: Lint (ruff)
         run: uv run ruff check src/ tests/
 
+      - name: Deps sync check (pyproject vs requirements)
+        run: uv run python -m scripts.check_deps_sync
+
       - name: Format check (ruff)
         run: uv run ruff format --check src/ tests/
         continue-on-error: true  # warn-only; turn off once code is formatted

@@ -48,8 +48,7 @@ repos:
           - --fail
         # No `files:` filter — scan everything that's staged.
 
-  # Local TypeScript check — runs `bun run tsc` only when frontend files
-  # changed. Comment out if you don't have bun installed.
+  # Local checks
   - repo: local
     hooks:
       - id: tsc
@@ -59,3 +58,10 @@ repos:
         types: [ts]
         pass_filenames: false
         # Only fires when at least one .ts/.tsx file is in the staged diff.
+
+      - id: deps-sync
+        name: Deps sync (pyproject.toml vs requirements.txt)
+        entry: python3 -m scripts.check_deps_sync
+        language: system
+        files: ^(pyproject\.toml|requirements\.txt)$
+        pass_filenames: false
