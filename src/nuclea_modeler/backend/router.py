@@ -127,6 +127,40 @@ def me(user_ws: Dependencies.UserClient):
     return user_ws.current_user.me()
 
 
+# Client-side error logging — frontend posta erros não-capturados aqui.
+# Útil pra debug remoto quando o user não tem acesso a DevTools.
+from pydantic import BaseModel as _BM  # noqa: E402
+from fastapi import Request as _Req  # noqa: E402
+
+
+class _ClientLogIn(_BM):
+    level: str  # "error" | "warn" | "info"
+    message: str
+    stack: str | None = None
+    url: str | None = None
+    user_agent: str | None = None
+    extra: dict | None = None
+
+
+@router.post("/_client_log", operation_id="clientLog")
+def client_log(payload: _ClientLogIn, request: _Req) -> dict:
+    import logging
+    log = logging.getLogger("nuclea-modeler.client")
+    line = (
+        f"[client {payload.level}] url={payload.url or '?'} "
+        f"ua={(payload.user_agent or '')[:80]!r} :: {payload.message[:500]}"
+    )
+    if payload.stack:
+        line += f"\n  stack: {payload.stack[:2000]}"
+    if payload.extra:
+        line += f"\n  extra: {payload.extra}"
+    if payload.level == "error":
+        log.error(line)
+    else:
+        log.warning(line)
+    return {"ok": True}
+
+
 @router.get("/health", response_model=HealthOut, operation_id="health")
 def health(sql: SqlDependency) -> HealthOut:
     """Reporta status do app + conectividade com o schema Delta no UC.

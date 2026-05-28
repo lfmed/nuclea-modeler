@@ -8,6 +8,34 @@ import { NotFoundPage } from "@/components/apx/not-found";
 import { RouterProvider, createRouter } from "@tanstack/react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
+// ─── Client → server error logging ────────────────────────────────────────
+// Envia erros não-capturados pro backend pra ficarem nos logs do app.
+// Crucial pra debugar bugs que só aparecem no browser do usuário.
+const _logged = new Set<string>(); // dedup: cada msg envia 1x por sessão
+function reportClientError(level: "error" | "warn" | "info", err: unknown, extra?: Record<string, unknown>) {
+  const msg = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+  const key = `${level}::${msg.slice(0, 200)}`;
+  if (_logged.has(key)) return;
+  _logged.add(key);
+  try {
+    fetch("/api/_client_log", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        level,
+        message: msg,
+        stack: err instanceof Error ? err.stack : null,
+        url: window.location.href,
+        user_agent: navigator.userAgent,
+        extra: extra || null,
+      }),
+      keepalive: true,
+    }).catch(() => {});
+  } catch {
+    // se o próprio fetch lança, swallow — não cria loop
+  }
+}
+
 // ─── Auto-reload on stale chunk ────────────────────────────────────────────
 // When the user's tab has the old index.html in memory but the server has
 // deployed new chunks (with new hashes), dynamic imports fail with a
@@ -32,8 +60,15 @@ function tryReloadIfStale(err: unknown) {
   console.warn("[Núclea Modeler] Stale chunk detected, reloading…", err);
   window.location.reload();
 }
-window.addEventListener("error", (e) => tryReloadIfStale(e.error || e.message));
-window.addEventListener("unhandledrejection", (e) => tryReloadIfStale(e.reason));
+window.addEventListener("error", (e) => {
+  const err = e.error || e.message;
+  reportClientError("error", err, { source: "window.error", filename: e.filename, lineno: e.lineno });
+  tryReloadIfStale(err);
+});
+window.addEventListener("unhandledrejection", (e) => {
+  reportClientError("error", e.reason, { source: "unhandledrejection" });
+  tryReloadIfStale(e.reason);
+});
 
 // Create a new query client instance
 const queryClient = new QueryClient();
@@ -50,6 +85,7 @@ const router = createRouter({
   scrollRestoration: true,
   defaultErrorComponent: ({ error, reset }) => {
     console.error("[Núclea Modeler] Route error:", error);
+    reportClientError("error", error, { source: "route" });
     // Quando o usuário tem o index.html antigo em cache mas o servidor
     // já entregou chunks com hashes novos, o lazy-import via Link cai aqui
     // como erro de route loading (não chega ao listener window.error).
