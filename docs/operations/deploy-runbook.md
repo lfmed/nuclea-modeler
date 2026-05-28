@@ -162,6 +162,63 @@ git push  # CI roda
 make deploy  # após CI verde
 ```
 
+## Gotcha: SSO obrigatório em TODOS os endpoints
+
+Validado em 2026-05-28: **Databricks Apps platform força autenticação SSO antes do request chegar ao app.** Isso inclui endpoints projetados como "públicos" sem auth como `/api/livez` e `/api/readyz` — todos retornam 401 sem token de SSO.
+
+```bash
+# Sem token, mesmo /livez retorna 401:
+$ curl -i https://nuclea-modeler-7474646973581105.aws.databricksapps.com/api/livez
+HTTP/1.1 401 Unauthorized
+```
+
+### Impactos
+
+| O que NÃO funciona | O que funciona |
+|---|---|
+| ❌ UptimeRobot / Pingdom direto | ✅ Health check de Databricks Job (token M2M) |
+| ❌ k8s probe externo | ✅ Probe interno do Databricks Apps (gerenciado pela plataforma) |
+| ❌ Curl sem auth de qualquer endpoint | ✅ Browser com SSO logado |
+
+### Como monitorar externamente (se preciso)
+
+**Opção A — Databricks Job que faz curl com token M2M:**
+
+```python
+# Notebook ou Python job
+from databricks.sdk import WorkspaceClient
+import httpx
+
+ws = WorkspaceClient()
+token = ws.dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiToken().get()
+
+r = httpx.get(
+    "https://nuclea-modeler-7474646973581105.aws.databricksapps.com/api/health",
+    headers={"Authorization": f"Bearer {token}"},
+    timeout=10.0,
+)
+assert r.status_code == 200, f"Health check falhou: {r.status_code}"
+assert r.json()["delta_reachable"] is True
+```
+
+Agendar como Job recorrente (cron a cada 5 min) com email notification on failure.
+
+**Opção B — Configurar unauthenticated access no app.yml** (se a Núclea aceitar):
+
+```yaml
+# app.yml
+authentication:
+  unauthenticated_paths:
+    - /api/livez
+    - /api/readyz
+```
+
+⚠️ Isso expõe esses endpoints publicamente. Use apenas se aceitável pela política de segurança.
+
+**Opção C — Frontend polling com cookie SSO:**
+
+UI já faz polling do `/api/health` usando o cookie SSO do usuário logado — visível em `/admin/metrics`. Não substitui monitor externo mas dá visibilidade pra quem está no app.
+
 ## SLA / SLO informais
 
 | Métrica | Objetivo |

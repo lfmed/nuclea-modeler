@@ -35,7 +35,7 @@ Triagem + plano de correção em até **10 dias úteis** para alto/crítico.
 
 | Camada | Mecanismo |
 |---|---|
-| **Auth** | Databricks SSO (OAuth). Sem auth local. |
+| **Auth** | Databricks SSO (OAuth). Sem auth local. **Plataforma Databricks Apps força SSO em TODO endpoint** — incluindo `/livez`/`/readyz` que seriam "públicos" por convenção k8s. Vide `docs/operations/deploy-runbook.md` para workarounds de monitoramento externo. |
 | **Authorization** | RBAC com 4 papéis (`VIEWER`, `STEWARD`, `ARCHITECT`, `ADMIN`). `require_role()` decorator em rotas sensíveis. |
 | **Input validation** | Pydantic em todo endpoint. `_require_ident()` para identifiers SQL não-parametrizáveis. **Size caps:** DDL upload 5 MB, .erx XML upload 10 MB (cap parser DoS). |
 | **XML parsing** | `defusedxml` (não stdlib `xml.etree`) em todo parser .erx — bloqueia XXE, billion-laughs, DTD recursion. |

@@ -12,6 +12,7 @@ Pendentes da auditoria de produção que **não entraram no v0.2.0**:
 - **OpenAPI snapshot enforcement** — `docs/openapi.json` está committed mas o check no CI é warn-only. Tornar hard-gate quando snapshot estiver estável.
 - **i18n EN/ES** — todo PT-BR hardcoded. Extrair strings para `i18next`.
 - **CodeQL** — workflow criado em `.github/workflows/codeql.yml.disabled`. Requer GitHub Advanced Security ativado (privado é pago). Enquanto isso, cobertura via ruff + bandit + npm audit + TruffleHog.
+- **External health checks** — Databricks Apps força SSO em todo endpoint, incluindo `/livez`/`/readyz`. Para uptime monitoring externo, vide `docs/operations/deploy-runbook.md` (Gotcha: SSO obrigatório). Opções: Databricks Job M2M (recomendado), `unauthenticated_paths` no app.yml (expõe), ou Frontend polling.
 
 ## Backlog técnico
 
