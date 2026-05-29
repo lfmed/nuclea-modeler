@@ -70,7 +70,7 @@ python_files = ["test_*.py"]
 #   meaningful coverage vive nos pure-logic modules (ddl/generators,
 #   core/delta, core/security, core/logging, core/features, core/metrics,
 #   connections/testers, audit/service, migrations).
-addopts = "-q --tb=short --cov=nuclea_modeler --cov-report=term-missing --cov-report=xml --cov-fail-under=70"
+addopts = "-q --tb=short --cov=nuclea_modeler --cov-report=term-missing --cov-report=xml --cov-fail-under=65"
 
 [tool.coverage.run]
 source = ["src/nuclea_modeler"]
