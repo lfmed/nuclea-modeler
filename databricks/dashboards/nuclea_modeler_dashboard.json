@@ -1,0 +1,283 @@
+{
+  "datasets": [
+    {
+      "name": "ds_kpis",
+      "displayName": "KPIs gerais",
+      "queryLines": [
+        "SELECT\n",
+        "  (SELECT COUNT(*) FROM stable_classic_pg4xe1_catalog.data_catalog_app.systems) AS sistemas_total,\n",
+        "  (SELECT COUNT(*) FROM stable_classic_pg4xe1_catalog.data_catalog_app.systems WHERE is_active = true) AS sistemas_ativos,\n",
+        "  (SELECT COUNT(*) FROM stable_classic_pg4xe1_catalog.data_catalog_app.entities) AS entidades_total,\n",
+        "  (SELECT COUNT(*) FROM stable_classic_pg4xe1_catalog.data_catalog_app.attributes) AS atributos_total,\n",
+        "  (SELECT COUNT(*) FROM stable_classic_pg4xe1_catalog.data_catalog_app.relationships) AS relacionamentos_total,\n",
+        "  (SELECT COUNT(*) FROM stable_classic_pg4xe1_catalog.data_catalog_app.reconciliation_tickets WHERE status = 'OPEN') AS tickets_abertos,\n",
+        "  (SELECT COUNT(*) FROM stable_classic_pg4xe1_catalog.data_catalog_app.extractions WHERE started_at >= current_timestamp() - INTERVAL 7 DAYS) AS extracoes_7d"
+      ]
+    },
+    {
+      "name": "ds_systems_by_env",
+      "displayName": "Sistemas por ambiente",
+      "queryLines": [
+        "SELECT\n",
+        "  COALESCE(environment, 'Sem ambiente') AS ambiente,\n",
+        "  COUNT(*) AS qtd\n",
+        "FROM stable_classic_pg4xe1_catalog.data_catalog_app.systems\n",
+        "GROUP BY environment\n",
+        "ORDER BY qtd DESC"
+      ]
+    },
+    {
+      "name": "ds_tickets_by_status",
+      "displayName": "Tickets por status",
+      "queryLines": [
+        "SELECT status, COUNT(*) AS qtd\n",
+        "FROM stable_classic_pg4xe1_catalog.data_catalog_app.reconciliation_tickets\n",
+        "GROUP BY status\n",
+        "ORDER BY qtd DESC"
+      ]
+    },
+    {
+      "name": "ds_entities_by_system",
+      "displayName": "Top sistemas por entidades",
+      "queryLines": [
+        "SELECT\n",
+        "  s.system_name,\n",
+        "  s.environment,\n",
+        "  COUNT(e.entity_id) AS entidades\n",
+        "FROM stable_classic_pg4xe1_catalog.data_catalog_app.systems s\n",
+        "LEFT JOIN stable_classic_pg4xe1_catalog.data_catalog_app.entities e ON e.system_id = s.system_id\n",
+        "GROUP BY s.system_name, s.environment\n",
+        "ORDER BY entidades DESC\n",
+        "LIMIT 20"
+      ]
+    },
+    {
+      "name": "ds_tickets_timeline",
+      "displayName": "Tickets criados por dia (30 dias)",
+      "queryLines": [
+        "SELECT\n",
+        "  date_trunc('day', created_at) AS dia,\n",
+        "  status,\n",
+        "  COUNT(*) AS qtd\n",
+        "FROM stable_classic_pg4xe1_catalog.data_catalog_app.reconciliation_tickets\n",
+        "WHERE created_at >= current_timestamp() - INTERVAL 30 DAYS\n",
+        "GROUP BY date_trunc('day', created_at), status\n",
+        "ORDER BY dia"
+      ]
+    },
+    {
+      "name": "ds_recent_tickets",
+      "displayName": "Tickets recentes",
+      "queryLines": [
+        "SELECT\n",
+        "  t.ticket_id,\n",
+        "  t.title,\n",
+        "  s.system_name,\n",
+        "  s.environment,\n",
+        "  t.source_type,\n",
+        "  t.status,\n",
+        "  t.additions_count,\n",
+        "  t.removals_count,\n",
+        "  t.changes_count,\n",
+        "  t.created_at,\n",
+        "  t.created_by\n",
+        "FROM stable_classic_pg4xe1_catalog.data_catalog_app.reconciliation_tickets t\n",
+        "LEFT JOIN stable_classic_pg4xe1_catalog.data_catalog_app.systems s ON s.system_id = t.system_id\n",
+        "ORDER BY t.created_at DESC\n",
+        "LIMIT 50"
+      ]
+    },
+    {
+      "name": "ds_extractions_recent",
+      "displayName": "Extrações recentes",
+      "queryLines": [
+        "SELECT\n",
+        "  e.extraction_id,\n",
+        "  s.system_name,\n",
+        "  e.source_kind,\n",
+        "  e.status,\n",
+        "  e.objects_found,\n",
+        "  e.objects_new,\n",
+        "  e.objects_changed,\n",
+        "  e.duration_ms,\n",
+        "  e.started_at,\n",
+        "  e.created_by\n",
+        "FROM stable_classic_pg4xe1_catalog.data_catalog_app.extractions e\n",
+        "LEFT JOIN stable_classic_pg4xe1_catalog.data_catalog_app.systems s ON s.system_id = e.system_id\n",
+        "ORDER BY e.started_at DESC\n",
+        "LIMIT 30"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "overview",
+      "displayName": "Visão Geral",
+      "layout": [
+        {
+          "widget": {
+            "name": "header",
+            "textbox_spec": "# Núclea Modeler — Operações\n\nDashboard de saúde do catálogo de dados gerenciado pelo app."
+          },
+          "position": {"x": 0, "y": 0, "width": 6, "height": 1}
+        },
+        {
+          "widget": {
+            "name": "w_kpis",
+            "queries": [{"name": "main_query", "query": {"datasetName": "ds_kpis", "fields": [
+              {"name": "sistemas_total", "expression": "`sistemas_total`"},
+              {"name": "sistemas_ativos", "expression": "`sistemas_ativos`"},
+              {"name": "entidades_total", "expression": "`entidades_total`"},
+              {"name": "atributos_total", "expression": "`atributos_total`"},
+              {"name": "relacionamentos_total", "expression": "`relacionamentos_total`"},
+              {"name": "tickets_abertos", "expression": "`tickets_abertos`"},
+              {"name": "extracoes_7d", "expression": "`extracoes_7d`"}
+            ], "disaggregated": true}}],
+            "spec": {"version": 3, "widgetType": "table", "encodings": {"columns": [
+              {"fieldName": "sistemas_total", "displayName": "Sistemas"},
+              {"fieldName": "sistemas_ativos", "displayName": "Ativos"},
+              {"fieldName": "entidades_total", "displayName": "Entidades"},
+              {"fieldName": "atributos_total", "displayName": "Atributos"},
+              {"fieldName": "relacionamentos_total", "displayName": "Relacionamentos"},
+              {"fieldName": "tickets_abertos", "displayName": "Tickets OPEN"},
+              {"fieldName": "extracoes_7d", "displayName": "Extrações 7d"}
+            ]}}
+          },
+          "position": {"x": 0, "y": 1, "width": 6, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "w_systems_env",
+            "queries": [{"name": "main_query", "query": {"datasetName": "ds_systems_by_env", "fields": [
+              {"name": "ambiente", "expression": "`ambiente`"},
+              {"name": "qtd", "expression": "`qtd`"}
+            ], "disaggregated": true}}],
+            "spec": {"version": 3, "widgetType": "bar", "encodings": {
+              "x": {"fieldName": "ambiente", "scale": {"type": "categorical"}, "displayName": "Ambiente"},
+              "y": {"fieldName": "qtd", "scale": {"type": "quantitative"}, "displayName": "Qtd"}
+            }}
+          },
+          "position": {"x": 0, "y": 3, "width": 3, "height": 4}
+        },
+        {
+          "widget": {
+            "name": "w_tickets_status",
+            "queries": [{"name": "main_query", "query": {"datasetName": "ds_tickets_by_status", "fields": [
+              {"name": "status", "expression": "`status`"},
+              {"name": "qtd", "expression": "`qtd`"}
+            ], "disaggregated": true}}],
+            "spec": {"version": 3, "widgetType": "pie", "encodings": {
+              "angle": {"fieldName": "qtd", "scale": {"type": "quantitative"}, "displayName": "Qtd"},
+              "color": {"fieldName": "status", "scale": {"type": "categorical"}, "displayName": "Status"}
+            }}
+          },
+          "position": {"x": 3, "y": 3, "width": 3, "height": 4}
+        },
+        {
+          "widget": {
+            "name": "w_entities_by_system",
+            "queries": [{"name": "main_query", "query": {"datasetName": "ds_entities_by_system", "fields": [
+              {"name": "system_name", "expression": "`system_name`"},
+              {"name": "environment", "expression": "`environment`"},
+              {"name": "entidades", "expression": "`entidades`"}
+            ], "disaggregated": true}}],
+            "spec": {"version": 3, "widgetType": "bar", "encodings": {
+              "x": {"fieldName": "entidades", "scale": {"type": "quantitative"}},
+              "y": {"fieldName": "system_name", "scale": {"type": "categorical"}, "displayName": "Sistema"},
+              "color": {"fieldName": "environment", "scale": {"type": "categorical"}, "displayName": "Env"}
+            }}
+          },
+          "position": {"x": 0, "y": 7, "width": 6, "height": 5}
+        },
+        {
+          "widget": {
+            "name": "w_tickets_timeline",
+            "queries": [{"name": "main_query", "query": {"datasetName": "ds_tickets_timeline", "fields": [
+              {"name": "dia", "expression": "`dia`"},
+              {"name": "status", "expression": "`status`"},
+              {"name": "qtd", "expression": "`qtd`"}
+            ], "disaggregated": true}}],
+            "spec": {"version": 3, "widgetType": "line", "encodings": {
+              "x": {"fieldName": "dia", "scale": {"type": "temporal"}, "displayName": "Dia"},
+              "y": {"fieldName": "qtd", "scale": {"type": "quantitative"}, "displayName": "Qtd"},
+              "color": {"fieldName": "status", "scale": {"type": "categorical"}}
+            }}
+          },
+          "position": {"x": 0, "y": 12, "width": 6, "height": 4}
+        },
+        {
+          "widget": {
+            "name": "w_recent_tickets",
+            "textbox_spec": "## Tickets recentes"
+          },
+          "position": {"x": 0, "y": 16, "width": 6, "height": 1}
+        },
+        {
+          "widget": {
+            "name": "w_tickets_table",
+            "queries": [{"name": "main_query", "query": {"datasetName": "ds_recent_tickets", "fields": [
+              {"name": "title", "expression": "`title`"},
+              {"name": "system_name", "expression": "`system_name`"},
+              {"name": "environment", "expression": "`environment`"},
+              {"name": "source_type", "expression": "`source_type`"},
+              {"name": "status", "expression": "`status`"},
+              {"name": "additions_count", "expression": "`additions_count`"},
+              {"name": "changes_count", "expression": "`changes_count`"},
+              {"name": "removals_count", "expression": "`removals_count`"},
+              {"name": "created_at", "expression": "`created_at`"},
+              {"name": "created_by", "expression": "`created_by`"}
+            ], "disaggregated": true}}],
+            "spec": {"version": 3, "widgetType": "table", "encodings": {"columns": [
+              {"fieldName": "title", "displayName": "Título"},
+              {"fieldName": "system_name", "displayName": "Sistema"},
+              {"fieldName": "environment", "displayName": "Env"},
+              {"fieldName": "source_type", "displayName": "Fonte"},
+              {"fieldName": "status", "displayName": "Status"},
+              {"fieldName": "additions_count", "displayName": "Adds"},
+              {"fieldName": "changes_count", "displayName": "Changes"},
+              {"fieldName": "removals_count", "displayName": "Removes"},
+              {"fieldName": "created_at", "displayName": "Criado em"},
+              {"fieldName": "created_by", "displayName": "Por"}
+            ]}}
+          },
+          "position": {"x": 0, "y": 17, "width": 6, "height": 6}
+        },
+        {
+          "widget": {
+            "name": "w_recent_extractions_hdr",
+            "textbox_spec": "## Extrações recentes"
+          },
+          "position": {"x": 0, "y": 23, "width": 6, "height": 1}
+        },
+        {
+          "widget": {
+            "name": "w_extractions_table",
+            "queries": [{"name": "main_query", "query": {"datasetName": "ds_extractions_recent", "fields": [
+              {"name": "system_name", "expression": "`system_name`"},
+              {"name": "source_kind", "expression": "`source_kind`"},
+              {"name": "status", "expression": "`status`"},
+              {"name": "objects_found", "expression": "`objects_found`"},
+              {"name": "objects_new", "expression": "`objects_new`"},
+              {"name": "objects_changed", "expression": "`objects_changed`"},
+              {"name": "duration_ms", "expression": "`duration_ms`"},
+              {"name": "started_at", "expression": "`started_at`"},
+              {"name": "created_by", "expression": "`created_by`"}
+            ], "disaggregated": true}}],
+            "spec": {"version": 3, "widgetType": "table", "encodings": {"columns": [
+              {"fieldName": "system_name", "displayName": "Sistema"},
+              {"fieldName": "source_kind", "displayName": "Fonte"},
+              {"fieldName": "status", "displayName": "Status"},
+              {"fieldName": "objects_found", "displayName": "Found"},
+              {"fieldName": "objects_new", "displayName": "New"},
+              {"fieldName": "objects_changed", "displayName": "Changed"},
+              {"fieldName": "duration_ms", "displayName": "Duração (ms)"},
+              {"fieldName": "started_at", "displayName": "Iniciou"},
+              {"fieldName": "created_by", "displayName": "Por"}
+            ]}}
+          },
+          "position": {"x": 0, "y": 24, "width": 6, "height": 6}
+        }
+      ]
+    }
+  ]
+}

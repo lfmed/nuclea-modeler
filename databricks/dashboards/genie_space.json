@@ -1,0 +1,37 @@
+{
+  "title": "Núclea Modeler — Catálogo de Dados",
+  "description": "Genie space para consultar o catálogo de dados do app Núclea Modeler. Use perguntas em linguagem natural sobre sistemas, entidades, atributos, relacionamentos, tickets de reconciliação e extrações.",
+  "warehouse_id": "b8e52268d9828bdd",
+  "table_identifiers": [
+    "stable_classic_pg4xe1_catalog.data_catalog_app.systems",
+    "stable_classic_pg4xe1_catalog.data_catalog_app.entities",
+    "stable_classic_pg4xe1_catalog.data_catalog_app.attributes",
+    "stable_classic_pg4xe1_catalog.data_catalog_app.relationships",
+    "stable_classic_pg4xe1_catalog.data_catalog_app.reconciliation_tickets",
+    "stable_classic_pg4xe1_catalog.data_catalog_app.extractions",
+    "stable_classic_pg4xe1_catalog.data_catalog_app.lakebase_sandboxes",
+    "stable_classic_pg4xe1_catalog.data_catalog_app.glossary_terms",
+    "stable_classic_pg4xe1_catalog.data_catalog_app.audit_log"
+  ],
+  "instructions": "Você é um analista que conhece a estrutura do catálogo de dados do Núclea Modeler. Tabelas principais:\n\n- `systems`: sistemas de origem (modelos de dados). Cada sistema tem environment (DEV/HINT/PRD), technology, domain.\n- `entities`: tabelas/views catalogadas. Cada entity pertence a um system_id. Marca is_shared=true entities que podem ser referenciadas cross-system.\n- `attributes`: colunas das entities. is_primary_key, native_data_type, is_nullable.\n- `relationships`: FKs/associações entre entities. rel_type (1:1, 1:N, N:M), source_entity_id, target_entity_id.\n- `reconciliation_tickets`: tickets de mudança em status OPEN/APPROVED/APPLIED/REJECTED. source_type LAKEBASE_ROUNDTRIP/DDL_IMPORT/MANUAL.\n- `extractions`: histórico de engenharia reversa. status SUCCESS/FAILED/PARTIAL.\n- `audit_log`: trilha imutável de todas mutações via /api/. Inclui actor_email, action, object_type, object_id, before_json, after_json, occurred_at.\n\nExemplos de perguntas que respondemos bem:\n- Quantos sistemas estão em produção?\n- Quais sistemas têm mais entidades?\n- Quantos tickets abertos por sistema?\n- Quais entidades foram modificadas na última semana?\n- Quais colunas estão marcadas como PK em uma tabela X?\n- Top 10 entidades com mais relacionamentos.\n- Quais atributos têm tipo varchar?",
+  "sample_questions": [
+    {
+      "question_text": "Quantos sistemas estão cadastrados, agrupados por ambiente?"
+    },
+    {
+      "question_text": "Quais são os 10 sistemas com mais entidades?"
+    },
+    {
+      "question_text": "Quantos tickets de reconciliação estão abertos no momento?"
+    },
+    {
+      "question_text": "Qual foi a última extração executada com sucesso?"
+    },
+    {
+      "question_text": "Quais entidades estão marcadas como compartilhadas (is_shared=true)?"
+    },
+    {
+      "question_text": "Quantos relacionamentos existem entre as tabelas de cada sistema?"
+    }
+  ]
+}
