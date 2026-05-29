@@ -161,6 +161,7 @@ export interface EntityIn {
   entity_type?: EntityType;
   native_comment?: string | null;
   row_count_approx?: number | null;
+  is_shared?: boolean;
 }
 
 export interface AttributeOut {

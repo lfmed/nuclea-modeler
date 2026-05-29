@@ -738,9 +738,38 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
           systemTechnology={systemTechnology}
           existingEntities={view.entities}
           onClose={() => setShowAddEntity(false)}
-          onSubmit={(data, fks) => {
-            setPendingFks(fks);
-            quickAdd.mutate({ systemId, data });
+          onSubmit={async (data, fks) => {
+            try {
+              const created = await quickAdd.mutateAsync({ systemId, data });
+              for (const fk of fks) {
+                try {
+                  await createFk.mutateAsync({
+                    data: {
+                      system_id: systemId,
+                      source_entity_id: (created as { entity_id: string }).entity_id,
+                      target_entity_id: fk.targetEntityId,
+                      source_attr_ids: [],
+                      target_attr_ids: [fk.targetAttrId],
+                      rel_type: "1:N",
+                      source_cardinality: "MANDATORY",
+                      target_cardinality: "OPTIONAL",
+                      description: `FK lógica: coluna "${fk.sourceColName}" → alvo`,
+                    },
+                  });
+                } catch (err) {
+                  toast.error(`Falha ao criar FK para coluna "${fk.sourceColName}"`, {
+                    description: err instanceof Error ? err.message : String(err),
+                  });
+                }
+              }
+              if (fks.length > 0) {
+                qc.invalidateQueries({ queryKey: ["getDiagram", systemId] });
+                qc.invalidateQueries({ queryKey: ["getSessionStatus", systemId] });
+                toast.success(`${fks.length} relacionamento(s) criados`);
+              }
+            } catch (err) {
+              console.error("quickAdd failed", err);
+            }
           }}
           submitting={quickAdd.isPending}
         />

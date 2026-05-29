@@ -16,8 +16,6 @@ from typing import Any
 
 from databricks.sdk import WorkspaceClient
 
-log = logging.getLogger(__name__)
-
 from ..core import delta
 from ..core._nuclea_config import get_settings
 from ..core.sql import Sql
@@ -31,6 +29,8 @@ from .models import (
     ExtractionResult,
     ExtractionSnapshot,
 )
+
+log = logging.getLogger(__name__)
 
 
 def _quote_id(value: str) -> str:
