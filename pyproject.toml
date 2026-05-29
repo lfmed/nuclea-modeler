@@ -96,6 +96,12 @@ omit = [
     # Sync e versions services têm porções grandes dependentes de Warehouse —
     # funções puras críticas (compute_diff, next_version_number, _classify_status)
     # estão testadas; o resto é orquestração que precisa de SQL live.
+    # Dashboard/admin/uc routers são thin glue (aggregations SQL ou SDK passthrough)
+    # — cobertura via smoke E2E quando o app está live.
+    "src/nuclea_modeler/backend/dashboard/router.py",
+    "src/nuclea_modeler/backend/admin/router.py",
+    "src/nuclea_modeler/backend/uc/router.py",
+    "src/nuclea_modeler/backend/sessions/router.py",
 ]
 
 [tool.coverage.report]
