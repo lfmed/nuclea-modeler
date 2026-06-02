@@ -79,9 +79,9 @@ jobs:
 
       - name: Upload coverage XML
         # Artifact único por job da matrix (precisa nome distinto para
-        # actions/upload-artifact@v4 não rejeitar colisão).
+        # actions/upload-artifact@v7 não rejeitar colisão).
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-xml-py${{ matrix.python }}
           path: coverage.xml
