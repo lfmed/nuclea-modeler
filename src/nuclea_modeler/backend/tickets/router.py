@@ -214,11 +214,6 @@ def reject(
 
 
 @router.post(
-    "/{ticket_id}/apply",
-    response_model=TicketApplyResult,
-    operation_id="applyTicket",
-)
-@router.post(
     "/{ticket_id}/reopen",
     response_model=TicketApplyResult,
     operation_id="reopenTicket",
@@ -251,6 +246,11 @@ def reopen(
     )
 
 
+@router.post(
+    "/{ticket_id}/apply",
+    response_model=TicketApplyResult,
+    operation_id="applyTicket",
+)
 def apply(
     ticket_id: str,
     sql: SqlDependency,
