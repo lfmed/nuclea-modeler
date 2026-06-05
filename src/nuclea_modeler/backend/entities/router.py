@@ -682,7 +682,11 @@ def delete_entity(
     response_model=list[AttributeOut],
     operation_id="listAttributes",
 )
-def list_attributes(entity_id: str, sql: SqlDependency) -> list[AttributeOut]:
+def list_attributes(
+    entity_id: str,
+    sql: SqlDependency,
+    user_ws: Dependencies.UserClient,
+) -> list[AttributeOut]:
     s = get_settings()
     rows = delta.fetch_all_params(
         sql,
@@ -694,7 +698,79 @@ def list_attributes(entity_id: str, sql: SqlDependency) -> list[AttributeOut]:
         """,
         [delta.param("entity_id", entity_id)],
     )
-    return [_attr_row_to_out(r) for r in rows]
+    out = [_attr_row_to_out(r) for r in rows]
+    # Overlay: se a entity é virtual (não existe ainda no catálogo), busca
+    # attributes do ticket OPEN do user. Sem isso o EditEntityDialog fica
+    # vazio mesmo o user tendo adicionado colunas na criação.
+    if not rows:
+        from ..tickets.session import find_open_session_ticket
+        actor = _current_email(user_ws)
+        if actor:
+            # Procura entity virtual em qualquer sessão OPEN do user
+            virtual_attrs = _find_virtual_entity_attrs(sql, actor, entity_id)
+            if virtual_attrs:
+                out = virtual_attrs
+    return out
+
+
+def _find_virtual_entity_attrs(
+    sql, user_email: str, entity_id: str,
+) -> list[AttributeOut]:
+    """Procura entity virtual (op=add com pre_allocated_entity_id == entity_id)
+    em qualquer ticket OPEN do user e retorna os attributes do diff."""
+    from ..tickets.session import find_open_session_ticket  # noqa
+    from datetime import datetime
+    s = get_settings()
+    # Olha TODOS os tickets OPEN do user (multiple systems): pelo schema temos
+    # que iterar pq find_open_session_ticket exige system_id. Aqui buscamos
+    # via SQL direto a entity virtual em qualquer sessão.
+    rows = delta.fetch_all_params(
+        sql,
+        f"""
+        SELECT diff_json
+        FROM {s.fq_table('reconciliation_tickets')}
+        WHERE status = 'OPEN'
+          AND source_type = 'MANUAL'
+          AND created_by = :user
+        """,
+        [delta.param("user", user_email)],
+    )
+    import json as _json
+    now = datetime.utcnow()
+    for r in rows:
+        try:
+            diff = _json.loads(r[0]) if r[0] else {}
+        except Exception:
+            continue
+        for entry in diff.get("entities", []) or []:
+            if not isinstance(entry, dict) or entry.get("op") != "add":
+                continue
+            payload = entry.get("payload") or {}
+            if payload.get("pre_allocated_entity_id") == entity_id:
+                # Match! Materializa attributes virtuais
+                out: list[AttributeOut] = []
+                for a in entry.get("attributes") or []:
+                    out.append(AttributeOut(
+                        attribute_id=a.get("attribute_id") or f"pending-attr-{a.get('technical_name','?')}",
+                        entity_id=entity_id,
+                        technical_name=a.get("technical_name") or "",
+                        logical_name=a.get("logical_name"),
+                        ordinal_position=a.get("ordinal_position"),
+                        native_data_type=a.get("native_data_type"),
+                        is_nullable=a.get("is_nullable"),
+                        default_value=a.get("default_value"),
+                        is_primary_key=bool(a.get("is_primary_key", False)),
+                        description_md=None,
+                        business_rule=None,
+                        sample_value=None,
+                        glossary_term_id=None,
+                        native_comment=None,
+                        created_at=now, created_by=user_email,
+                        updated_at=now, updated_by=user_email,
+                        pending_op="add",
+                    ))
+                return out
+    return []
 
 
 def _resolve_entity_keys(sql, entity_id: str) -> tuple[str, str, str, str] | None:

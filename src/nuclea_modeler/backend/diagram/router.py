@@ -301,6 +301,10 @@ def _apply_session_overlay(
     for key, entries in indexed.items():
         if key in consumed:
             continue
+        # Skip entries de relationship sintéticos (schema_name="__relationship__")
+        # — eles não são entities e quebram a validação de DiagramEntity.entity_type.
+        if key[0] == "__relationship__":
+            continue
         add_entry = next(
             (e for e in entries if e.get("op") == "add"),
             None,
