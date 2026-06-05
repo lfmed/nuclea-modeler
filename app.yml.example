@@ -1,0 +1,86 @@
+command:
+  - sh
+  - -c
+  - >
+    set -e;
+    cd /app/python/source_code;
+    echo '[NUCLEA] Building UI...';
+    if [ -f node_modules/.bin/vite ]; then
+      ./node_modules/.bin/vite build || echo '[NUCLEA] UI build failed; serving fallback';
+    else
+      echo '[NUCLEA] vite not installed; skipping UI build';
+    fi;
+    ls -la src/nuclea_modeler/__dist__/ 2>/dev/null || true;
+    echo '[NUCLEA] Running migrations (pre-uvicorn, single shot)...';
+    PYTHONPATH=src python -m scripts.run_migrations || { echo '[NUCLEA] Migrations failed; abortando.'; exit 1; };
+    echo '[NUCLEA] Starting uvicorn...';
+    exec uvicorn nuclea_modeler.backend.app:app --host 0.0.0.0 --port 8000 --workers 2 --app-dir src
+
+# ─── Recursos do app ────────────────────────────────────────────────────────
+# Esses blocos concedem permissões ao Service Principal do app via OAuth M2M.
+# Sem eles, o app cai em PAT-auth e falha em /sql e /database APIs.
+#
+# Substitua os valores marcados com [ALTERAR].
+resources:
+  - name: nuclea-warehouse
+    description: SQL Warehouse para as tabelas Delta do app
+    sql_warehouse:
+      # [ALTERAR] ID do SQL Warehouse do cliente. Achar em:
+      #   SQL → SQL Warehouses → escolher um → copiar do final da URL
+      id: "<WAREHOUSE_ID>"
+      permission: CAN_USE
+
+  # Bloco abaixo é OPCIONAL — só necessário se o cliente vai usar engenharia
+  # reversa contra um Lakebase Postgres. Comente toda a sub-seção `database:`
+  # se não houver Lakebase, ou troque o instance_name pelo do cliente.
+  - name: nuclea-lakebase
+    description: Lakebase Postgres para validação dos modelos vs DB real
+    database:
+      # [ALTERAR] Nome do database Postgres dentro da instance Lakebase
+      database_name: "databricks_postgres"
+      # [ALTERAR] Nome da instance Lakebase. Catálogo: Compute → Lakebase
+      instance_name: "<LAKEBASE_INSTANCE_NAME>"
+      permission: CAN_CONNECT_AND_CREATE
+
+# ─── Variáveis de ambiente ──────────────────────────────────────────────────
+# Substitua tudo marcado com [ALTERAR]. Demais valores são padrão do app
+# e geralmente não precisam mudar.
+env:
+  - name: PYTHONPATH
+    value: /app/python/source_code/src
+  - name: NODE_OPTIONS
+    value: --max-old-space-size=2048
+
+  # ── Onde o app armazena estado (Delta tables) ────────────────────────────
+  # [ALTERAR] Unity Catalog do cliente (precisa ter USAGE pro SP do app)
+  - name: NUCLEA_CATALOG
+    value: "<CATALOG_NAME>"
+
+  # [ALTERAR] Schema dentro do catalog (será criado automaticamente). Sugestão: nuclea_modeler
+  - name: NUCLEA_SCHEMA
+    value: "nuclea_modeler"
+
+  # [ALTERAR] Mesmo Warehouse ID declarado em resources (acima)
+  - name: NUCLEA_WAREHOUSE_ID
+    value: "<WAREHOUSE_ID>"
+  - name: DATABRICKS_SQL_WAREHOUSE_ID
+    value: "<WAREHOUSE_ID>"
+
+  # [ALTERAR-OPCIONAL] Scope de Databricks Secrets onde credenciais ODBC/REST
+  # vão ser lidas. Sugestão: criar via CLI `databricks secrets create-scope nuclea-modeler`
+  - name: NUCLEA_SECRETS_SCOPE
+    value: "nuclea-modeler"
+
+  # ── Migrations ──────────────────────────────────────────────────────────
+  # Aplica databricks/sql/*.sql no boot. SQLs já usam ${CATALOG}/${SCHEMA},
+  # então funcionam em qualquer workspace. Deixe "false" — migrations rodam
+  # no command: acima (1x antes do uvicorn, evita race condition entre workers).
+  - name: NUCLEA_MIGRATIONS_AUTO_APPLY
+    value: "false"
+
+  # ── Logging ─────────────────────────────────────────────────────────────
+  # "true" = single-line JSON (pra Datadog/CloudWatch). "false" = humano.
+  - name: NUCLEA_LOG_JSON
+    value: "true"
+  - name: NUCLEA_LOG_LEVEL
+    value: "INFO"

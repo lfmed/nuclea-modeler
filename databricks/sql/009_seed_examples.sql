@@ -3,8 +3,8 @@
 -- Idempotente: usa MERGE por sandbox_id / connection_id.
 -- ============================================================================
 
-USE CATALOG stable_classic_pg4xe1_catalog;
-USE SCHEMA data_catalog_app;
+USE CATALOG ${CATALOG};
+USE SCHEMA ${SCHEMA};
 
 -- Lakebase sandbox apontando para a instância JDBCTESTLAKEBASE que já existe
 MERGE INTO lakebase_sandboxes AS t

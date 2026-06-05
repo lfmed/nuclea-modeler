@@ -12,6 +12,8 @@
 Aplicação full-stack (FastAPI + React, via [APX](https://github.com/databricks-solutions/apx)) que centraliza o ciclo de vida dos modelos de dados — da engenharia reversa dos ambientes **HINT/HEXT/PROD** até o espelhamento automático no **Unity Catalog**.
 
 > **🚀 Novo aqui?** Comece pelo [tutorial de 20 minutos](docs/tutorial/getting-started.md) para fazer o primeiro ciclo completo (sistema → conexão → reversa → ticket → versão → sync).
+>
+> **📦 Vai instalar em outro workspace Databricks?** Siga o [DEPLOY.md](DEPLOY.md) — pré-requisitos, parametrização (`app.yml.example`) e troubleshooting.
 
 ## Índice
 

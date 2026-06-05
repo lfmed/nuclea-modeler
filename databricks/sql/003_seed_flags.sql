@@ -3,8 +3,8 @@
 -- Idempotente: usa MERGE com flag_key como chave natural.
 -- ============================================================================
 
-USE CATALOG stable_classic_pg4xe1_catalog;
-USE SCHEMA data_catalog_app;
+USE CATALOG ${CATALOG};
+USE SCHEMA ${SCHEMA};
 
 MERGE INTO flags AS t
 USING (

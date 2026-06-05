@@ -1,6 +1,6 @@
 -- ============================================================================
 -- Núclea Modeler — 18 tabelas Delta (conforme seção 6 da spec funcional)
--- Catálogo: stable_classic_pg4xe1_catalog.data_catalog_app
+-- Catálogo: ${CATALOG}.${SCHEMA}
 --
 -- Convenções:
 --   - PKs como STRING (UUID v7 gerado pela app)
@@ -9,8 +9,8 @@
 --   - Delta features: change data feed habilitado nas tabelas mutáveis
 -- ============================================================================
 
-USE CATALOG stable_classic_pg4xe1_catalog;
-USE SCHEMA data_catalog_app;
+USE CATALOG ${CATALOG};
+USE SCHEMA ${SCHEMA};
 
 -- ---------------------------------------------------------------------------
 -- 1) connections — Conexões de ambiente (HINT/HEXT/PROD)

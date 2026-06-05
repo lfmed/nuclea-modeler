@@ -2,8 +2,8 @@
 -- Núclea Modeler — DDL para RBAC roles + Tickets de Reconciliação
 -- ============================================================================
 
-USE CATALOG stable_classic_pg4xe1_catalog;
-USE SCHEMA data_catalog_app;
+USE CATALOG ${CATALOG};
+USE SCHEMA ${SCHEMA};
 
 -- ---------------------------------------------------------------------------
 -- 19) user_roles — RBAC por email

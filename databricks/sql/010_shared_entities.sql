@@ -5,8 +5,8 @@
 -- como target de relationship (FK lógica).
 -- ============================================================================
 
-USE CATALOG stable_classic_pg4xe1_catalog;
-USE SCHEMA data_catalog_app;
+USE CATALOG ${CATALOG};
+USE SCHEMA ${SCHEMA};
 
 -- Databricks SQL não suporta IF NOT EXISTS em ALTER ADD COLUMN; o tracking
 -- de migrations (schema_migrations.checksum) garante que esta roda exatamente

@@ -2,8 +2,8 @@
 -- Núclea Modeler — DDL para Lakebase Sandboxes + Extractions (M2 + M-LB)
 -- ============================================================================
 
-USE CATALOG stable_classic_pg4xe1_catalog;
-USE SCHEMA data_catalog_app;
+USE CATALOG ${CATALOG};
+USE SCHEMA ${SCHEMA};
 
 -- ---------------------------------------------------------------------------
 -- 21) lakebase_sandboxes — Inst‪âncias Lakebase configuradas como sandboxes

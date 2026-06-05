@@ -4,8 +4,8 @@
 -- Remova/ajuste conforme sistemas reais da Núclea.
 -- ============================================================================
 
-USE CATALOG stable_classic_pg4xe1_catalog;
-USE SCHEMA data_catalog_app;
+USE CATALOG ${CATALOG};
+USE SCHEMA ${SCHEMA};
 
 MERGE INTO systems AS t
 USING (

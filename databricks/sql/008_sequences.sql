@@ -5,8 +5,8 @@
 -- como objeto-conceito para preservação de modelos vindos de outros SGBDs.
 -- ============================================================================
 
-USE CATALOG stable_classic_pg4xe1_catalog;
-USE SCHEMA data_catalog_app;
+USE CATALOG ${CATALOG};
+USE SCHEMA ${SCHEMA};
 
 CREATE TABLE IF NOT EXISTS sequences_catalog (
     sequence_id     STRING NOT NULL,

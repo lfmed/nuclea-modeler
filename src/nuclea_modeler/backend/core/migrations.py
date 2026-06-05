@@ -178,12 +178,22 @@ def apply_migrations(
         logger.info(f"[migrations] Applying {filename}...")
         started = datetime.utcnow()
         try:
+            # Expande ${CATALOG} e ${SCHEMA} a partir das settings antes de
+            # executar. Templates ficam workspace-agnostic; o checksum acima
+            # foi calculado sobre o TEMPLATE pra manter estabilidade entre
+            # workspaces que reusam os mesmos arquivos.
+            s = get_settings()
+            content_expanded = (
+                content
+                .replace("${CATALOG}", s.catalog)
+                .replace("${SCHEMA}", s.schema_)
+            )
             # execute_statement é stateless — `USE CATALOG/SCHEMA` no início do
             # arquivo não persiste entre statements. Capturamos esses comandos
             # e passamos `catalog=` / `schema=` explicitamente nos próximos.
             current_catalog: str | None = None
             current_schema: str | None = None
-            for stmt in _statements(content):
+            for stmt in _statements(content_expanded):
                 m_cat = _USE_CATALOG_RE.match(stmt)
                 m_sch = _USE_SCHEMA_RE.match(stmt)
                 if m_cat:

@@ -2,8 +2,8 @@
 -- Núclea Modeler — DDL para layouts persistidos do DER (M4)
 -- ============================================================================
 
-USE CATALOG stable_classic_pg4xe1_catalog;
-USE SCHEMA data_catalog_app;
+USE CATALOG ${CATALOG};
+USE SCHEMA ${SCHEMA};
 
 -- ---------------------------------------------------------------------------
 -- 23) der_layouts — Layout (posições dos nós) salvo por (system_id, layout_name)

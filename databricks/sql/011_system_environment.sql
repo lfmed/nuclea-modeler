@@ -5,8 +5,8 @@
 -- ambiente, com versões potencialmente diferentes em cada um.
 -- ============================================================================
 
-USE CATALOG stable_classic_pg4xe1_catalog;
-USE SCHEMA data_catalog_app;
+USE CATALOG ${CATALOG};
+USE SCHEMA ${SCHEMA};
 
 ALTER TABLE systems ADD COLUMNS (
     environment STRING COMMENT 'DEV | HINT | PRD — nullable para sistemas legacy'
