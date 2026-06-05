@@ -64,8 +64,12 @@ def _quote_lit(value: Any) -> str:
         return f"array({items})"
     if isinstance(value, dict):
         return _quote_lit(json.dumps(value, ensure_ascii=False))
-    # string: escape single quotes
-    return "'" + str(value).replace("'", "''") + "'"
+    # string: escape backslash PRIMEIRO (senão `\"` em payloads JSON é
+    # interpretado pelo Databricks SQL parser e some), depois aspas simples.
+    # Caso real: diff_json com strings contendo `\"` (escape JSON de aspa
+    # dupla) vira `"` no Delta → JSON corrompido. Fix mantém o backslash.
+    s = str(value).replace("\\", "\\\\").replace("'", "''")
+    return "'" + s + "'"
 
 
 # ─── Parameterised query helpers ────────────────────────────────────────────
