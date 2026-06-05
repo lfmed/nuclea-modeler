@@ -197,6 +197,32 @@ def _build_diagram(
             session_ticket_id=session_ticket_id,
             session_diff=session_diff,
         )
+        # Adiciona relationships pendentes (entries com schema_name=__relationship__)
+        # como edges virtuais no DER pra mostrar as FKs antes do apply.
+        rel_ids_existing = {r.relationship_id for r in relationships}
+        for entry in session_diff.get("entities", []) or []:
+            if not isinstance(entry, dict):
+                continue
+            if entry.get("schema_name") != "__relationship__":
+                continue
+            if entry.get("op") != "add":
+                continue  # change/remove não materializados aqui
+            rid = entry.get("technical_name") or ""
+            if rid in rel_ids_existing:
+                continue
+            p = entry.get("payload") or {}
+            relationships.append(DiagramRelationship(
+                relationship_id=rid,
+                source_entity_id=p.get("source_entity_id") or "",
+                target_entity_id=p.get("target_entity_id") or "",
+                rel_type=p.get("rel_type"),
+                source_cardinality=p.get("source_cardinality"),
+                target_cardinality=p.get("target_cardinality"),
+                source_attrs=list(p.get("source_attr_ids") or []),
+                target_attrs=list(p.get("target_attr_ids") or []),
+                description=p.get("description"),
+                origin="PENDING",
+            ))
 
     return DiagramView(
         system_id=system_id,

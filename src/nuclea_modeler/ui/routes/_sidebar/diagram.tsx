@@ -788,6 +788,7 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
       {editingEntity && (
         <EditEntityDialog
           entity={editingEntity}
+          candidateEntities={view.entities}
           onClose={() => setEditingEntity(null)}
           onSaved={() => {
             qc.invalidateQueries({ queryKey: ["getDiagram", systemId] });
@@ -1553,10 +1554,12 @@ function relationshipToEdge(r: DiagramRelationship): Edge {
 
 function EditEntityDialog({
   entity,
+  candidateEntities,
   onClose,
   onSaved,
 }: {
   entity: DiagramEntity;
+  candidateEntities: DiagramEntity[];
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -1682,7 +1685,12 @@ function EditEntityDialog({
           {/* Attributes editor */}
           <div className="space-y-3 pt-4 border-t">
             <h3 className="text-sm font-semibold">Atributos</h3>
-            <AttributesEditor entityId={entity.entity_id} onChanged={() => qc.invalidateQueries({ queryKey: ["getDiagram"] })} />
+            <AttributesEditor
+              entityId={entity.entity_id}
+              systemId={entity.system_id}
+              candidateEntities={candidateEntities}
+              onChanged={() => qc.invalidateQueries({ queryKey: ["getDiagram"] })}
+            />
           </div>
 
           <div className="pt-4 border-t text-xs text-muted-foreground">
@@ -1703,9 +1711,13 @@ function EditEntityDialog({
 
 function AttributesEditor({
   entityId,
+  systemId,
+  candidateEntities,
   onChanged,
 }: {
   entityId: string;
+  systemId: string;
+  candidateEntities: DiagramEntity[];
   onChanged: () => void;
 }) {
   const { data: attrs } = useListAttributesSuspense(entityId, selector());
@@ -1713,18 +1725,12 @@ function AttributesEditor({
   const [newName, setNewName] = useState("");
   const [newType, setNewType] = useState("STRING");
   const [newPk, setNewPk] = useState(false);
+  // FK opcional na criação: marca tabela alvo + coluna alvo
+  const [newFkEntity, setNewFkEntity] = useState("");
+  const [newFkAttr, setNewFkAttr] = useState("");
 
-  const createAttr = useCreateAttribute({
-    mutation: {
-      onSuccess: () => {
-        qc.invalidateQueries({ queryKey: ["listAttributes", entityId] });
-        onChanged();
-        setNewName("");
-        toast.success("Atributo adicionado");
-      },
-      onError: (e) => toast.error(String(e)),
-    },
-  });
+  const createAttr = useCreateAttribute();
+  const createFkRel = useCreateRelationship();
   const updateAttr = useUpdateAttribute({
     mutation: {
       onSuccess: () => {
@@ -1798,47 +1804,125 @@ function AttributesEditor({
         </table>
       </div>
       <form
-        onSubmit={(e) => {
+        onSubmit={async (e) => {
           e.preventDefault();
           if (!newName.trim()) return;
-          createAttr.mutate({
-            entityId,
-            data: {
-              entity_id: entityId,
-              technical_name: newName.trim(),
-              native_data_type: newType.trim() || "STRING",
-              is_primary_key: newPk,
-              is_nullable: !newPk,
-            },
-          });
+          try {
+            await createAttr.mutateAsync({
+              entityId,
+              data: {
+                entity_id: entityId,
+                technical_name: newName.trim(),
+                native_data_type: newType.trim() || "STRING",
+                is_primary_key: newPk,
+                is_nullable: !newPk,
+              },
+            });
+            // Se FK marcada, cria relationship na mesma sessão
+            if (newFkEntity && newFkAttr) {
+              try {
+                await createFkRel.mutateAsync({
+                  data: {
+                    system_id: systemId,
+                    source_entity_id: entityId,
+                    target_entity_id: newFkEntity,
+                    source_attr_ids: [],
+                    target_attr_ids: [newFkAttr],
+                    rel_type: "1:N",
+                    source_cardinality: "MANDATORY",
+                    target_cardinality: "OPTIONAL",
+                    description: `FK logica coluna ${newName.trim()} alvo`,
+                  },
+                });
+                qc.invalidateQueries({ queryKey: ["getDiagram", systemId] });
+                qc.invalidateQueries({ queryKey: ["getSessionStatus", systemId] });
+              } catch (err) {
+                toast.error("Atributo criado, mas FK falhou", {
+                  description: err instanceof Error ? err.message : String(err),
+                });
+              }
+            }
+            qc.invalidateQueries({ queryKey: ["listAttributes", entityId] });
+            onChanged();
+            setNewName("");
+            setNewFkEntity("");
+            setNewFkAttr("");
+            toast.success(
+              newFkEntity && newFkAttr
+                ? "Atributo + FK adicionados"
+                : "Atributo adicionado",
+            );
+          } catch (err) {
+            toast.error(String(err));
+          }
         }}
-        className="flex flex-wrap gap-2 items-end pt-2"
+        className="space-y-2 pt-2"
       >
-        <div className="flex-1 min-w-[140px]">
-          <label className="text-[10px] uppercase tracking-wider text-muted-foreground block">Nome</label>
-          <Input
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            placeholder="nova_coluna"
-            className="h-8 text-xs"
-          />
+        <div className="flex flex-wrap gap-2 items-end">
+          <div className="flex-1 min-w-[140px]">
+            <label className="text-[10px] uppercase tracking-wider text-muted-foreground block">Nome</label>
+            <Input
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="nova_coluna"
+              className="h-8 text-xs"
+            />
+          </div>
+          <div className="flex-1 min-w-[100px]">
+            <label className="text-[10px] uppercase tracking-wider text-muted-foreground block">Tipo</label>
+            <Input
+              value={newType}
+              onChange={(e) => setNewType(e.target.value)}
+              placeholder="STRING"
+              className="h-8 text-xs"
+            />
+          </div>
+          <label className="flex items-center gap-1 text-xs">
+            <input type="checkbox" checked={newPk} onChange={(e) => setNewPk(e.target.checked)} />
+            PK
+          </label>
+          <Button type="submit" size="sm" disabled={!newName.trim() || createAttr.isPending || createFkRel.isPending}>
+            <Plus className="h-3 w-3" />
+          </Button>
         </div>
-        <div className="flex-1 min-w-[100px]">
-          <label className="text-[10px] uppercase tracking-wider text-muted-foreground block">Tipo</label>
-          <Input
-            value={newType}
-            onChange={(e) => setNewType(e.target.value)}
-            placeholder="STRING"
-            className="h-8 text-xs"
-          />
+        <div className="flex flex-wrap gap-2 items-end pl-3 border-l-2 border-nuclea-primary/30">
+          <div className="flex-1 min-w-[140px]">
+            <label className="text-[10px] uppercase tracking-wider text-muted-foreground block">FK → tabela</label>
+            <select
+              value={newFkEntity}
+              onChange={(e) => { setNewFkEntity(e.target.value); setNewFkAttr(""); }}
+              className="w-full h-8 text-xs rounded border bg-background px-1.5"
+            >
+              <option value="">— sem FK —</option>
+              {candidateEntities
+                .filter((e) => e.entity_id !== entityId)
+                .map((e) => (
+                  <option key={e.entity_id} value={e.entity_id}>
+                    {e.schema_name}.{e.technical_name}
+                  </option>
+                ))}
+            </select>
+          </div>
+          <div className="flex-1 min-w-[100px]">
+            <label className="text-[10px] uppercase tracking-wider text-muted-foreground block">FK → coluna</label>
+            <select
+              value={newFkAttr}
+              onChange={(e) => setNewFkAttr(e.target.value)}
+              disabled={!newFkEntity}
+              className="w-full h-8 text-xs rounded border bg-background px-1.5 disabled:opacity-50"
+            >
+              <option value="">— coluna —</option>
+              {(candidateEntities.find((e) => e.entity_id === newFkEntity)?.attributes ?? []).map((a) => (
+                <option key={a.attribute_id} value={a.attribute_id}>
+                  {a.technical_name}{a.is_primary_key ? " 🔑" : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+          <span className="text-[11px] text-muted-foreground italic flex-1">
+            opcional — vira aresta no DER
+          </span>
         </div>
-        <label className="flex items-center gap-1 text-xs">
-          <input type="checkbox" checked={newPk} onChange={(e) => setNewPk(e.target.checked)} />
-          PK
-        </label>
-        <Button type="submit" size="sm" disabled={!newName.trim() || createAttr.isPending}>
-          <Plus className="h-3 w-3" />
-        </Button>
       </form>
     </div>
   );
