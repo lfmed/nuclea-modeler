@@ -309,13 +309,21 @@ def _apply_session_overlay(
             continue
         payload = add_entry.get("payload") or {}
         attrs_raw = add_entry.get("attributes") or []
-        virtual_id = f"pending-ent-{key[0]}.{key[1]}"
+        # Prioriza o pre_allocated_entity_id (mesmo ID que o frontend já
+        # conhece da resposta de POST /entities) — com isso o React Flow
+        # node usa o mesmo ID que o backend reconhece em _validate_entities
+        # quando o user arrasta uma FK entre 2 entities virtuais.
+        virtual_id = (
+            payload.get("pre_allocated_entity_id")
+            or f"pending-ent-{key[0]}.{key[1]}"
+        )
         virt_attrs: list[DiagramAttribute] = []
         for idx, a in enumerate(attrs_raw):
             virt_attrs.append(
                 DiagramAttribute(
                     attribute_id=(
-                        f"pending-attr-{key[0]}.{key[1]}."
+                        a.get("attribute_id")
+                        or f"pending-attr-{key[0]}.{key[1]}."
                         f"{a.get('technical_name', idx)}"
                     ),
                     technical_name=a.get("technical_name") or "",
