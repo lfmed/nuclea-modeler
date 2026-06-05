@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Núclea Modeler — Guia de Deploy</title>
+<style>
+  :root {
+    --bg: #fafaf7;
+    --bg-card: #ffffff;
+    --bg-elev: #f3eef7;
+    --text: #1a1322;
+    --text-dim: #5a4c6e;
+    --text-soft: #8a7a9e;
+    --primary: #7b2d8e;
+    --primary-soft: #c93dad;
+    --primary-dark: #4a1a5a;
+    --accent: #ffc72c;
+    --success: #16a34a;
+    --warn: #d97706;
+    --danger: #dc2626;
+    --border: #e6dfee;
+    --code-bg: #1a1322;
+    --code-text: #f5f1f9;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+  }
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  /* ─── Hero ──────────────────────────────────────────────── */
+  .hero {
+    background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary) 50%, var(--primary-soft) 100%);
+    color: white;
+    padding: 56px 0 64px;
+    margin-bottom: 40px;
+  }
+  .hero h1 {
+    margin: 0 0 12px;
+    font-size: 40px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+  }
+  .hero .tag {
+    display: inline-block;
+    background: rgba(255,255,255,0.15);
+    backdrop-filter: blur(8px);
+    color: white;
+    padding: 4px 12px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 16px;
+  }
+  .hero p {
+    margin: 0;
+    font-size: 18px;
+    max-width: 720px;
+    opacity: 0.95;
+  }
+  .hero .meta {
+    margin-top: 20px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    font-size: 13px;
+  }
+  .hero .meta span {
+    background: rgba(255,255,255,0.12);
+    padding: 6px 12px;
+    border-radius: 6px;
+    backdrop-filter: blur(4px);
+  }
+
+  /* ─── Layout 2 col ──────────────────────────────────────── */
+  .layout {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    gap: 40px;
+    margin-bottom: 80px;
+  }
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; }
+  }
+
+  /* ─── TOC sticky ────────────────────────────────────────── */
+  .toc {
+    position: sticky;
+    top: 24px;
+    align-self: start;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    font-size: 13px;
+  }
+  .toc strong {
+    color: var(--primary);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 11px;
+    display: block;
+    margin-bottom: 8px;
+  }
+  .toc ol {
+    margin: 0;
+    padding-left: 20px;
+  }
+  .toc li {
+    margin: 6px 0;
+  }
+  .toc a {
+    color: var(--text-dim);
+    text-decoration: none;
+  }
+  .toc a:hover {
+    color: var(--primary);
+  }
+
+  /* ─── Steps ─────────────────────────────────────────────── */
+  .step {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px;
+    margin-bottom: 24px;
+    position: relative;
+  }
+  .step .num {
+    position: absolute;
+    top: -14px;
+    left: 24px;
+    background: var(--primary);
+    color: white;
+    width: 32px;
+    height: 32px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 14px;
+    box-shadow: 0 4px 12px rgba(123,45,142,0.35);
+  }
+  .step h2 {
+    margin: 0 0 12px;
+    color: var(--primary-dark);
+    font-size: 22px;
+  }
+  .step h3 {
+    margin: 18px 0 8px;
+    font-size: 15px;
+    color: var(--text);
+  }
+  .step p { margin: 0 0 12px; }
+  .step ul, .step ol { padding-left: 22px; }
+  .step li { margin: 4px 0; }
+
+  /* ─── Code blocks ───────────────────────────────────────── */
+  .code {
+    background: var(--code-bg);
+    color: var(--code-text);
+    border-radius: 8px;
+    padding: 14px 18px;
+    font-family: "SF Mono", Monaco, Menlo, Consolas, monospace;
+    font-size: 13px;
+    overflow-x: auto;
+    position: relative;
+    margin: 12px 0;
+  }
+  .code pre {
+    margin: 0;
+    white-space: pre;
+  }
+  .code .copy {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: rgba(255,255,255,0.12);
+    color: var(--code-text);
+    border: 1px solid rgba(255,255,255,0.18);
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
+    font-family: inherit;
+  }
+  .code .copy:hover {
+    background: rgba(255,255,255,0.22);
+  }
+  code.inline {
+    background: var(--bg-elev);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: "SF Mono", Monaco, Menlo, Consolas, monospace;
+    font-size: 0.9em;
+    color: var(--primary-dark);
+  }
+
+  /* ─── Tables ────────────────────────────────────────────── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    font-size: 14px;
+  }
+  th {
+    text-align: left;
+    background: var(--bg-elev);
+    color: var(--primary-dark);
+    padding: 10px 14px;
+    font-weight: 700;
+    border-bottom: 2px solid var(--border);
+  }
+  td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  tr:last-child td { border-bottom: none; }
+
+  /* ─── Callouts ──────────────────────────────────────────── */
+  .callout {
+    border-left: 4px solid;
+    padding: 12px 16px;
+    border-radius: 0 8px 8px 0;
+    margin: 16px 0;
+    font-size: 14px;
+  }
+  .callout strong { display: block; margin-bottom: 4px; }
+  .callout.info { border-color: var(--primary); background: var(--bg-elev); }
+  .callout.warn { border-color: var(--warn); background: #fff7ed; color: #7c2d12; }
+  .callout.success { border-color: var(--success); background: #ecfdf5; color: #14532d; }
+  .callout.danger { border-color: var(--danger); background: #fef2f2; color: #7f1d1d; }
+
+  /* ─── Section headers ──────────────────────────────────── */
+  h2.section {
+    color: var(--primary-dark);
+    border-bottom: 2px solid var(--primary);
+    padding-bottom: 8px;
+    margin: 56px 0 24px;
+    font-size: 28px;
+  }
+
+  /* ─── Footer ────────────────────────────────────────────── */
+  footer {
+    background: var(--text);
+    color: white;
+    padding: 32px 0;
+    margin-top: 40px;
+    text-align: center;
+  }
+  footer p {
+    margin: 4px 0;
+    font-size: 13px;
+    opacity: 0.8;
+  }
+  footer a { color: var(--accent); text-decoration: none; }
+
+  /* ─── KBD ────────────────────────────────────────────────── */
+  kbd {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-family: inherit;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="container">
+    <span class="tag">Documentação técnica</span>
+    <h1>Núclea Modeler — Guia de Deploy</h1>
+    <p>Passo a passo para subir o app no seu workspace Databricks. ~15 min para um deploy completo, sem build local.</p>
+    <div class="meta">
+      <span>⚙️ FastAPI + React</span>
+      <span>🐍 Python 3.11+</span>
+      <span>🏗️ Unity Catalog</span>
+      <span>🔐 SSO via Databricks</span>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+<div class="layout">
+
+<!-- ─── TOC ──────────────────────────────────────────────── -->
+<nav class="toc">
+  <strong>Sumário</strong>
+  <ol>
+    <li><a href="#prereq">Pré-requisitos</a></li>
+    <li><a href="#step1">1. Clone do repositório</a></li>
+    <li><a href="#step2">2. Parametrize <code>app.yml</code></a></li>
+    <li><a href="#step3">3. Secret scope (opcional)</a></li>
+    <li><a href="#step4">4. Criar o app</a></li>
+    <li><a href="#step5">5. Permissões no UC</a></li>
+    <li><a href="#step6">6. Deploy</a></li>
+    <li><a href="#step7">7. Acessar</a></li>
+    <li><a href="#troubleshooting">Troubleshooting</a></li>
+    <li><a href="#update">Atualizações</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<!-- ─── PRÉ-REQUISITOS ────────────────────────────────────── -->
+<section id="prereq">
+  <h2 class="section">Pré-requisitos</h2>
+
+  <table>
+    <thead>
+      <tr><th>Recurso</th><th>Mínimo</th><th>Onde obter</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Workspace Databricks</strong></td>
+        <td>Qualquer tier com Unity Catalog ativado</td>
+        <td>Já provisionado</td>
+      </tr>
+      <tr>
+        <td><strong>SQL Warehouse</strong></td>
+        <td>Serverless ou Pro, <code class="inline">2X-Small</code> basta</td>
+        <td>SQL → SQL Warehouses → <em>Create</em></td>
+      </tr>
+      <tr>
+        <td><strong>Unity Catalog</strong></td>
+        <td>1 catalog + USAGE pro SP do app</td>
+        <td>Catalog Explorer</td>
+      </tr>
+      <tr>
+        <td><strong>Permissões do deployer</strong></td>
+        <td>Workspace Admin <em>ou</em> CAN_MANAGE em apps + CREATE SCHEMA no catalog</td>
+        <td>Acordar com admin</td>
+      </tr>
+      <tr>
+        <td><strong>Databricks CLI</strong></td>
+        <td>≥ 0.250.0 autenticado</td>
+        <td><code class="inline">pip install databricks-cli</code></td>
+      </tr>
+      <tr>
+        <td><strong>Lakebase Postgres</strong> <span style="color:var(--text-soft)">(opcional)</span></td>
+        <td>Apenas se for usar engenharia reversa contra Lakebase</td>
+        <td>Compute → Lakebase → <em>Create</em></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="callout info">
+    <strong>💡 Não precisa Node/Python local.</strong>
+    O build da UI (Vite) e a instalação de deps Python (uv) rolam dentro do container do Databricks Apps automaticamente.
+  </div>
+</section>
+
+
+<!-- ─── STEP 1 ────────────────────────────────────────────── -->
+<section class="step" id="step1">
+  <span class="num">1</span>
+  <h2>Clone do repositório</h2>
+  <p>O código-fonte é versionado no Git. Faça clone num diretório local:</p>
+  <div class="code">
+    <button class="copy" onclick="copyCode(this)">Copiar</button>
+    <pre>git clone https://github.com/lfmed/nuclea-modeler.git
+cd nuclea-modeler</pre>
+  </div>
+  <div class="callout info">
+    <strong>📦 Se você não tiver acesso público ao repositório</strong>
+    A Núclea irá compartilhar com você via convite no GitHub ou ZIP do release.
+  </div>
+</section>
+
+
+<!-- ─── STEP 2 ────────────────────────────────────────────── -->
+<section class="step" id="step2">
+  <span class="num">2</span>
+  <h2>Parametrize <code class="inline">app.yml</code></h2>
+  <p>O arquivo <code class="inline">app.yml.example</code> é o template. Copie e edite:</p>
+  <div class="code">
+    <button class="copy" onclick="copyCode(this)">Copiar</button>
+    <pre>cp app.yml.example app.yml</pre>
+  </div>
+
+  <h3>Placeholders para substituir</h3>
+  <p>Procure por <code class="inline">[ALTERAR]</code> no arquivo:</p>
+  <table>
+    <thead>
+      <tr><th>Placeholder</th><th>O que é</th><th>Onde achar</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code class="inline">&lt;WAREHOUSE_ID&gt;</code></td>
+        <td>ID do SQL Warehouse</td>
+        <td>Final da URL ao abrir o warehouse:<br><code class="inline">/sql/warehouses/&lt;ID&gt;</code></td>
+      </tr>
+      <tr>
+        <td><code class="inline">&lt;CATALOG_NAME&gt;</code></td>
+        <td>Unity Catalog onde o app guarda estado</td>
+        <td>Catalog Explorer</td>
+      </tr>
+      <tr>
+        <td><code class="inline">&lt;LAKEBASE_INSTANCE_NAME&gt;</code></td>
+        <td><em>(opcional)</em> Nome da instance Lakebase</td>
+        <td>Compute → Lakebase</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="callout warn">
+    <strong>⚠️ Se você NÃO vai usar Lakebase</strong>
+    Remova ou comente todo o bloco <code class="inline">nuclea-lakebase</code> em <code class="inline">resources:</code>. O resto do app funciona normalmente.
+  </div>
+
+  <h3>Schema</h3>
+  <p>O <code class="inline">NUCLEA_SCHEMA</code> (default: <code class="inline">nuclea_modeler</code>) é criado automaticamente na primeira execução pelas migrations — você não precisa criar manualmente.</p>
+</section>
+
+
+<!-- ─── STEP 3 ────────────────────────────────────────────── -->
+<section class="step" id="step3">
+  <span class="num">3</span>
+  <h2>Crie o secret scope <span style="color:var(--text-soft);font-size:14px;font-weight:normal">(opcional)</span></h2>
+  <p>Necessário apenas se for cadastrar conexões ODBC/REST a sistemas legados que exigem credenciais.</p>
+  <div class="code">
+    <button class="copy" onclick="copyCode(this)">Copiar</button>
+    <pre>databricks secrets create-scope nuclea-modeler --profile &lt;SEU_PROFILE&gt;</pre>
+  </div>
+  <p>Se mudou <code class="inline">NUCLEA_SECRETS_SCOPE</code> no <code class="inline">app.yml</code>, use o mesmo nome aqui.</p>
+</section>
+
+
+<!-- ─── STEP 4 ────────────────────────────────────────────── -->
+<section class="step" id="step4">
+  <span class="num">4</span>
+  <h2>Crie o app no Databricks</h2>
+  <p>Provisiona o service principal do app + assinatura computacional:</p>
+  <div class="code">
+    <button class="copy" onclick="copyCode(this)">Copiar</button>
+    <pre>databricks apps create nuclea-modeler --profile &lt;SEU_PROFILE&gt;</pre>
+  </div>
+  <div class="callout success">
+    <strong>✅ Anote o Application ID do SP retornado</strong>
+    Você vai precisar dele no próximo passo pra dar permissões no catalog.
+  </div>
+</section>
+
+
+<!-- ─── STEP 5 ────────────────────────────────────────────── -->
+<section class="step" id="step5">
+  <span class="num">5</span>
+  <h2>Permissões no Unity Catalog</h2>
+  <p>O service principal do app precisa de pelo menos:</p>
+  <div class="code">
+    <button class="copy" onclick="copyCode(this)">Copiar</button>
+    <pre>-- Substitua &lt;CATALOG_NAME&gt; e &lt;SP_APPLICATION_ID&gt;
+
+GRANT USAGE ON CATALOG &lt;CATALOG_NAME&gt; TO `&lt;SP_APPLICATION_ID&gt;`;
+GRANT CREATE SCHEMA ON CATALOG &lt;CATALOG_NAME&gt; TO `&lt;SP_APPLICATION_ID&gt;`;
+
+-- Após primeira run, o schema existe — concede tudo dentro dele:
+GRANT ALL PRIVILEGES
+  ON SCHEMA &lt;CATALOG_NAME&gt;.nuclea_modeler
+  TO `&lt;SP_APPLICATION_ID&gt;`;</pre>
+  </div>
+  <div class="callout info">
+    <strong>💡 Execute no SQL Editor</strong>
+    Use o mesmo SQL Warehouse declarado no <code class="inline">app.yml</code>.
+  </div>
+</section>
+
+
+<!-- ─── STEP 6 ────────────────────────────────────────────── -->
+<section class="step" id="step6">
+  <span class="num">6</span>
+  <h2>Deploy do código</h2>
+  <p>Sincroniza o repositório pro workspace e dispara o build:</p>
+
+  <h3>6.1 — Sincronizar</h3>
+  <div class="code">
+    <button class="copy" onclick="copyCode(this)">Copiar</button>
+    <pre>databricks sync . \
+  /Workspace/Users/&lt;seu-usuario&gt;/nuclea-modeler \
+  --profile &lt;SEU_PROFILE&gt; --full</pre>
+  </div>
+
+  <h3>6.2 — Deploy</h3>
+  <div class="code">
+    <button class="copy" onclick="copyCode(this)">Copiar</button>
+    <pre>databricks apps deploy nuclea-modeler \
+  --source-code-path /Workspace/Users/&lt;seu-usuario&gt;/nuclea-modeler \
+  --profile &lt;SEU_PROFILE&gt;</pre>
+  </div>
+
+  <p>Demora ~1 min. O pipeline interno faz: instalar deps Python (uv), <code class="inline">npm install</code>, <code class="inline">vite build</code>, rodar migrations SQL, subir uvicorn.</p>
+
+  <h3>6.3 — Acompanhar os logs</h3>
+  <div class="code">
+    <button class="copy" onclick="copyCode(this)">Copiar</button>
+    <pre>databricks apps logs nuclea-modeler --profile &lt;SEU_PROFILE&gt;</pre>
+  </div>
+  <div class="callout success">
+    <strong>✅ Procure por esta linha:</strong><br>
+    <code class="inline" style="font-size:12px">[migrations] summary: {'applied': N, 'skipped': 0, 'drifted': 0, 'failed': 0}</code><br>
+    Se <code class="inline">applied = N</code> (≥ 1) e <code class="inline">failed = 0</code>, está tudo certo.
+  </div>
+</section>
+
+
+<!-- ─── STEP 7 ────────────────────────────────────────────── -->
+<section class="step" id="step7">
+  <span class="num">7</span>
+  <h2>Acessar o app</h2>
+  <p>Pegue a URL pelo CLI:</p>
+  <div class="code">
+    <button class="copy" onclick="copyCode(this)">Copiar</button>
+    <pre>databricks apps get nuclea-modeler --profile &lt;SEU_PROFILE&gt; --output json | grep '"url"'</pre>
+  </div>
+
+  <p>O endereço fica assim:</p>
+  <div class="code"><pre>https://nuclea-modeler-&lt;WORKSPACE_ID&gt;.cloud.databricksapps.com</pre></div>
+
+  <div class="callout warn">
+    <strong>🔐 SSO obrigatório</strong>
+    Todos os endpoints exigem login via SSO do workspace — incluindo <code class="inline">/livez</code>, <code class="inline">/readyz</code>. Para monitoramento externo, vide <code class="inline">docs/operations/deploy-runbook.md</code>.
+  </div>
+
+  <h3>Primeiro usuário</h3>
+  <p>O primeiro acesso pode precisar receber a role <code class="inline">ADMIN</code> manualmente. Faça via SQL:</p>
+  <div class="code">
+    <button class="copy" onclick="copyCode(this)">Copiar</button>
+    <pre>INSERT INTO &lt;CATALOG&gt;.&lt;SCHEMA&gt;.user_roles
+  (user_role_id, user_email, role_name, granted_at, granted_by, is_active)
+VALUES (uuid(), 'seu-email@empresa.com', 'ADMIN', now(), 'system', true);</pre>
+  </div>
+</section>
+
+
+<!-- ─── BONUS ─────────────────────────────────────────────── -->
+<section class="step">
+  <span class="num">★</span>
+  <h2>Bonus — Genie + Dashboard externos</h2>
+  <p>Depois do app rodando, recursos opcionais que enriquecem a análise:</p>
+  <ul>
+    <li><strong>Lakeview Dashboard</strong>: KPIs em tempo real sobre os modelos. Spec em <code class="inline">databricks/dashboards/nuclea_modeler_dashboard.json</code>. Substitua <code class="inline">stable_classic_pg4xe1_catalog.data_catalog_app</code> pelo seu <code class="inline">&lt;CATALOG&gt;.&lt;SCHEMA&gt;</code> antes de subir via <code class="inline">databricks lakeview create</code>.</li>
+    <li><strong>Genie Space</strong>: perguntas em linguagem natural sobre o catálogo. Setup em <code class="inline">databricks/dashboards/GENIE_SETUP.md</code>.</li>
+  </ul>
+</section>
+
+
+<!-- ─── TROUBLESHOOTING ──────────────────────────────────── -->
+<section id="troubleshooting">
+  <h2 class="section">🔧 Troubleshooting</h2>
+  <table>
+    <thead>
+      <tr><th>Sintoma</th><th>Causa</th><th>Fix</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code class="inline">[migrations] FAILED ... SCHEMA_NOT_FOUND</code></td>
+        <td>SP do app sem <code class="inline">CREATE SCHEMA</code> no catalog</td>
+        <td>Voltar ao <a href="#step5">passo 5</a></td>
+      </tr>
+      <tr>
+        <td><code class="inline">Provided OAuth token does not have required scopes: postgres</code></td>
+        <td>Resource <code class="inline">nuclea-lakebase</code> não declarado no <code class="inline">app.yml</code></td>
+        <td>Adicione o bloco em <code class="inline">resources:</code> e re-deploy</td>
+      </tr>
+      <tr>
+        <td><code class="inline">[migrations] DRIFT detected</code></td>
+        <td>Mesmo arquivo SQL com hash diferente do registrado</td>
+        <td>Normal após upgrade. App continua rodando — revise a migration manualmente</td>
+      </tr>
+      <tr>
+        <td>DER ou Dashboard vazio depois do deploy</td>
+        <td>Schema criado mas seeds não rodaram</td>
+        <td><code class="inline">databricks apps logs</code> e veja erros nas migrations 003/004/009</td>
+      </tr>
+      <tr>
+        <td>401 em todos os endpoints</td>
+        <td>SSO força auth e cookie do browser não está sincronizado</td>
+        <td>Abrir no mesmo workspace logado e tentar de novo</td>
+      </tr>
+      <tr>
+        <td><code class="inline">DELTA_CONCURRENT_APPEND</code> em retry</td>
+        <td>Dois workers do uvicorn aplicando migration ao mesmo tempo</td>
+        <td>Já mitigado — migrations rodam 1x antes do uvicorn via <code class="inline">command:</code></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+
+<!-- ─── UPDATES ──────────────────────────────────────────── -->
+<section id="update">
+  <h2 class="section">🔄 Atualizações</h2>
+  <p>Quando a Núclea publicar uma nova versão:</p>
+  <div class="code">
+    <button class="copy" onclick="copyCode(this)">Copiar</button>
+    <pre>git pull origin main
+
+databricks sync . \
+  /Workspace/Users/&lt;seu-usuario&gt;/nuclea-modeler \
+  --profile &lt;SEU_PROFILE&gt;
+
+databricks apps deploy nuclea-modeler \
+  --source-code-path /Workspace/Users/&lt;seu-usuario&gt;/nuclea-modeler \
+  --profile &lt;SEU_PROFILE&gt;</pre>
+  </div>
+  <div class="callout info">
+    <strong>🧬 Migrations automáticas</strong>
+    Novas migrations são aplicadas no startup (rastreadas por checksum em <code class="inline">schema_migrations</code>). Não duplica em re-deploys.
+  </div>
+
+  <h2 class="section" style="margin-top:48px">💾 Estado armazenado</h2>
+  <p>Todo o estado vai pro Unity Catalog em <code class="inline">&lt;CATALOG&gt;.&lt;SCHEMA&gt;</code> — 18+ tabelas Delta:</p>
+  <ul>
+    <li><code class="inline">systems</code>, <code class="inline">entities</code>, <code class="inline">attributes</code>, <code class="inline">relationships</code></li>
+    <li><code class="inline">reconciliation_tickets</code>, <code class="inline">extractions</code></li>
+    <li><code class="inline">audit_log</code> (trilha imutável)</li>
+    <li><code class="inline">glossary_terms</code>, <code class="inline">flags</code>, <code class="inline">lakebase_sandboxes</code></li>
+    <li>e mais…</li>
+  </ul>
+  <div class="callout success">
+    <strong>🛡️ Nenhum banco externo</strong>
+    Não há Postgres, Redis ou outro store. Backup = <code class="inline">DEEP CLONE</code> ou <code class="inline">CREATE BACKUP</code> do schema.
+  </div>
+</section>
+
+</main>
+</div>
+</div>
+
+<footer>
+  <div class="container">
+    <p><strong>Núclea Modeler</strong> — Documentação de deploy</p>
+    <p>Dúvidas? Consulte <code style="color:var(--accent)">DEPLOY.md</code> no repositório ou <code style="color:var(--accent)">docs/operations/deploy-runbook.md</code>.</p>
+  </div>
+</footer>
+
+<script>
+function copyCode(btn) {
+  const pre = btn.parentElement.querySelector('pre');
+  const text = pre.textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    const original = btn.textContent;
+    btn.textContent = '✓ Copiado';
+    setTimeout(() => { btn.textContent = original; }, 1500);
+  });
+}
+</script>
+
+</body>
+</html>
