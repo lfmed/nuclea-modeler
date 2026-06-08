@@ -268,3 +268,110 @@ def test_no_pk_when_no_attr_is_pk(cliente_entity, default_opts):
     default_opts.dialect = "POSTGRES"
     ddl = GENERATORS["POSTGRES"](cliente_entity, attrs, default_opts)
     assert "PRIMARY KEY" not in ddl
+
+
+# ─── Indexes + partitioning (F4) ─────────────────────────────────────────────
+
+
+def _entity_with_index(base: dict, ix: dict | None = None, part: dict | None = None) -> dict:
+    return {
+        **base,
+        "_indexes": [ix] if ix else [],
+        "_partitioning": part,
+    }
+
+
+def test_postgres_emits_create_index_with_direction(cliente_entity, cliente_attrs, default_opts):
+    ix = {
+        "index_name": "ix_email_data",
+        "index_type": "BTREE",
+        "columns": [{"name": "email", "direction": "ASC"}, {"name": "criado_em", "direction": "DESC"}],
+        "include_columns": [],
+        "partial_where": None,
+        "is_unique": False,
+    }
+    default_opts.dialect = "POSTGRES"
+    ddl = GENERATORS["POSTGRES"](_entity_with_index(cliente_entity, ix), cliente_attrs, default_opts)
+    assert "CREATE INDEX ix_email_data" in ddl
+    assert "(email, criado_em DESC)" in ddl
+
+
+def test_postgres_emits_gin_with_partial_where(cliente_entity, cliente_attrs, default_opts):
+    ix = {
+        "index_name": "ix_doc",
+        "index_type": "GIN",
+        "columns": [{"name": "documento", "direction": "ASC"}],
+        "include_columns": [],
+        "partial_where": "ativo = TRUE",
+        "is_unique": False,
+    }
+    default_opts.dialect = "POSTGRES"
+    ddl = GENERATORS["POSTGRES"](_entity_with_index(cliente_entity, ix), cliente_attrs, default_opts)
+    assert "USING GIN (documento)" in ddl
+    assert "WHERE ativo = TRUE" in ddl
+
+
+def test_postgres_partition_by_range(cliente_entity, cliente_attrs, default_opts):
+    part = {"strategy": "RANGE", "columns": ["criado_em"], "num_partitions": None, "bounds": None}
+    default_opts.dialect = "POSTGRES"
+    ddl = GENERATORS["POSTGRES"](_entity_with_index(cliente_entity, None, part), cliente_attrs, default_opts)
+    assert "PARTITION BY RANGE (criado_em)" in ddl
+
+
+def test_tsql_emits_clustered_with_include(cliente_entity, cliente_attrs, default_opts):
+    ix = {
+        "index_name": "ix_pk_cluster",
+        "index_type": "CLUSTERED",
+        "columns": [{"name": "email", "direction": "ASC"}],
+        "include_columns": ["nome", "criado_em"],
+        "partial_where": None,
+        "is_unique": True,
+    }
+    default_opts.dialect = "TSQL"
+    ddl = GENERATORS["TSQL"](_entity_with_index(cliente_entity, ix), cliente_attrs, default_opts)
+    assert "UNIQUE CLUSTERED INDEX ix_pk_cluster" in ddl
+    assert "INCLUDE (nome, criado_em)" in ddl
+
+
+def test_sparksql_liquid_emits_alter_cluster_by(cliente_entity, cliente_attrs, default_opts):
+    part = {"strategy": "LIQUID", "columns": ["email", "criado_em"], "num_partitions": None, "bounds": None}
+    default_opts.dialect = "SPARKSQL"
+    ddl = GENERATORS["SPARKSQL"](_entity_with_index(cliente_entity, None, part), cliente_attrs, default_opts)
+    assert "USING DELTA" in ddl
+    assert "ALTER TABLE" in ddl
+    assert "CLUSTER BY (email, criado_em)" in ddl
+
+
+def test_sparksql_zorder_index_emits_optimize(cliente_entity, cliente_attrs, default_opts):
+    ix = {
+        "index_name": "z_idx",
+        "index_type": "Z-ORDER",
+        "columns": [{"name": "email", "direction": "ASC"}, {"name": "criado_em", "direction": "ASC"}],
+        "include_columns": [],
+        "partial_where": None,
+        "is_unique": False,
+    }
+    default_opts.dialect = "SPARKSQL"
+    ddl = GENERATORS["SPARKSQL"](_entity_with_index(cliente_entity, ix), cliente_attrs, default_opts)
+    assert "OPTIMIZE" in ddl and "ZORDER BY (email, criado_em)" in ddl
+
+
+def test_oracle_emits_bitmap_index(cliente_entity, cliente_attrs, default_opts):
+    ix = {
+        "index_name": "bm_status",
+        "index_type": "BITMAP",
+        "columns": [{"name": "status", "direction": "ASC"}],
+        "include_columns": [],
+        "partial_where": None,
+        "is_unique": False,
+    }
+    default_opts.dialect = "PLSQL"
+    ddl = GENERATORS["PLSQL"](_entity_with_index(cliente_entity, ix), cliente_attrs, default_opts)
+    assert "CREATE BITMAP INDEX bm_status" in ddl
+
+
+def test_mysql_partition_by_hash(cliente_entity, cliente_attrs, default_opts):
+    part = {"strategy": "HASH", "columns": ["id"], "num_partitions": 8, "bounds": None}
+    default_opts.dialect = "MYSQL"
+    ddl = GENERATORS["MYSQL"](_entity_with_index(cliente_entity, None, part), cliente_attrs, default_opts)
+    assert "PARTITION BY HASH (id) PARTITIONS 8" in ddl

@@ -1,6 +1,7 @@
 """Business service for DDL export — Módulo 10."""
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from ..core import delta
@@ -21,6 +22,15 @@ _ATTR_COLS = [
     "is_primary_key", "description_md", "native_comment",
 ]
 
+_IDX_COLS = [
+    "index_id", "entity_id", "index_name", "index_type", "columns_json",
+    "include_columns", "partial_where", "is_unique",
+]
+
+_PART_COLS = [
+    "entity_id", "strategy", "columns_json", "num_partitions", "bounds_json",
+]
+
 
 def _entity_row_to_dict(r: list[Any]) -> dict[str, Any]:
     return dict(zip(_ENT_COLS, r))
@@ -31,6 +41,50 @@ def _attr_row_to_dict(r: list[Any]) -> dict[str, Any]:
     if d.get("is_nullable") is not None:
         d["is_nullable"] = bool(d["is_nullable"])
     d["is_primary_key"] = bool(d.get("is_primary_key"))
+    return d
+
+
+def _idx_row_to_dict(r: list[Any]) -> dict[str, Any]:
+    d = dict(zip(_IDX_COLS, r))
+    cols_raw = d.pop("columns_json", None)
+    cols: list[dict[str, str]] = []
+    if cols_raw:
+        try:
+            parsed = json.loads(cols_raw)
+            if isinstance(parsed, list):
+                cols = [
+                    {"name": str(c.get("name", "")), "direction": c.get("direction", "ASC") or "ASC"}
+                    for c in parsed
+                    if isinstance(c, dict) and c.get("name")
+                ]
+        except (json.JSONDecodeError, TypeError):
+            cols = []
+    d["columns"] = cols
+    d["include_columns"] = list(d.get("include_columns") or [])
+    d["is_unique"] = bool(d.get("is_unique"))
+    return d
+
+
+def _part_row_to_dict(r: list[Any]) -> dict[str, Any]:
+    d = dict(zip(_PART_COLS, r))
+    cols_raw = d.pop("columns_json", None)
+    cols: list[str] = []
+    if cols_raw:
+        try:
+            parsed = json.loads(cols_raw)
+            if isinstance(parsed, list):
+                cols = [str(c) for c in parsed if c]
+        except (json.JSONDecodeError, TypeError):
+            cols = []
+    d["columns"] = cols
+    bounds_raw = d.pop("bounds_json", None)
+    if bounds_raw:
+        try:
+            d["bounds"] = json.loads(bounds_raw)
+        except (json.JSONDecodeError, TypeError):
+            d["bounds"] = None
+    else:
+        d["bounds"] = None
     return d
 
 
@@ -99,6 +153,57 @@ def fetch_entities_with_attrs(
     return [(ent, by_entity.get(ent["entity_id"], [])) for ent in entities]
 
 
+def fetch_indexes_and_partitioning(
+    sql: Sql, entity_ids: list[str],
+) -> tuple[dict[str, list[dict[str, Any]]], dict[str, dict[str, Any]]]:
+    """Fetch índices + particionamento pra um conjunto de entities.
+
+    Retorna ``(indexes_by_entity, partitioning_by_entity)``.
+    """
+    if not entity_ids:
+        return {}, {}
+    s = get_settings()
+    placeholders, params = [], []
+    for idx, eid in enumerate(entity_ids):
+        name = f"ieid_{idx}"
+        placeholders.append(f":{name}")
+        params.append(delta.param(name, eid))
+    idx_rows = delta.fetch_all_params(
+        sql,
+        f"""
+        SELECT {", ".join(_IDX_COLS)}
+        FROM {s.fq_table('entity_indexes')}
+        WHERE entity_id IN ({", ".join(placeholders)})
+        ORDER BY entity_id, index_name
+        """,
+        params,
+    )
+    indexes_by_entity: dict[str, list[dict[str, Any]]] = {}
+    for r in idx_rows:
+        d = _idx_row_to_dict(r)
+        indexes_by_entity.setdefault(d["entity_id"], []).append(d)
+
+    part_placeholders, part_params = [], []
+    for idx, eid in enumerate(entity_ids):
+        name = f"peid_{idx}"
+        part_placeholders.append(f":{name}")
+        part_params.append(delta.param(name, eid))
+    part_rows = delta.fetch_all_params(
+        sql,
+        f"""
+        SELECT {", ".join(_PART_COLS)}
+        FROM {s.fq_table('entity_partitioning')}
+        WHERE entity_id IN ({", ".join(part_placeholders)})
+        """,
+        part_params,
+    )
+    partitioning_by_entity: dict[str, dict[str, Any]] = {}
+    for r in part_rows:
+        d = _part_row_to_dict(r)
+        partitioning_by_entity[d["entity_id"]] = d
+    return indexes_by_entity, partitioning_by_entity
+
+
 def generate_export(
     sql: Sql,
     payload: DDLExportRequest,
@@ -106,10 +211,18 @@ def generate_export(
 ) -> DDLExportResult:
     """Generate DDL for all entities matching the request payload."""
     pairs = fetch_entities_with_attrs(sql, payload.system_id, payload.entity_ids)
+    eids = [ent["entity_id"] for ent, _ in pairs]
+    indexes_by_eid, part_by_eid = fetch_indexes_and_partitioning(sql, eids)
     generator = GENERATORS.get(payload.dialect)
     files: list[DDLObjectResult] = []
 
     for entity, attrs in pairs:
+        # Anexa índices + partição ao dict da entity pros generators usarem.
+        entity = {
+            **entity,
+            "_indexes": indexes_by_eid.get(entity["entity_id"], []),
+            "_partitioning": part_by_eid.get(entity["entity_id"]),
+        }
         schema = entity.get("schema_name") or ""
         name = entity.get("technical_name") or ""
         object_name = f"{schema}.{name}" if schema else name

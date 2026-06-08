@@ -239,6 +239,153 @@ def _drop_stmt(table_ref: str, opts: DDLExportRequest, kind: str = "TABLE") -> s
     return f"DROP {kind} IF EXISTS {table_ref};\n"
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Index + partition helpers (compartilhados entre dialetos)
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def _idx_cols_sql(idx: dict[str, Any]) -> str:
+    """Renderiza ``col1, col2 DESC`` a partir de columns: [{name, direction}]."""
+    parts: list[str] = []
+    for c in idx.get("columns") or []:
+        nm = c.get("name") if isinstance(c, dict) else None
+        if not nm:
+            continue
+        direction = (c.get("direction") or "ASC").upper()
+        parts.append(f"{nm} DESC" if direction == "DESC" else nm)
+    return ", ".join(parts)
+
+
+def _render_indexes_postgres(table: str, indexes: list[dict[str, Any]]) -> list[str]:
+    """CREATE INDEX no estilo PostgreSQL (e ANSI/MySQL como fallback)."""
+    out: list[str] = []
+    for ix in indexes:
+        name = ix.get("index_name")
+        cols = _idx_cols_sql(ix)
+        if not name or not cols:
+            continue
+        ix_type = (ix.get("index_type") or "BTREE").upper()
+        unique = "UNIQUE " if ix.get("is_unique") or ix_type == "UNIQUE" else ""
+        using = ""
+        if ix_type in ("HASH", "GIN", "BRIN", "GIST"):
+            using = f" USING {ix_type}"
+        elif ix_type in ("BTREE", "UNIQUE"):
+            pass
+        stmt = f"CREATE {unique}INDEX {name} ON {table}{using} ({cols})"
+        include = ix.get("include_columns") or []
+        if include:
+            stmt += f" INCLUDE ({', '.join(include)})"
+        partial = ix.get("partial_where")
+        if partial:
+            stmt += f" WHERE {partial}"
+        out.append(stmt + ";")
+    return out
+
+
+def _render_indexes_mysql(table: str, indexes: list[dict[str, Any]]) -> list[str]:
+    out: list[str] = []
+    for ix in indexes:
+        name = ix.get("index_name")
+        cols = _idx_cols_sql(ix)
+        if not name or not cols:
+            continue
+        ix_type = (ix.get("index_type") or "BTREE").upper()
+        unique = "UNIQUE " if ix.get("is_unique") or ix_type == "UNIQUE" else ""
+        using = f" USING {ix_type}" if ix_type in ("BTREE", "HASH") else ""
+        out.append(f"CREATE {unique}INDEX {name} ON {table} ({cols}){using};")
+    return out
+
+
+def _render_indexes_tsql(table: str, indexes: list[dict[str, Any]]) -> list[str]:
+    out: list[str] = []
+    for ix in indexes:
+        name = ix.get("index_name")
+        cols = _idx_cols_sql(ix)
+        if not name or not cols:
+            continue
+        ix_type = (ix.get("index_type") or "NONCLUSTERED").upper()
+        is_unique = ix.get("is_unique") or ix_type == "UNIQUE"
+        unique = "UNIQUE " if is_unique else ""
+        kind = "CLUSTERED" if ix_type == "CLUSTERED" else "NONCLUSTERED"
+        stmt = f"CREATE {unique}{kind} INDEX {name} ON {table} ({cols})"
+        include = ix.get("include_columns") or []
+        if include:
+            stmt += f" INCLUDE ({', '.join(include)})"
+        partial = ix.get("partial_where")
+        if partial:
+            stmt += f" WHERE {partial}"
+        out.append(stmt + ";")
+    return out
+
+
+def _render_indexes_oracle(table: str, indexes: list[dict[str, Any]]) -> list[str]:
+    out: list[str] = []
+    for ix in indexes:
+        name = ix.get("index_name")
+        cols = _idx_cols_sql(ix)
+        if not name or not cols:
+            continue
+        ix_type = (ix.get("index_type") or "BTREE").upper()
+        is_unique = ix.get("is_unique") or ix_type == "UNIQUE"
+        unique = "UNIQUE " if is_unique else ""
+        bitmap = "BITMAP " if ix_type == "BITMAP" else ""
+        out.append(f"CREATE {unique}{bitmap}INDEX {name} ON {table} ({cols});")
+    return out
+
+
+def _partition_clause_pg(part: dict[str, Any] | None) -> str:
+    """Cláusula ``PARTITION BY {STRATEGY} (cols)`` pra Postgres declarativo."""
+    if not part or part.get("strategy") in (None, "NONE"):
+        return ""
+    strategy = (part.get("strategy") or "").upper()
+    if strategy not in ("RANGE", "LIST", "HASH"):
+        return ""
+    cols = ", ".join(part.get("columns") or [])
+    if not cols:
+        return ""
+    return f"\nPARTITION BY {strategy} ({cols})"
+
+
+def _partition_clause_oracle(part: dict[str, Any] | None) -> str:
+    if not part or part.get("strategy") in (None, "NONE"):
+        return ""
+    strategy = (part.get("strategy") or "").upper()
+    cols = ", ".join(part.get("columns") or [])
+    if not cols:
+        return ""
+    if strategy == "HASH":
+        n = part.get("num_partitions") or 4
+        return f"\nPARTITION BY HASH ({cols}) PARTITIONS {n}"
+    if strategy in ("RANGE", "LIST"):
+        return f"\nPARTITION BY {strategy} ({cols})"
+    return ""
+
+
+def _spark_partition_clause(part: dict[str, Any] | None) -> str:
+    """Spark/Delta: PARTITIONED BY (col) ou cluster command (legacy)."""
+    if not part or part.get("strategy") in (None, "NONE"):
+        return ""
+    strategy = (part.get("strategy") or "").upper()
+    cols = part.get("columns") or []
+    if not cols:
+        return ""
+    if strategy == "HASH":
+        return f"\nPARTITIONED BY ({', '.join(cols)})"
+    # LIQUID é setado via ALTER TABLE ... CLUSTER BY após criação
+    return ""
+
+
+def _spark_liquid_cluster(table: str, part: dict[str, Any] | None) -> str:
+    """LIQUID CLUSTERING não é parte do CREATE TABLE em Delta — emitir
+    ALTER TABLE ... CLUSTER BY ... como statement separado."""
+    if not part or (part.get("strategy") or "").upper() != "LIQUID":
+        return ""
+    cols = part.get("columns") or []
+    if not cols:
+        return ""
+    return f"ALTER TABLE {table} CLUSTER BY ({', '.join(cols)});"
+
+
 def gen_ansi(entity: dict[str, Any], attrs: list[dict[str, Any]], opts: DDLExportRequest) -> str:
     """ANSI SQL — minimal CREATE TABLE + inline PRIMARY KEY constraint.
 
@@ -268,6 +415,8 @@ def gen_ansi(entity: dict[str, Any], attrs: list[dict[str, Any]], opts: DDLExpor
             if c:
                 out.append(f"-- {table}.{a['technical_name']}: {c.splitlines()[0]}")
 
+    # ANSI/SQL não tem partição portável; emite só índices.
+    out.extend(_render_indexes_postgres(table, entity.get("_indexes") or []))
     return "\n".join(out)
 
 
@@ -296,7 +445,19 @@ def gen_tsql(entity: dict[str, Any], attrs: list[dict[str, Any]], opts: DDLExpor
     if pk:
         body.append(f"  PRIMARY KEY ({', '.join(pk)})")
     out.append(",\n".join(body))
-    out.append(");")
+    # SQL Server: partition function/scheme exigem objetos extras — emite
+    # comentário pra steward configurar manualmente. Indexes via CREATE.
+    part = entity.get("_partitioning")
+    if part and (part.get("strategy") or "NONE") != "NONE":
+        cols_part = ", ".join(part.get("columns") or [])
+        out.append(");")
+        out.append(
+            f"-- Particionamento {part['strategy']} sobre ({cols_part}) — "
+            f"requer PARTITION FUNCTION + SCHEME (criar manualmente)."
+        )
+    else:
+        out.append(");")
+    out.extend(_render_indexes_tsql(table, entity.get("_indexes") or []))
     return "\n".join(out)
 
 
@@ -321,7 +482,8 @@ def gen_plsql(entity: dict[str, Any], attrs: list[dict[str, Any]], opts: DDLExpo
     if pk:
         body.append(f"  PRIMARY KEY ({', '.join(pk)})")
     out.append(",\n".join(body))
-    out.append(");")
+    part_clause = _partition_clause_oracle(entity.get("_partitioning"))
+    out.append(f"){part_clause};")
 
     if opts.include_comments:
         tcomment = _entity_comment(entity)
@@ -334,6 +496,7 @@ def gen_plsql(entity: dict[str, Any], attrs: list[dict[str, Any]], opts: DDLExpo
                     f"COMMENT ON COLUMN {table}.{a['technical_name']} IS '{_esc(c)}';"
                 )
 
+    out.extend(_render_indexes_oracle(table, entity.get("_indexes") or []))
     return "\n".join(out)
 
 
@@ -348,7 +511,8 @@ def gen_postgres(entity: dict[str, Any], attrs: list[dict[str, Any]], opts: DDLE
     if pk:
         body.append(f"  PRIMARY KEY ({', '.join(pk)})")
     out.append(",\n".join(body))
-    out.append(");")
+    part_clause = _partition_clause_pg(entity.get("_partitioning"))
+    out.append(f"){part_clause};")
 
     if opts.include_comments:
         tcomment = _entity_comment(entity)
@@ -361,6 +525,7 @@ def gen_postgres(entity: dict[str, Any], attrs: list[dict[str, Any]], opts: DDLE
                     f"COMMENT ON COLUMN {table}.{a['technical_name']} IS '{_esc(c)}';"
                 )
 
+    out.extend(_render_indexes_postgres(table, entity.get("_indexes") or []))
     return "\n".join(out)
 
 
@@ -382,7 +547,19 @@ def gen_mysql(entity: dict[str, Any], attrs: list[dict[str, Any]], opts: DDLExpo
         tcomment = _entity_comment(entity)
         if tcomment:
             close_line += f" COMMENT='{_esc(tcomment)}'"
+    # MySQL: PARTITION BY inline
+    part = entity.get("_partitioning")
+    if part and (part.get("strategy") or "NONE") in ("RANGE", "LIST", "HASH"):
+        strategy = part["strategy"]
+        cols_part = ", ".join(part.get("columns") or [])
+        if cols_part:
+            if strategy == "HASH":
+                n = part.get("num_partitions") or 4
+                close_line += f"\nPARTITION BY HASH ({cols_part}) PARTITIONS {n}"
+            else:
+                close_line += f"\nPARTITION BY {strategy} ({cols_part})"
     out.append(f"{close_line};")
+    out.extend(_render_indexes_mysql(table, entity.get("_indexes") or []))
     return "\n".join(out)
 
 
@@ -409,7 +586,19 @@ def gen_sparksql(entity: dict[str, Any], attrs: list[dict[str, Any]], opts: DDLE
         tcomment = _entity_comment(entity)
         if tcomment:
             suffix += f"\nCOMMENT '{_esc(tcomment)}'"
+    suffix += _spark_partition_clause(entity.get("_partitioning"))
     out.append(f"{suffix};")
+    liquid = _spark_liquid_cluster(table, entity.get("_partitioning"))
+    if liquid:
+        out.append(liquid)
+    # Delta/Spark não suporta CREATE INDEX no DDL padrão (índices secundários
+    # se dão por liquid clustering ou Z-ORDER). Se forem definidos no app,
+    # emite Z-ORDER OPTIMIZE como statement separado quando index_type=Z-ORDER.
+    for ix in entity.get("_indexes") or []:
+        if (ix.get("index_type") or "").upper() == "Z-ORDER":
+            cols_z = _idx_cols_sql(ix).replace(" DESC", "")
+            if cols_z:
+                out.append(f"OPTIMIZE {table} ZORDER BY ({cols_z});")
     return "\n".join(out)
 
 
