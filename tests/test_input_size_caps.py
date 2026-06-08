@@ -49,17 +49,19 @@ def test_ddl_import_rejects_empty():
         DDLImportIn(system_id="sys-1", ddl_text="")
 
 
-def test_embarcadero_accepts_small_xml():
-    xml = "<?xml version='1.0'?><Model><Entities/></Model>"
-    payload = EmbarcaderoImportIn(system_id="sys-1", xml_text=xml)
-    assert "<Model>" in payload.xml_text
+def test_embarcadero_accepts_small_dm1():
+    payload = EmbarcaderoImportIn(
+        system_id="sys-1",
+        dm1_text="Entity\nDiagramId,ModelId,EntityId\n1,1,1\n",
+    )
+    assert "Entity" in payload.dm1_text
 
 
-def test_embarcadero_rejects_over_10mb():
-    """Cap em .erx é 10 MB (mais generoso que DDL — modelos grandes legítimos)."""
-    huge = "<m>" + ("a" * 10_000_000)
+def test_embarcadero_rejects_over_50mb():
+    """Cap em .DM1 é 50 MB (formato ASCII pode ficar maior que .erx XML)."""
+    huge = "x" * 50_000_001
     with pytest.raises(ValidationError):
-        EmbarcaderoImportIn(system_id="sys-1", xml_text=huge)
+        EmbarcaderoImportIn(system_id="sys-1", dm1_text=huge)
 
 
 def test_lakebase_no_text_field_to_cap():

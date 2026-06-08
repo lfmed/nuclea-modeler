@@ -27,7 +27,7 @@ KNOWN_FLAGS: Final[tuple[str, ...]] = (
     # ── Cross-cutting ───────────────────────────────────────────────────────
     "global_search_v2",        # next-gen search UI (placeholder)
     # ── Module 2 (Reverse Engineering) ──────────────────────────────────────
-    "embarcadero_v2",          # next-gen .erx parser with namespace heuristics
+    "embarcadero_v2",          # next-gen .DM1 parser (FK persistence, full datatype map)
     "ddl_import_dry_run",      # show DDL preview before persisting
     # ── Module 4 (DER) ─────────────────────────────────────────────────────
     "der_minimap",             # show minimap on the diagram canvas

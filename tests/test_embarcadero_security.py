@@ -1,86 +1,128 @@
-"""Security tests para o parser Embarcadero — XXE / billion laughs.
+"""Tests do parser .DM1 do Embarcadero.
 
-Garante que o parser usa defusedxml e rejeita payloads maliciosos comuns.
+O formato .DM1 é texto ASCII multi-seção (CSV interno) — não há vetor XXE
+ou DTD a defender (o parser antigo .erx XML usava defusedxml). Aqui
+validamos: payloads malformados degradam graciosamente, payload válido é
+parseado corretamente, e nomes vêm do pool de strings indireto.
 """
 from __future__ import annotations
 
 import pytest
 
-# Skip todo o módulo se defusedxml não estiver instalado (ambiente local sem deps)
-defusedxml = pytest.importorskip("defusedxml")
-
-from nuclea_modeler.backend.extractions.embarcadero import parse_erx
+from nuclea_modeler.backend.extractions.embarcadero import parse_dm1
 
 
-# ─── XXE (XML External Entity) ──────────────────────────────────────────────
+# ─── Robustez contra entrada malformada ─────────────────────────────────────
 
 
-def test_rejects_xxe_external_entity():
-    """Payload XXE clássico: tenta ler /etc/passwd via entity externa.
-    defusedxml deve recusar — não devemos ler arquivo do disco."""
-    xxe = """<?xml version="1.0"?>
-    <!DOCTYPE foo [
-      <!ENTITY xxe SYSTEM "file:///etc/passwd">
-    ]>
-    <Model><Entities><Entity name="&xxe;"/></Entities></Model>
-    """
-    with pytest.raises((ValueError, defusedxml.EntitiesForbidden, defusedxml.DTDForbidden)):
-        parse_erx(xxe, system_id="sys-test")
+def test_rejects_empty():
+    """Arquivo vazio deve levantar ValueError explícito."""
+    with pytest.raises(ValueError, match="vazio"):
+        parse_dm1("", system_id="sys-test")
 
 
-def test_rejects_billion_laughs():
-    """Payload DoS: expansão exponencial de entities ('billion laughs').
-    Cada `&lol9;` expande para milhões de bytes. defusedxml deve recusar."""
-    bomb = """<?xml version="1.0"?>
-    <!DOCTYPE lolz [
-      <!ENTITY lol "lol">
-      <!ENTITY lol2 "&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;">
-      <!ENTITY lol3 "&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;">
-    ]>
-    <Model><Entities><Entity name="&lol3;"/></Entities></Model>
-    """
-    with pytest.raises((ValueError, defusedxml.EntitiesForbidden, defusedxml.DTDForbidden)):
-        parse_erx(bomb, system_id="sys-test")
+def test_rejects_random_text():
+    """Texto aleatório (sem seção Entity) deve falhar com mensagem clara."""
+    with pytest.raises(ValueError, match="Entity"):
+        parse_dm1("this is not a DM1 file\njust random bytes\n", system_id="sys-test")
 
 
-def test_rejects_dtd_with_entities():
-    """DTD declarando entities é vetor de XXE. defusedxml proíbe.
-
-    DTD inline puro (só elements, sem entities) é tolerado por algumas
-    versões do defusedxml — o que importa é que entities sejam proibidas,
-    e isso já está coberto em test_rejects_xxe_external_entity e
-    test_rejects_billion_laughs.
-    """
-    dtd = """<?xml version="1.0"?>
-    <!DOCTYPE Model [
-      <!ELEMENT Model (Entities)>
-      <!ENTITY hack "should-not-resolve">
-    ]>
-    <Model><Entities><Entity name="&hack;"/></Entities></Model>
-    """
-    with pytest.raises((ValueError, defusedxml.EntitiesForbidden, defusedxml.DTDForbidden)):
-        parse_erx(dtd, system_id="sys-test")
-
-
-# ─── Sanity: parser legítimo ainda funciona ─────────────────────────────────
+def test_ignores_malformed_rows():
+    """Linhas com count de colunas errado são descartadas, não derrubam o parse."""
+    payload = (
+        "Entity\n"
+        "DiagramId,ModelId,EntityId,EntityNameId,TableNameId,OwnerId,DefinitionId\n"
+        "1,1,10,100,100,0,0\n"
+        "ROW_COM_COLUNAS_DEMAIS_OU_DE_MENOS,xxx\n"
+        "1,1,11,101,101,0,0\n"
+        "\n"
+        "SmallString\n"
+        "String_Id,Data,Overflow,ConstantString,Row_Time_Stamp\n"
+        "100,clientes,0,0,0\n"
+        "101,produtos,0,0,0\n"
+    )
+    snap, _ = parse_dm1(payload, system_id="sys-test")
+    assert {e.technical_name for e in snap.entities} == {"clientes", "produtos"}
 
 
-def test_parses_legitimate_erx_payload():
-    """Payload mínimo válido — deve parsear sem erro."""
-    ok = """<?xml version="1.0"?>
-    <Model>
-      <Entities>
-        <Entity name="cliente" schema="public">
-          <Attributes>
-            <Attribute name="id" datatype="bigint" primarykey="true"/>
-            <Attribute name="nome" datatype="varchar(100)" nullable="false"/>
-          </Attributes>
-        </Entity>
-      </Entities>
-    </Model>
-    """
-    snapshot, warnings = parse_erx(ok, system_id="sys-test")
-    assert len(snapshot.entities) == 1
-    assert snapshot.entities[0].technical_name == "cliente"
-    # 2 attributes parsed
-    assert len(snapshot.entities[0].attributes) == 2
+# ─── Parse legítimo ─────────────────────────────────────────────────────────
+
+
+def test_parses_legitimate_dm1_payload():
+    """Payload mínimo válido: 1 entity, 2 atributos (1 PK), nomes via SmallString."""
+    payload = (
+        "Entity\n"
+        "DiagramId,ModelId,EntityId,EntityNameId,TableNameId,OwnerId,DefinitionId\n"
+        "1,1,5,50,50,0,0\n"
+        "\n"
+        "Attribute\n"
+        "DiagramId,ModelId,EntityId,AttributeId,AttributeNameId,DatatypeId,Length,Scale,Nullable,DefinitionId\n"
+        "1,1,5,1,60,8,-2,-1,N,0\n"
+        "1,1,5,2,61,10,100,-1,Y,0\n"
+        "\n"
+        "PrimaryKey\n"
+        "DiagramId,ModelId,EntityId,AttributeId,PrimaryKey_ID,Attribute_ID,SequenceNo,Global_User_ID,Row_Time_Stamp\n"
+        "1,1,5,1,1,60,1,0,0\n"
+        "\n"
+        "SmallString\n"
+        "String_Id,Data,Overflow,ConstantString,Row_Time_Stamp\n"
+        "50,cliente,0,0,0\n"
+        "60,id_cliente,0,0,0\n"
+        "61,nome,0,0,0\n"
+    )
+    snap, warns = parse_dm1(payload, system_id="sys-test")
+    assert len(snap.entities) == 1
+    ent = snap.entities[0]
+    assert ent.technical_name == "cliente"
+    assert len(ent.attributes) == 2
+    pk = [a for a in ent.attributes if a.is_primary_key]
+    assert len(pk) == 1 and pk[0].technical_name == "id_cliente"
+    assert pk[0].native_data_type == "INTEGER"
+    nome = next(a for a in ent.attributes if a.technical_name == "nome")
+    assert nome.native_data_type == "VARCHAR(100)"
+    assert nome.is_nullable is True
+    assert warns == [] or all("desconhec" not in w for w in warns)
+
+
+def test_relationships_emitted_as_warnings():
+    """ForeignKey vira warning informativo (não é persistido estruturalmente)."""
+    payload = (
+        "Entity\n"
+        "DiagramId,ModelId,EntityId,EntityNameId,TableNameId,OwnerId,DefinitionId\n"
+        "1,1,10,100,100,0,0\n"
+        "1,1,11,101,101,0,0\n"
+        "\n"
+        "SmallString\n"
+        "String_Id,Data,Overflow,ConstantString,Row_Time_Stamp\n"
+        "100,pedido,0,0,0\n"
+        "101,item_pedido,0,0,0\n"
+        "\n"
+        "ForeignKey\n"
+        "DiagramId,ModelId,RelationshipId,ForeignKey_ID,ParentEntityId,ChildEntityId,Global_User_ID,Row_Time_Stamp\n"
+        "1,1,1,1,10,11,0,0\n"
+    )
+    _, warns = parse_dm1(payload, system_id="sys-test")
+    assert any("pedido → item_pedido" in w for w in warns)
+    assert any("1 relacionamento" in w for w in warns)
+
+
+def test_unknown_datatype_emits_warning():
+    """DatatypeId fora do mapping conhecido cai pra fallback VARCHAR/UNKNOWN com warning."""
+    payload = (
+        "Entity\n"
+        "DiagramId,ModelId,EntityId,EntityNameId,TableNameId,OwnerId,DefinitionId\n"
+        "1,1,1,10,10,0,0\n"
+        "\n"
+        "Attribute\n"
+        "DiagramId,ModelId,EntityId,AttributeId,AttributeNameId,DatatypeId,Length,Scale,Nullable,DefinitionId\n"
+        "1,1,1,1,11,9999,80,-1,Y,0\n"
+        "\n"
+        "SmallString\n"
+        "String_Id,Data,Overflow,ConstantString,Row_Time_Stamp\n"
+        "10,t,0,0,0\n"
+        "11,c,0,0,0\n"
+    )
+    snap, warns = parse_dm1(payload, system_id="sys-test")
+    # Fallback usa Length pra adivinhar VARCHAR
+    assert snap.entities[0].attributes[0].native_data_type == "VARCHAR(80)"
+    assert any("DatatypeIds desconhecidos" in w for w in warns)

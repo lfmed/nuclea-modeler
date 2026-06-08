@@ -78,7 +78,7 @@ def create_app(
         openapi_tags=[
             {"name": "systems", "description": "Sistemas de origem catalogados (M1 contexto)"},
             {"name": "connections", "description": "Conexões ODBC/REST/DDL (M1)"},
-            {"name": "extractions", "description": "Engenharia reversa (M2): Lakebase, DDL, .erx"},
+            {"name": "extractions", "description": "Engenharia reversa (M2): Lakebase, DDL, .DM1"},
             {"name": "entities", "description": "Entidades + atributos (M3)"},
             {"name": "diagram", "description": "Diagrama Entidade-Relacionamento (M4)"},
             {"name": "flags", "description": "Flagueamento + propagação LGPD (M5)"},

@@ -1,288 +1,322 @@
-"""Parser Embarcadero ER/Studio .erx XML → ExtractionSnapshot.
+"""Parser Embarcadero ER/Studio .DM1 → ExtractionSnapshot.
 
-The .erx format varies across ER/Studio versions and exports. This parser is
-defensive — it accepts multiple casing/aliasing variants for tag and attribute
-names and skips malformed nodes rather than failing the entire parse.
+O formato .DM1 do ER/Studio é texto ASCII multi-seção (CSV interno). Cada
+seção tem uma linha-cabeçalho com o nome (ex: ``Entity``), uma linha de
+colunas CSV e N linhas de dados. Nomes (Entity/Attribute) ficam em
+``SmallString`` / ``LargeString`` e são referenciados por ``*NameId`` que é
+direto o ``String_Id``.
 
 Public API:
-    parse_erx(xml_text, system_id) -> (snapshot, warnings)
+    parse_dm1(text, system_id) -> (snapshot, warnings)
 """
 from __future__ import annotations
 
-# defusedxml previne ataques XXE / billion laughs / DTD recursion comuns em
-# arquivos .erx vindos de fontes não-confiáveis (upload do usuário).
-# A API é drop-in compatível com xml.etree.ElementTree.
-import xml.etree.ElementTree as ET  # noqa: F401 — usado para type hints `ET.Element`
-
-from defusedxml import ElementTree as _DefusedET
+import csv
+import io
+import re
 from datetime import datetime
-from typing import Iterable
 
 from .models import ExtractedAttribute, ExtractedEntity, ExtractionSnapshot
 
+# ─── Mapping DatatypeId → nome canônico ──────────────────────────────────────
+# IDs observados em exports reais de IDEF1 / Generic do ER/Studio. Lista não
+# é exaustiva — IDs desconhecidos viram "UNKNOWN" e um aviso é emitido. O
+# usuário pode ajustar depois pelo TypePicker do app.
+_DATATYPE_MAP: dict[int, str] = {
+    # IDs observados em exports reais (calibrado contra arquivos da Núclea).
+    # Quando o ER/Studio usa Length > 0, o tipo é parametrizado.
+    1: "CHAR",
+    2: "VARCHAR",
+    3: "LONG",
+    4: "NUMBER",
+    5: "DATE",
+    6: "BLOB",
+    7: "CLOB",
+    8: "INTEGER",
+    9: "SMALLINT",
+    10: "VARCHAR",
+    11: "TEXT",
+    12: "TEXT",
+    13: "NUMERIC",
+    14: "REAL",
+    15: "FLOAT",
+    16: "DOUBLE PRECISION",
+    17: "BIT",
+    18: "TIME",
+    19: "TIMESTAMP",
+    20: "DATETIME",
+    25: "DATE",
+    31: "INTEGER",
+    65: "TIMESTAMP",
+    84: "NUMERIC",
+    89: "BOOLEAN",
+    101: "BIGINT",
+}
 
-# ─── Tag / attribute aliases ────────────────────────────────────────────────
+_SECTION_HEADER_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 
-_ENTITY_TAGS = ("entity", "table")
-_ENTITIES_CONTAINER_TAGS = ("entities", "tables")
-_ATTRIBUTE_TAGS = ("attribute", "column", "field")
-_ATTRIBUTES_CONTAINER_TAGS = ("attributes", "columns", "fields")
-_COMMENT_TAGS = ("comment", "description", "definition", "note", "notes")
-_RELATIONSHIP_TAGS = ("relationship", "foreignkey", "foreign_key", "link")
-_RELATIONSHIPS_CONTAINER_TAGS = ("relationships", "foreignkeys", "links")
 
-_ENTITY_NAME_ATTRS = ("name", "entityname", "table", "tablename", "physicalname")
-_ENTITY_SCHEMA_ATTRS = ("schema", "schemaname", "owner", "ownername")
-_ATTR_NAME_ATTRS = ("name", "columnname", "fieldname", "physicalname")
-_ATTR_TYPE_ATTRS = ("datatype", "type", "logicaldatatype", "physicaldatatype", "columndatatype")
-_ATTR_NULLABLE_ATTRS = ("nullable", "isnullable", "allownulls", "nulloption")
-_ATTR_PK_ATTRS = ("primarykey", "ispk", "ispkmember", "key", "iskey", "ispartofpk")
-_ATTR_ORDER_ATTRS = ("order", "ordinalposition", "sequence", "ordinal", "position")
-_ATTR_DEFAULT_ATTRS = ("default", "defaultvalue")
-_ATTR_COMMENT_ATTRS = ("comment", "description", "definition", "note")
+# ─── Section splitter ───────────────────────────────────────────────────────
+
+
+def _parse_sections(text: str) -> dict[str, list[dict[str, str]]]:
+    """Splita texto DM1 em dict {nome_seção: [row_dict, ...]}.
+
+    Acumula seções com mesmo nome (algumas, como ``Model``, aparecem
+    múltiplas vezes). Linhas malformadas (count de colunas diferente do
+    header) são descartadas.
+    """
+    lines = text.splitlines()
+    sections: dict[str, list[dict[str, str]]] = {}
+    i = 0
+    n = len(lines)
+    while i < n:
+        s = lines[i].strip()
+        # Próxima seção: linha com só um identificador
+        if s and _SECTION_HEADER_RE.match(s):
+            section_name = s
+            if i + 1 >= n:
+                break
+            header_line = lines[i + 1]
+            try:
+                headers = next(csv.reader(io.StringIO(header_line)))
+            except Exception:
+                i += 1
+                continue
+            i += 2
+            rows: list[dict[str, str]] = []
+            while i < n:
+                row_line = lines[i]
+                if not row_line.strip():
+                    i += 1
+                    continue
+                # Próxima seção? Pára sem consumir.
+                stripped = row_line.strip()
+                if _SECTION_HEADER_RE.match(stripped):
+                    break
+                try:
+                    row = next(csv.reader(io.StringIO(row_line)))
+                    if len(row) == len(headers):
+                        rows.append(dict(zip(headers, row)))
+                except Exception:
+                    pass
+                i += 1
+            sections.setdefault(section_name, []).extend(rows)
+        else:
+            i += 1
+    return sections
 
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
 
 
-def _localname(tag: str) -> str:
-    """Strip namespace prefix from an XML tag and lowercase it."""
-    if not tag:
-        return ""
-    if "}" in tag:
-        tag = tag.split("}", 1)[1]
-    return tag.lower()
-
-
-def _find_children_ci(parent: ET.Element, *tag_names: str) -> Iterable[ET.Element]:
-    """Yield direct children whose localname matches any of the given names (case-insensitive)."""
-    wanted = {t.lower() for t in tag_names}
-    for child in list(parent):
-        if _localname(child.tag) in wanted:
-            yield child
-
-
-def _iter_descendants_ci(parent: ET.Element, *tag_names: str) -> Iterable[ET.Element]:
-    """Yield all descendants whose localname matches any of the given names."""
-    wanted = {t.lower() for t in tag_names}
-    for elem in parent.iter():
-        if elem is parent:
-            continue
-        if _localname(elem.tag) in wanted:
-            yield elem
-
-
-def _get_attr_ci(elem: ET.Element, *names: str) -> str | None:
-    """Return the first matching attribute value (case-insensitive). Returns None if none match."""
-    if elem.attrib:
-        lower_map = {k.lower().rsplit("}", 1)[-1]: v for k, v in elem.attrib.items()}
-        for n in names:
-            v = lower_map.get(n.lower())
-            if v is not None and v != "":
-                return v
-    return None
-
-
-def _get_child_text_ci(elem: ET.Element, *tag_names: str) -> str | None:
-    """Return text of the first matching direct or nested child element."""
-    for child in elem.iter():
-        if child is elem:
-            continue
-        if _localname(child.tag) in {t.lower() for t in tag_names}:
-            txt = (child.text or "").strip()
-            if txt:
-                return txt
-    return None
-
-
-def _parse_bool(value: str | None) -> bool | None:
-    """Interpret common boolean encodings used by ER/Studio. None if not recognizable."""
+def _to_int(value: str | None, default: int = 0) -> int:
     if value is None:
-        return None
-    v = value.strip().lower()
-    if v in ("true", "1", "y", "yes", "t", "nullable"):
-        return True
-    if v in ("false", "0", "n", "no", "f", "notnull", "nonullsallowed", "not null"):
-        return False
-    return None
-
-
-def _parse_int(value: str | None) -> int | None:
-    if value is None:
-        return None
+        return default
+    v = str(value).strip()
+    if not v or v.lower() == "null":
+        return default
     try:
-        return int(str(value).strip())
-    except (ValueError, TypeError):
+        return int(v)
+    except ValueError:
+        return default
+
+
+def _build_string_pool(sections: dict[str, list[dict[str, str]]]) -> dict[str, str]:
+    """Funde SmallString + LargeString num único índice ``String_Id → Data``."""
+    pool: dict[str, str] = {}
+    for r in sections.get("SmallString", []):
+        sid = r.get("String_Id", "").strip()
+        if sid:
+            pool[sid] = r.get("Data", "") or ""
+    for r in sections.get("LargeString", []):
+        sid = r.get("String_Id", "").strip()
+        if sid:
+            pool[sid] = r.get("Data", "") or ""
+    return pool
+
+
+def _native_type(
+    datatype_id: int,
+    length: int,
+    scale: int,
+    unknown_types: set[int],
+) -> str | None:
+    """Compõe nome canônico do tipo a partir do DatatypeId + Length/Scale.
+
+    Retorna ``None`` se o DatatypeId for desconhecido E sem Length útil
+    (deixa o app decidir o tipo default no DER).
+    """
+    base = _DATATYPE_MAP.get(datatype_id)
+    if base is None:
+        unknown_types.add(datatype_id)
+        # Sem mapping conhecido, tenta inferir grosseiramente pelo Length
+        if length > 0 and scale > 0:
+            return f"NUMERIC({length},{scale})"
+        if length > 0:
+            return f"VARCHAR({length})"
         return None
+
+    # Aceita Length quando tipo aceita parâmetro
+    if base in ("VARCHAR", "CHAR", "VARCHAR2"):
+        if length > 0:
+            return f"{base}({length})"
+        return base
+    if base in ("NUMERIC", "NUMBER", "DECIMAL"):
+        if length > 0 and scale >= 0:
+            return f"{base}({length},{scale})"
+        if length > 0:
+            return f"{base}({length})"
+        return base
+    return base
 
 
 # ─── Parser ─────────────────────────────────────────────────────────────────
 
 
-def _parse_attribute(
-    elem: ET.Element, fallback_order: int, warnings: list[str]
-) -> ExtractedAttribute | None:
-    """Parse a single column/attribute element into ExtractedAttribute. Returns None if unusable."""
-    try:
-        name = _get_attr_ci(elem, *_ATTR_NAME_ATTRS) or _get_child_text_ci(elem, "name", "columnname")
-        if not name:
-            warnings.append("attribute skipped: missing name")
-            return None
-        native_type = _get_attr_ci(elem, *_ATTR_TYPE_ATTRS) or _get_child_text_ci(
-            elem, "datatype", "type", "logicaldatatype"
-        )
-        nullable = _parse_bool(_get_attr_ci(elem, *_ATTR_NULLABLE_ATTRS))
-        # For nullable attribute "Nullable=NULL OPTION" style: also check text
-        if nullable is None:
-            nullable = _parse_bool(_get_child_text_ci(elem, "nullable", "isnullable"))
-        is_pk = _parse_bool(_get_attr_ci(elem, *_ATTR_PK_ATTRS)) or False
-        if not is_pk:
-            # Some exports use a nested <PrimaryKey>true</PrimaryKey>
-            is_pk = bool(_parse_bool(_get_child_text_ci(elem, "primarykey", "ispk", "key")))
-        order = _parse_int(_get_attr_ci(elem, *_ATTR_ORDER_ATTRS)) or fallback_order
-        default_value = _get_attr_ci(elem, *_ATTR_DEFAULT_ATTRS) or _get_child_text_ci(
-            elem, "default", "defaultvalue"
-        )
-        comment = _get_attr_ci(elem, *_ATTR_COMMENT_ATTRS) or _get_child_text_ci(
-            elem, *_COMMENT_TAGS
-        )
-        return ExtractedAttribute(
-            technical_name=str(name).strip(),
-            ordinal_position=order,
-            native_data_type=str(native_type).strip() if native_type else None,
-            is_nullable=nullable,
-            default_value=default_value,
-            is_primary_key=bool(is_pk),
-            native_comment=comment,
-        )
-    except Exception as exc:  # noqa: BLE001
-        warnings.append(f"attribute skipped due to error: {exc}")
-        return None
-
-
-def _parse_entity(elem: ET.Element, warnings: list[str]) -> ExtractedEntity | None:
-    """Parse a single Entity/Table element into ExtractedEntity. Returns None if unusable."""
-    try:
-        name = _get_attr_ci(elem, *_ENTITY_NAME_ATTRS) or _get_child_text_ci(
-            elem, "name", "entityname", "tablename", "physicalname"
-        )
-        if not name:
-            warnings.append("entity skipped: missing name")
-            return None
-        schema = (
-            _get_attr_ci(elem, *_ENTITY_SCHEMA_ATTRS)
-            or _get_child_text_ci(elem, "schema", "schemaname", "owner")
-            or "dbo"
-        )
-        comment = _get_attr_ci(elem, *_ATTR_COMMENT_ATTRS) or _get_child_text_ci(
-            elem, *_COMMENT_TAGS
-        )
-
-        # Locate the attribute container (direct child) and fall back to nested search.
-        attr_elements: list[ET.Element] = []
-        for container in _find_children_ci(elem, *_ATTRIBUTES_CONTAINER_TAGS):
-            for attr_el in _find_children_ci(container, *_ATTRIBUTE_TAGS):
-                attr_elements.append(attr_el)
-        # Also accept direct <Attribute>/<Column> children at the entity level.
-        for attr_el in _find_children_ci(elem, *_ATTRIBUTE_TAGS):
-            attr_elements.append(attr_el)
-        # Last resort: scan descendants if nothing found yet.
-        if not attr_elements:
-            attr_elements = list(_iter_descendants_ci(elem, *_ATTRIBUTE_TAGS))
-
-        attributes: list[ExtractedAttribute] = []
-        for idx, attr_el in enumerate(attr_elements, start=1):
-            parsed = _parse_attribute(attr_el, fallback_order=idx, warnings=warnings)
-            if parsed is not None:
-                attributes.append(parsed)
-
-        return ExtractedEntity(
-            schema_name=str(schema).strip(),
-            technical_name=str(name).strip(),
-            entity_type="TABLE",
-            native_comment=comment,
-            attributes=attributes,
-        )
-    except Exception as exc:  # noqa: BLE001
-        warnings.append(f"entity skipped due to error: {exc}")
-        return None
-
-
-def _collect_relationship_warnings(root: ET.Element, warnings: list[str]) -> int:
-    """Count relationships found (purely informational — surfaced in warnings)."""
-    count = 0
-    for rel in _iter_descendants_ci(root, *_RELATIONSHIP_TAGS):
-        try:
-            name = _get_attr_ci(rel, "name", "relationshipname") or "(unnamed)"
-            src = _get_attr_ci(rel, "sourceentity", "parententity", "from", "parenttable")
-            tgt = _get_attr_ci(rel, "targetentity", "childentity", "to", "childtable")
-            if src and tgt:
-                count += 1
-                warnings.append(f"relationship detected: {name} ({src} → {tgt})")
-        except Exception:  # noqa: BLE001
-            continue
-    return count
-
-
-def parse_erx(xml_text: str, system_id: str) -> tuple[ExtractionSnapshot, list[str]]:
-    """Parse an Embarcadero ER/Studio .erx XML string into an ExtractionSnapshot.
+def parse_dm1(text: str, system_id: str) -> tuple[ExtractionSnapshot, list[str]]:
+    """Parse um arquivo .DM1 (Embarcadero ER/Studio) em ``ExtractionSnapshot``.
 
     Args:
-        xml_text: Raw XML content (any encoding already decoded to text).
-        system_id: System id used for the resulting snapshot.
+        text: Conteúdo do arquivo .DM1 já decodificado (ASCII/Latin-1).
+        system_id: ID do sistema-alvo do snapshot.
 
     Returns:
-        Tuple of (snapshot, parse_warnings). The snapshot may contain zero
-        entities if nothing was recognized; check len(snapshot.entities).
+        ``(snapshot, warnings)``. ``snapshot.entities`` pode ser vazio se o
+        arquivo não tiver seção ``Entity`` reconhecível — chamador deve
+        checar antes de gerar diff.
     """
     warnings: list[str] = []
-    if xml_text is None:
-        raise ValueError("XML content is empty")
+    if text is None or not text.strip():
+        raise ValueError("Arquivo .DM1 vazio")
 
-    # Strip BOM and leading whitespace.
-    cleaned = xml_text.lstrip("﻿").lstrip()
-    if not cleaned:
-        raise ValueError("XML content is empty")
+    # BOM e CRLF são tolerados (splitlines() lida com ambos)
+    cleaned = text.lstrip("﻿")
 
-    try:
-        # defusedxml.ElementTree.fromstring desabilita XXE/billion-laughs/DTD
-        # recursion. Retorna o mesmo tipo ET.Element do stdlib.
-        root = _DefusedET.fromstring(cleaned)
-    except ET.ParseError as exc:
-        raise ValueError(f"XML inválido: {exc}") from exc
+    sections = _parse_sections(cleaned)
+    if not sections.get("Entity"):
+        # Não encontrou nem a seção Entity — provavelmente não é DM1
+        raise ValueError(
+            "Formato não reconhecido: seção 'Entity' não encontrada. "
+            "Esperado: arquivo .DM1 exportado pelo Embarcadero ER/Studio."
+        )
 
-    # Locate all Entity/Table elements. Strategy:
-    #   1. Look for containers (<Entities>, <Tables>) anywhere under root and pull their entity children.
-    #   2. If none found, scan the whole tree for any element whose localname matches an entity tag.
-    entity_elements: list[ET.Element] = []
-    seen_ids: set[int] = set()
+    strings = _build_string_pool(sections)
 
-    def _add(el: ET.Element) -> None:
-        if id(el) not in seen_ids:
-            seen_ids.add(id(el))
-            entity_elements.append(el)
+    # Entity rows → dict por EntityId pra cruzar com Attribute/PK/FK
+    entities_raw = sections.get("Entity", [])
+    attrs_raw = sections.get("Attribute", [])
+    pks_raw = sections.get("PrimaryKey", [])
+    fks_raw = sections.get("ForeignKey", [])
 
-    # Container-based discovery (preferred).
-    for container in [root, *list(root.iter())]:
-        if _localname(container.tag) in {t.lower() for t in _ENTITIES_CONTAINER_TAGS}:
-            for child in _find_children_ci(container, *_ENTITY_TAGS):
-                _add(child)
+    # Index attributes por (EntityId, AttributeId) e por EntityId
+    attrs_by_entity: dict[str, list[dict[str, str]]] = {}
+    for a in attrs_raw:
+        eid = a.get("EntityId", "")
+        attrs_by_entity.setdefault(eid, []).append(a)
 
-    # Fallback: any entity-tagged descendant of root, but not nested inside another entity.
-    if not entity_elements:
-        for el in _iter_descendants_ci(root, *_ENTITY_TAGS):
-            _add(el)
+    # Index PKs por (EntityId, AttributeId)
+    pk_set: set[tuple[str, str]] = set()
+    for p in pks_raw:
+        pk_set.add((p.get("EntityId", ""), p.get("AttributeId", "")))
 
+    # Index entity name por EntityId pra resolver FKs
+    entity_name_by_id: dict[str, str] = {}
+    unknown_types: set[int] = set()
     entities: list[ExtractedEntity] = []
-    for el in entity_elements:
-        parsed = _parse_entity(el, warnings)
-        if parsed is not None:
-            entities.append(parsed)
 
-    # Relationships are best-effort; only logged as warnings/info today.
-    rel_count = _collect_relationship_warnings(root, warnings)
+    for e in entities_raw:
+        eid = e.get("EntityId", "")
+        name = strings.get(e.get("EntityNameId", ""), "").strip()
+        table_name = strings.get(e.get("TableNameId", ""), "").strip()
+        physical = (table_name or name).strip()
+        if not physical:
+            warnings.append(f"entity sem nome (EntityId={eid}) — ignorada")
+            continue
+        entity_name_by_id[eid] = physical
+
+        # Owner/schema: tem OwnerId mas pode não estar mapeado. Default 'dbo'
+        # — ER/Studio usa por convenção quando não configurado.
+        owner_id = e.get("OwnerId", "")
+        schema = strings.get(owner_id, "").strip() or "dbo"
+
+        definition = strings.get(e.get("DefinitionId", ""), "").strip() or None
+
+        # Attributes desta entity (dedupe por nome — ER/Studio propaga FK
+        # como linhas extras na seção Attribute; mantemos a 1ª ocorrência).
+        ent_attrs: list[ExtractedAttribute] = []
+        seen_attr_names: set[str] = set()
+        idx = 0
+        for a in attrs_by_entity.get(eid, []):
+            aid = a.get("AttributeId", "")
+            attr_name = strings.get(a.get("AttributeNameId", ""), "").strip()
+            if not attr_name:
+                warnings.append(
+                    f"attribute sem nome (EntityId={eid}, AttributeId={aid}) — ignorado"
+                )
+                continue
+            if attr_name in seen_attr_names:
+                continue
+            seen_attr_names.add(attr_name)
+            idx += 1
+            dt_id = _to_int(a.get("DatatypeId"))
+            length = _to_int(a.get("Length"), default=-1)
+            scale = _to_int(a.get("Scale"), default=-1)
+            native = _native_type(dt_id, length, scale, unknown_types)
+            nullable_raw = (a.get("Nullable") or "").strip().upper()
+            # ER/Studio: "Y"/"N" ou "1"/"0"
+            if nullable_raw in ("Y", "1", "TRUE"):
+                nullable = True
+            elif nullable_raw in ("N", "0", "FALSE"):
+                nullable = False
+            else:
+                nullable = None
+            ent_attrs.append(
+                ExtractedAttribute(
+                    technical_name=attr_name,
+                    ordinal_position=idx,
+                    native_data_type=native,
+                    is_nullable=nullable,
+                    default_value=None,
+                    is_primary_key=(eid, aid) in pk_set,
+                    native_comment=strings.get(a.get("DefinitionId", ""), "").strip()
+                    or None,
+                )
+            )
+
+        entities.append(
+            ExtractedEntity(
+                schema_name=schema,
+                technical_name=physical,
+                entity_type="TABLE",
+                native_comment=definition,
+                attributes=ent_attrs,
+            )
+        )
+
+    # Relationships: emitidas como warnings (parser ainda não persiste
+    # estruturalmente — alinhado com comportamento anterior do .erx).
+    rel_count = 0
+    for fk in fks_raw:
+        parent_id = fk.get("ParentEntityId", "")
+        child_id = fk.get("ChildEntityId", "")
+        parent_name = entity_name_by_id.get(parent_id, f"<{parent_id}>")
+        child_name = entity_name_by_id.get(child_id, f"<{child_id}>")
+        if parent_id and child_id:
+            rel_count += 1
+            warnings.append(f"relationship detected: {parent_name} → {child_name}")
+
     if rel_count:
-        warnings.insert(0, f"{rel_count} relacionamento(s) detectado(s) — não persistidos nesta versão")
+        warnings.insert(
+            0,
+            f"{rel_count} relacionamento(s) detectado(s) — não persistidos nesta versão",
+        )
+
+    if unknown_types:
+        warnings.append(
+            "DatatypeIds desconhecidos (revisar tipos no DER): "
+            + ", ".join(str(x) for x in sorted(unknown_types))
+        )
 
     snapshot = ExtractionSnapshot(
         source_kind="EMBARCADERO",

@@ -73,8 +73,8 @@ const DDL_DIALECTS = [
   { value: "DATABRICKS", label: "Databricks" },
 ];
 
-// Cap para upload .erx — 10 MB (alinhado ao backend EmbarcaderoImportIn).
-const ERX_MAX_BYTES = 10 * 1024 * 1024;
+// Cap para upload .DM1 — 50 MB (alinhado ao backend EmbarcaderoImportIn).
+const DM1_MAX_BYTES = 50 * 1024 * 1024;
 // Cap para .sql — 5 MB.
 const DDL_MAX_BYTES = 5 * 1024 * 1024;
 
@@ -130,9 +130,9 @@ function WizardInner({
   const [ddlDialect, setDdlDialect] = useState("ANSI");
   const [ddlFileName, setDdlFileName] = useState("");
 
-  // Embarcadero .erx
-  const [erxText, setErxText] = useState("");
-  const [erxFileName, setErxFileName] = useState("");
+  // Embarcadero .DM1
+  const [dm1Text, setDm1Text] = useState("");
+  const [dm1FileName, setDm1FileName] = useState("");
 
   const qc = useQueryClient();
   const [submitting, setSubmitting] = useState(false);
@@ -177,12 +177,12 @@ function WizardInner({
       setName(ucCatalog);
     } else if (source === "DDL" && ddlFileName) {
       setName(ddlFileName.replace(/\.[^.]+$/, ""));
-    } else if (source === "EMBARCADERO" && erxFileName) {
-      setName(erxFileName.replace(/\.[^.]+$/, ""));
+    } else if (source === "EMBARCADERO" && dm1FileName) {
+      setName(dm1FileName.replace(/\.[^.]+$/, ""));
     }
   }, [
     source, sandboxName, ucCatalog, ucSchema,
-    ddlFileName, erxFileName, nameTouched,
+    ddlFileName, dm1FileName, nameTouched,
   ]);
 
   // ─── Validação pra avançar ──────────────────────────────────────────────────
@@ -191,7 +191,7 @@ function WizardInner({
     (source === "LAKEBASE" && !!sandboxId && lakebaseSchemas.length > 0) ||
     (source === "UC" && !!ucCatalog && !!ucSchema && ucTables.length > 0) ||
     (source === "DDL" && ddlText.trim().length > 0) ||
-    (source === "EMBARCADERO" && erxText.trim().length > 0);
+    (source === "EMBARCADERO" && dm1Text.trim().length > 0);
   const canNext = step === 1 && name.trim().length > 0 && sourceReady;
 
   // ─── Submit ─────────────────────────────────────────────────────────────────
@@ -259,7 +259,7 @@ function WizardInner({
           await runEmbarcadero.mutateAsync({
             data: {
               system_id: created.system_id,
-              xml_text: erxText,
+              dm1_text: dm1Text,
               open_ticket: true,
             },
           });
@@ -394,8 +394,8 @@ function WizardInner({
                   setDdlFileName("");
                 }
                 if (s !== "EMBARCADERO") {
-                  setErxText("");
-                  setErxFileName("");
+                  setDm1Text("");
+                  setDm1FileName("");
                 }
               }}
               sandboxId={sandboxId}
@@ -422,10 +422,10 @@ function WizardInner({
               setDdlDialect={setDdlDialect}
               ddlFileName={ddlFileName}
               setDdlFileName={setDdlFileName}
-              erxText={erxText}
-              setErxText={setErxText}
-              erxFileName={erxFileName}
-              setErxFileName={setErxFileName}
+              dm1Text={dm1Text}
+              setDm1Text={setDm1Text}
+              dm1FileName={dm1FileName}
+              setDm1FileName={setDm1FileName}
             />
           )}
 
@@ -444,8 +444,8 @@ function WizardInner({
               ddlDialect={ddlDialect}
               ddlFileName={ddlFileName}
               ddlText={ddlText}
-              erxFileName={erxFileName}
-              erxText={erxText}
+              dm1FileName={dm1FileName}
+              dm1Text={dm1Text}
             />
           )}
         </CardContent>
@@ -541,10 +541,10 @@ function StepConfigure(props: {
   setDdlDialect: (v: string) => void;
   ddlFileName: string;
   setDdlFileName: (v: string) => void;
-  erxText: string;
-  setErxText: (v: string) => void;
-  erxFileName: string;
-  setErxFileName: (v: string) => void;
+  dm1Text: string;
+  setDm1Text: (v: string) => void;
+  dm1FileName: string;
+  setDm1FileName: (v: string) => void;
 }) {
   return (
     <div className="space-y-6">
@@ -618,10 +618,10 @@ function StepConfigure(props: {
       {props.source === "EMBARCADERO" && (
         <section className="space-y-3 rounded-md border bg-muted/20 p-4">
           <EmbarcaderoDiscovery
-            xmlText={props.erxText}
-            setXmlText={props.setErxText}
-            fileName={props.erxFileName}
-            setFileName={props.setErxFileName}
+            dm1Text={props.dm1Text}
+            setDm1Text={props.setDm1Text}
+            fileName={props.dm1FileName}
+            setFileName={props.setDm1FileName}
           />
         </section>
       )}
@@ -756,8 +756,8 @@ function SourceCards({
     },
     {
       value: "EMBARCADERO",
-      title: "Embarcadero (.erx)",
-      description: "Upload do XML do ER/Studio — modelo lógico completo.",
+      title: "Embarcadero (.DM1)",
+      description: "Upload do arquivo do ER/Studio — modelo lógico completo.",
       icon: <FileText className="h-5 w-5" />,
     },
     {
@@ -1259,26 +1259,26 @@ function DDLDiscovery({
 }
 
 function EmbarcaderoDiscovery({
-  xmlText,
-  setXmlText,
+  dm1Text,
+  setDm1Text,
   fileName,
   setFileName,
 }: {
-  xmlText: string;
-  setXmlText: (v: string) => void;
+  dm1Text: string;
+  setDm1Text: (v: string) => void;
   fileName: string;
   setFileName: (v: string) => void;
 }) {
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     if (!f) return;
-    if (f.size > ERX_MAX_BYTES) {
-      toast.error(`Arquivo muito grande (${(f.size / 1024 / 1024).toFixed(1)} MB > 10 MB)`);
+    if (f.size > DM1_MAX_BYTES) {
+      toast.error(`Arquivo muito grande (${(f.size / 1024 / 1024).toFixed(1)} MB > 50 MB)`);
       return;
     }
     try {
       const text = await f.text();
-      setXmlText(text);
+      setDm1Text(text);
       setFileName(f.name);
     } catch (err) {
       toast.error("Falha ao ler arquivo", {
@@ -1290,13 +1290,13 @@ function EmbarcaderoDiscovery({
   return (
     <div className="space-y-3">
       <div>
-        <label className="text-xs font-medium block mb-1">Arquivo .erx</label>
+        <label className="text-xs font-medium block mb-1">Arquivo .DM1</label>
         <label className="inline-flex items-center gap-2 cursor-pointer rounded-md border bg-background px-3 py-2 text-xs hover:bg-muted/40">
           <Upload className="h-3.5 w-3.5" />
-          <span>{fileName ? "Trocar arquivo" : "Selecionar .erx"}</span>
+          <span>{fileName ? "Trocar arquivo" : "Selecionar .DM1"}</span>
           <input
             type="file"
-            accept=".erx,.xml,text/xml,application/xml"
+            accept=".dm1,.DM1"
             onChange={onFile}
             className="hidden"
           />
@@ -1306,13 +1306,13 @@ function EmbarcaderoDiscovery({
         <div className="rounded-md border bg-emerald-500/5 p-3 text-xs space-y-1">
           <p className="font-medium">{fileName}</p>
           <p className="text-muted-foreground">
-            {xmlText.length.toLocaleString()} caracteres carregados. O parser
-            extrai entities, atributos e relacionamentos do XML do ER/Studio.
+            {dm1Text.length.toLocaleString()} caracteres carregados. O parser
+            extrai entities, atributos e relacionamentos do modelo ER/Studio.
           </p>
         </div>
       ) : (
         <p className="text-[11px] text-muted-foreground">
-          Aceita arquivos até 10 MB. Parser usa defusedxml (proteção contra XXE).
+          Aceita arquivos até 50 MB. Formato nativo do Embarcadero ER/Studio.
         </p>
       )}
     </div>
@@ -1333,8 +1333,8 @@ function StepSummary({
   ddlDialect,
   ddlFileName,
   ddlText,
-  erxFileName,
-  erxText,
+  dm1FileName,
+  dm1Text,
 }: {
   name: string;
   domain: string;
@@ -1349,8 +1349,8 @@ function StepSummary({
   ddlDialect: string;
   ddlFileName: string;
   ddlText: string;
-  erxFileName: string;
-  erxText: string;
+  dm1FileName: string;
+  dm1Text: string;
 }) {
   return (
     <div className="space-y-4 max-w-2xl">
@@ -1377,7 +1377,7 @@ function StepSummary({
                   ? "Unity Catalog"
                   : source === "DDL"
                     ? "Arquivo SQL (DDL)"
-                    : "Embarcadero (.erx)"
+                    : "Embarcadero (.DM1)"
           }
         />
         {source === "LAKEBASE" && (
@@ -1411,8 +1411,8 @@ function StepSummary({
         )}
         {source === "EMBARCADERO" && (
           <>
-            <SummaryRow label="Arquivo" value={erxFileName || "—"} />
-            <SummaryRow label="Tamanho" value={`${erxText.length.toLocaleString()} chars`} />
+            <SummaryRow label="Arquivo" value={dm1FileName || "—"} />
+            <SummaryRow label="Tamanho" value={`${dm1Text.length.toLocaleString()} chars`} />
           </>
         )}
       </dl>

@@ -5,6 +5,16 @@ Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+### Changed
+- **Engenharia reversa do Embarcadero migrou de `.erx` (XML) para `.DM1` (CSV nativo)** —
+  formato `.DM1` é o export padrão do ER/Studio na Núclea. Novo parser em
+  `extractions/embarcadero.py:parse_dm1()` extrai entities, atributos (com
+  tipo derivado de `DatatypeId` + Length/Scale), PKs e FKs (FKs ainda emitidas
+  como warnings). UI: `accept=".dm1,.DM1"`, cap de upload 50 MB.
+- Dependência `defusedxml` removida — sem parser XML em ingestion, vetor XXE
+  elimina-se por construção. Tests de segurança XXE substituídos por tests
+  de robustez do parser DM1.
+
 ### Added
 - Histórico futuro entra aqui.
 

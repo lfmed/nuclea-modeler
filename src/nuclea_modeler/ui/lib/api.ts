@@ -1976,11 +1976,11 @@ export const useDeleteLayout = (
     ...opts?.mutation,
   });
 
-// ─── Embarcadero ER/Studio (.erx) import ─────────────────────────────────────
+// ─── Embarcadero ER/Studio (.DM1) import ─────────────────────────────────────
 
 export interface EmbarcaderoImportIn {
   system_id: string;
-  xml_text: string;
+  dm1_text: string;
   open_ticket: boolean;
 }
 

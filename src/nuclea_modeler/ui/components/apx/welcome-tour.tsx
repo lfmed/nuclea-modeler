@@ -53,7 +53,7 @@ const STEPS: Step[] = [
     description: (
       <>
         Rode uma extração a partir do <strong>Lakebase</strong>, <strong>DDL file</strong> ou{" "}
-        <strong>.erx do Embarcadero</strong>. O app compara com o catálogo e abre tickets
+        <strong>.DM1 do Embarcadero</strong>. O app compara com o catálogo e abre tickets
         automaticamente se houver divergências.
       </>
     ),

@@ -51,15 +51,15 @@ class DDLImportIn(BaseModel):
 
 
 class EmbarcaderoImportIn(BaseModel):
-    """Trigger an extraction from an Embarcadero ER/Studio .erx XML file.
+    """Trigger an extraction from an Embarcadero ER/Studio .DM1 file.
 
-    Size cap: 10 MB. Arquivos .erx típicos da Núclea são <2MB.
-    Cap protege contra DoS no parser XML (defusedxml já bloqueia
-    XXE/billion-laughs, mas tamanho bruto ainda pode degradar performance).
+    Size cap: 50 MB. Arquivos .DM1 são ASCII multi-seção (CSV interno) e
+    podem ser maiores que .erx XML — cap conservador protege o parser
+    contra DoS.
     """
 
     system_id: str
-    xml_text: str = Field(min_length=1, max_length=10_000_000)
+    dm1_text: str = Field(min_length=1, max_length=50_000_000)
     open_ticket: bool = True
 
 

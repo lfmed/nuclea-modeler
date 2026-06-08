@@ -221,7 +221,7 @@ def run_embarcadero(
     return run_embarcadero_import(
         sql,
         system_id=payload.system_id,
-        xml_text=payload.xml_text,
+        dm1_text=payload.dm1_text,
         actor=actor,
         open_ticket_on_diff=payload.open_ticket,
     )

@@ -89,7 +89,7 @@ function Header() {
 }
 
 function ExtractionsContent() {
-  const [tab, setTab] = useState<"lakebase" | "ddl" | "erx" | "history">("lakebase");
+  const [tab, setTab] = useState<"lakebase" | "ddl" | "dm1" | "history">("lakebase");
 
   return (
     <div className="space-y-4">
@@ -102,9 +102,9 @@ function ExtractionsContent() {
           <FileCode className="h-4 w-4 mr-2" />
           Import de DDL
         </TabButton>
-        <TabButton active={tab === "erx"} onClick={() => setTab("erx")}>
+        <TabButton active={tab === "dm1"} onClick={() => setTab("dm1")}>
           <FileBox className="h-4 w-4 mr-2" />
-          Embarcadero (.erx)
+          Embarcadero (.DM1)
         </TabButton>
         <TabButton active={tab === "history"} onClick={() => setTab("history")}>
           <Inbox className="h-4 w-4 mr-2" />
@@ -114,7 +114,7 @@ function ExtractionsContent() {
 
       {tab === "lakebase" && <LakebaseTab />}
       {tab === "ddl" && <DDLTab />}
-      {tab === "erx" && <EmbarcaderoTab />}
+      {tab === "dm1" && <EmbarcaderoTab />}
       {tab === "history" && <HistoryTab />}
     </div>
   );
@@ -375,7 +375,7 @@ function EmbarcaderoTab() {
   const qc = useQueryClient();
   const navigate = useNavigate();
 
-  const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
+  const MAX_FILE_BYTES = 50 * 1024 * 1024; // 50 MB
 
   const { mutate: runImport, isPending, data: result } = useRunEmbarcaderoImport({
     mutation: {
@@ -392,19 +392,19 @@ function EmbarcaderoTab() {
   const [systemId, setSystemId] = useState(systems[0]?.system_id || "");
   const [fileName, setFileName] = useState<string>("");
   const [fileSize, setFileSize] = useState<number>(0);
-  const [xmlText, setXmlText] = useState<string>("");
+  const [dm1Text, setDm1Text] = useState<string>("");
   const [fileError, setFileError] = useState<string | null>(null);
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     setFileError(null);
-    setXmlText("");
+    setDm1Text("");
     setFileName("");
     setFileSize(0);
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.size > MAX_FILE_BYTES) {
       setFileError(
-        `Arquivo muito grande (${(file.size / 1024 / 1024).toFixed(1)} MB). Limite: 10 MB.`,
+        `Arquivo muito grande (${(file.size / 1024 / 1024).toFixed(1)} MB). Limite: 50 MB.`,
       );
       return;
     }
@@ -412,7 +412,7 @@ function EmbarcaderoTab() {
       const text = await file.text();
       setFileName(file.name);
       setFileSize(file.size);
-      setXmlText(text);
+      setDm1Text(text);
     } catch (err) {
       setFileError(`Falha ao ler o arquivo: ${String(err)}`);
     }
@@ -420,11 +420,11 @@ function EmbarcaderoTab() {
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!xmlText || !systemId) return;
+    if (!dm1Text || !systemId) return;
     runImport({
       data: {
         system_id: systemId,
-        xml_text: xmlText,
+        dm1_text: dm1Text,
         open_ticket: true,
       },
     });
@@ -444,9 +444,9 @@ function EmbarcaderoTab() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Importar modelo Embarcadero (.erx)</CardTitle>
+        <CardTitle>Importar modelo Embarcadero (.DM1)</CardTitle>
         <CardDescription>
-          Faça upload de um arquivo <code>.erx</code> exportado pelo Embarcadero ER/Studio.
+          Faça upload de um arquivo <code>.DM1</code> exportado pelo Embarcadero ER/Studio.
           O parser identifica entidades, atributos e tipos, e gera um ticket de reconciliação
           contra o catálogo atual.
         </CardDescription>
@@ -456,10 +456,10 @@ function EmbarcaderoTab() {
           <Field label="Sistema-alvo do diff (ou criar novo)" required>
             <SystemPicker value={systemId} onChange={setSystemId} required />
           </Field>
-          <Field label="Arquivo .erx (máximo 10 MB)" required>
+          <Field label="Arquivo .DM1 (máximo 50 MB)" required>
             <Input
               type="file"
-              accept=".erx,.xml,application/xml,text/xml"
+              accept=".dm1,.DM1"
               onChange={handleFile}
             />
             {fileName && !fileError && (
@@ -472,7 +472,7 @@ function EmbarcaderoTab() {
             )}
           </Field>
           <div className="flex justify-end">
-            <Button type="submit" disabled={isPending || !xmlText || !systemId || !!fileError}>
+            <Button type="submit" disabled={isPending || !dm1Text || !systemId || !!fileError}>
               {isPending ? (
                 <>
                   <RefreshCw className="mr-2 h-4 w-4 animate-spin" />

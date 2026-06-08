@@ -6,7 +6,7 @@
 [![Release](https://img.shields.io/github/v/release/lfmed/nuclea-modeler?include_prereleases&label=release&color=7B2D8E)](https://github.com/lfmed/nuclea-modeler/releases)
 [![Coverage](https://img.shields.io/badge/coverage-81%25-green)](https://github.com/lfmed/nuclea-modeler/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue)](https://www.python.org)
-[![Security](https://img.shields.io/badge/security-bandit%20%2B%20defusedxml-blue)](SECURITY.md)
+[![Security](https://img.shields.io/badge/security-bandit-blue)](SECURITY.md)
 [![License](https://img.shields.io/badge/license-Privado-lightgrey)](#)
 
 Aplicação full-stack (FastAPI + React, via [APX](https://github.com/databricks-solutions/apx)) que centraliza o ciclo de vida dos modelos de dados — da engenharia reversa dos ambientes **HINT/HEXT/PROD** até o espelhamento automático no **Unity Catalog**.

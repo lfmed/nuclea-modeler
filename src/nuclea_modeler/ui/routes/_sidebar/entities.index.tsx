@@ -87,7 +87,7 @@ function EntitiesTable() {
         description={
           <>
             Entidades são as tabelas e views que vivem nos sistemas. Você pode criar uma
-            manualmente, importar de um arquivo <code className="text-xs font-mono bg-muted/60 px-1 py-0.5 rounded">.erx</code> do
+            manualmente, importar de um arquivo <code className="text-xs font-mono bg-muted/60 px-1 py-0.5 rounded">.DM1</code> do
             ER/Studio, ou rodar uma engenharia reversa contra HINT/HEXT/PROD.
           </>
         }

@@ -729,8 +729,8 @@ function Faq() {
           Sim. Em <Link to="/extractions" className="text-nuclea-primary underline">/extractions</Link>{" "}
           → <strong>Importar DDL</strong>: cole o DDL e escolha o dialeto
           (T-SQL, PL/SQL, Postgres, MySQL, Spark SQL etc.). Importação de{" "}
-          <code className="text-xs bg-muted px-1 py-0.5 rounded">.erx</code>{" "}
-          (Embarcadero) também é suportada.
+          <code className="text-xs bg-muted px-1 py-0.5 rounded">.DM1</code>{" "}
+          (Embarcadero ER/Studio) também é suportada.
         </>
       ),
     },

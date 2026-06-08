@@ -22,7 +22,7 @@ from ..core.sql import Sql
 from ..lakebase.service import open_connection
 from ..tickets.models import DiffEntity, TicketDiff
 from ..tickets.service import open_ticket
-from .embarcadero import parse_erx
+from .embarcadero import parse_dm1
 from .models import (
     ExtractedAttribute,
     ExtractedEntity,
@@ -695,16 +695,16 @@ def run_embarcadero_import(
     sql: Sql,
     *,
     system_id: str,
-    xml_text: str,
+    dm1_text: str,
     actor: str,
     open_ticket_on_diff: bool,
 ) -> ExtractionResult:
-    """Parse an Embarcadero ER/Studio .erx XML, diff against catalog, open ticket if needed."""
+    """Parse um arquivo Embarcadero ER/Studio .DM1, diff contra catálogo e abre ticket se necessário."""
     started = datetime.utcnow()
     start_clock = time.monotonic()
 
     try:
-        snapshot, parse_warnings = parse_erx(xml_text, system_id)
+        snapshot, parse_warnings = parse_dm1(dm1_text, system_id)
     except Exception as exc:
         return ExtractionResult(
             extraction_id="",
@@ -715,7 +715,7 @@ def run_embarcadero_import(
             objects_removed=0,
             duration_ms=int((time.monotonic() - start_clock) * 1000),
             ticket_id=None,
-            summary_md=f"Falha ao processar arquivo .erx: {exc}",
+            summary_md=f"Falha ao processar arquivo .DM1: {exc}",
             errors=[str(exc)[:500]],
         )
 
@@ -724,7 +724,7 @@ def run_embarcadero_import(
         duration_ms = int((time.monotonic() - start_clock) * 1000)
         error_msg = (
             "Não foi possível identificar entidades no arquivo. "
-            "Formato suportado: Embarcadero ER/Studio .erx XML."
+            "Formato suportado: Embarcadero ER/Studio .DM1."
         )
         persist_extraction(
             sql,
@@ -775,7 +775,7 @@ def run_embarcadero_import(
         ticket_id = open_ticket(
             sql,
             title=(
-                f"Reconciliação Embarcadero (.erx) — {summary['new']} novos, "
+                f"Reconciliação Embarcadero (.DM1) — {summary['new']} novos, "
                 f"{summary['changed']} alterados, {summary['removed']} removidos"
             ),
             system_id=system_id,
@@ -783,7 +783,7 @@ def run_embarcadero_import(
             diff=diff,
             extraction_id=None,
             summary_md=(
-                f"Fonte: arquivo Embarcadero ER/Studio .erx\n"
+                f"Fonte: arquivo Embarcadero ER/Studio .DM1\n"
                 f"Schemas detectados: {', '.join(snapshot.schemas) or '(nenhum)'}\n\n"
                 f"- **{summary['new']}** entidades novas\n"
                 f"- **{summary['changed']}** entidades alteradas\n"
@@ -825,7 +825,7 @@ def run_embarcadero_import(
         duration_ms=duration_ms,
         ticket_id=ticket_id,
         summary_md=(
-            f"Parseado {summary['found']} objetos do .erx. "
+            f"Parseado {summary['found']} objetos do .DM1. "
             f"+{summary['new']} novos, ~{summary['changed']} alterados, -{summary['removed']} removidos."
         ),
         errors=parse_warnings,

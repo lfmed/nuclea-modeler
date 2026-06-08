@@ -37,8 +37,8 @@ Triagem + plano de correção em até **10 dias úteis** para alto/crítico.
 |---|---|
 | **Auth** | Databricks SSO (OAuth). Sem auth local. **Plataforma Databricks Apps força SSO em TODO endpoint** — incluindo `/livez`/`/readyz` que seriam "públicos" por convenção k8s. Vide `docs/operations/deploy-runbook.md` para workarounds de monitoramento externo. |
 | **Authorization** | RBAC com 4 papéis (`VIEWER`, `STEWARD`, `ARCHITECT`, `ADMIN`). `require_role()` decorator em rotas sensíveis. |
-| **Input validation** | Pydantic em todo endpoint. `_require_ident()` para identifiers SQL não-parametrizáveis. **Size caps:** DDL upload 5 MB, .erx XML upload 10 MB (cap parser DoS). |
-| **XML parsing** | `defusedxml` (não stdlib `xml.etree`) em todo parser .erx — bloqueia XXE, billion-laughs, DTD recursion. |
+| **Input validation** | Pydantic em todo endpoint. `_require_ident()` para identifiers SQL não-parametrizáveis. **Size caps:** DDL upload 5 MB, .DM1 upload 50 MB (cap parser DoS). |
+| **DM1 parsing** | Parser nativo de texto/CSV (sem XML) — sem exposição a XXE/DTD. Linhas malformadas descartadas em silêncio; arquivos sem seção `Entity` falham com erro explícito. |
 | **SQL injection** | 100% das queries com input do usuário usam `delta.param()` (binding nomeado `:name`). f-strings com input do usuário são bloqueadas em CI via ruff custom rule. |
 | **XSS** | React escapa por default; sem `dangerouslySetInnerHTML` em código próprio. |
 | **CSRF** | SameSite cookies via Databricks SSO; CORS opt-in via `NUCLEA_CORS_ALLOW_ORIGINS`. |
@@ -95,6 +95,7 @@ Rotação: atualizar valor no Secrets API → re-testar conexão em `/connection
 | Data | Categoria | Detalhe | Status |
 |---|---|---|---|
 | 2026-05-28 | XXE (CWE-20, bandit B314) | `xml.etree.ElementTree.fromstring` no parser `.erx` do Embarcadero (upload do usuário) era vulnerável a XML External Entity attacks, billion-laughs DoS e DTD recursion. Detectado pelo bandit hard-gate em CI. Substituído por `defusedxml.ElementTree`. | ✅ Corrigido em [v0.2.1](https://github.com/lfmed/nuclea-modeler/releases/tag/v0.2.1). Recomendado criar [Security Advisory privado](https://github.com/lfmed/nuclea-modeler/security/advisories/new) via UI para tracking formal. |
+| 2026-06-08 | N/A — refactor de superfície | Parser `.erx` (XML) removido em favor de `.DM1` (texto/CSV nativo Embarcadero). Vetor XXE/DTD elimina-se por construção (sem parser XML em ingestion). `defusedxml` removido das dependências. | ✅ Concluído. |
 
 ## Agradecimentos
 
