@@ -26,6 +26,8 @@ from .embarcadero import parse_dm1
 from .models import (
     ExtractedAttribute,
     ExtractedEntity,
+    ExtractedIndex,
+    ExtractedIndexColumn,
     ExtractionResult,
     ExtractionSnapshot,
 )
@@ -146,6 +148,61 @@ def extract_from_lakebase(
             )
             row_counts = {(r[0], r[1]): int(r[2]) if r[2] is not None else None for r in cur.fetchall()}
 
+            # 5) Indexes — skip PK indexes (já cobertos por is_primary_key).
+            # pg_index expõe colunas em ordem via indkey + amname pelo acesso method.
+            # Tipos relevantes: btree, hash, gin, brin, gist.
+            cur.execute(
+                """
+                SELECT
+                    n.nspname AS schema_name,
+                    c.relname AS table_name,
+                    ic.relname AS index_name,
+                    am.amname AS index_type,
+                    i.indisunique AS is_unique,
+                    i.indpred IS NOT NULL AS has_partial,
+                    pg_get_expr(i.indpred, i.indrelid) AS partial_where,
+                    array_agg(a.attname ORDER BY array_position(i.indkey, a.attnum)) AS columns
+                FROM pg_index i
+                JOIN pg_class c ON c.oid = i.indrelid
+                JOIN pg_class ic ON ic.oid = i.indexrelid
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                JOIN pg_am am ON am.oid = ic.relam
+                JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = ANY(i.indkey)
+                WHERE n.nspname = ANY(%s)
+                  AND NOT i.indisprimary
+                GROUP BY n.nspname, c.relname, ic.relname, am.amname, i.indisunique,
+                         i.indpred, i.indrelid
+                ORDER BY n.nspname, c.relname, ic.relname
+                """,
+                (schemas,),
+            )
+            indexes_raw = cur.fetchall()
+
+    # Group indexes by (schema, table)
+    indexes_by_table: dict[tuple[str, str], list[ExtractedIndex]] = {}
+    # PG amname → IndexType canônico
+    _pg_amname_to_type = {
+        "btree": "BTREE", "hash": "HASH", "gin": "GIN",
+        "brin": "BRIN", "gist": "GIST",
+    }
+    for row in indexes_raw:
+        schema, table, idx_name, am_name, is_unique, has_partial, partial_where, columns = row
+        col_list = list(columns) if columns else []
+        if not col_list:
+            continue
+        ix_type = _pg_amname_to_type.get((am_name or "btree").lower(), "BTREE")
+        if is_unique:
+            ix_type = "UNIQUE"
+        indexes_by_table.setdefault((schema, table), []).append(
+            ExtractedIndex(
+                index_name=idx_name,
+                index_type=ix_type,
+                is_unique=bool(is_unique),
+                columns=[ExtractedIndexColumn(name=c, direction="ASC") for c in col_list],
+                native_comment=(f"WHERE {partial_where}" if has_partial and partial_where else None),
+            )
+        )
+
     # Group columns by (schema, table)
     cols_by_table: dict[tuple[str, str], list[ExtractedAttribute]] = {}
     for c in columns:
@@ -179,6 +236,7 @@ def extract_from_lakebase(
                 native_comment=comment,
                 row_count_approx=row_counts.get((schema, name)),
                 attributes=cols_by_table.get((schema, name), []),
+                indexes=indexes_by_table.get((schema, name), []),
             )
         )
 
@@ -948,6 +1006,35 @@ def _table_info_to_entity(t: Any, *, fallback_schema: str) -> ExtractedEntity:
     # Ordena por position (UC usa 0-based, já convertemos para 1-based).
     attributes.sort(key=lambda a: (a.ordinal_position is None, a.ordinal_position or 0))
 
+    # Liquid Clustering: Delta expõe via TBLPROPERTIES `clusteringColumns`.
+    # UC TableInfo.properties traz essas propriedades como dict[str, str].
+    # Formato: 'clusteringColumns' = '[["col_a"],["col_b"]]' (lista de listas
+    # — cada inner list é uma chave de cluster, normalmente 1 coluna por).
+    indexes_extracted: list[ExtractedIndex] = []
+    props: dict[str, Any] = getattr(t, "properties", None) or {}
+    cluster_raw = props.get("clusteringColumns") if isinstance(props, dict) else None
+    if cluster_raw:
+        try:
+            import json as _json
+            parsed = _json.loads(cluster_raw)
+            cluster_cols: list[str] = []
+            if isinstance(parsed, list):
+                for item in parsed:
+                    if isinstance(item, list) and item and isinstance(item[0], str):
+                        cluster_cols.append(item[0])
+                    elif isinstance(item, str):
+                        cluster_cols.append(item)
+            if cluster_cols:
+                indexes_extracted.append(ExtractedIndex(
+                    index_name=f"{t.name}_liquid",
+                    index_type="LIQUID",
+                    is_unique=False,
+                    columns=[ExtractedIndexColumn(name=c, direction="ASC") for c in cluster_cols],
+                    native_comment="Liquid clustering (Delta)",
+                ))
+        except (ValueError, TypeError):
+            pass
+
     return ExtractedEntity(
         schema_name=t.schema_name or fallback_schema,
         technical_name=t.name or "",
@@ -955,6 +1042,7 @@ def _table_info_to_entity(t: Any, *, fallback_schema: str) -> ExtractedEntity:
         native_comment=t.comment,
         row_count_approx=None,  # UC não expõe row count cheap
         attributes=attributes,
+        indexes=indexes_extracted,
     )
 
 
