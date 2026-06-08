@@ -414,6 +414,155 @@ export const useDeleteAttribute = (
     ...opts?.mutation,
   });
 
+// ─── Indexes & Partitioning ──────────────────────────────────────────────────
+
+export type IndexType =
+  | "BTREE" | "HASH" | "UNIQUE" | "GIN" | "BRIN" | "GIST"
+  | "BITMAP" | "CLUSTERED" | "NONCLUSTERED"
+  | "Z-ORDER" | "LIQUID";
+
+export type ColumnDirection = "ASC" | "DESC";
+export type PartitionStrategy = "RANGE" | "LIST" | "HASH" | "LIQUID" | "NONE";
+
+export interface IndexColumn {
+  name: string;
+  direction: ColumnDirection;
+}
+
+export interface EntityIndexIn {
+  entity_id: string;
+  index_name: string;
+  index_type: IndexType;
+  columns: IndexColumn[];
+  include_columns?: string[];
+  partial_where?: string | null;
+  is_unique?: boolean;
+  description_md?: string | null;
+  native_comment?: string | null;
+}
+
+export interface EntityIndexOut {
+  index_id: string;
+  entity_id: string;
+  index_name: string;
+  index_type: IndexType;
+  columns: IndexColumn[];
+  include_columns: string[];
+  partial_where: string | null;
+  is_unique: boolean;
+  description_md: string | null;
+  native_comment: string | null;
+  origin: "EXTRACTED" | "MANUAL" | null;
+  created_at: string;
+  created_by: string;
+  updated_at: string;
+  updated_by: string;
+  pending_op?: "add" | "change" | "remove" | null;
+}
+
+export interface EntityPartitioningIn {
+  entity_id: string;
+  strategy: PartitionStrategy;
+  columns: string[];
+  num_partitions?: number | null;
+  bounds?: Record<string, unknown[]> | null;
+  description_md?: string | null;
+}
+
+export interface EntityPartitioningOut {
+  entity_id: string;
+  strategy: PartitionStrategy;
+  columns: string[];
+  num_partitions: number | null;
+  bounds: Record<string, unknown[]> | null;
+  description_md: string | null;
+  origin: "EXTRACTED" | "MANUAL" | null;
+  created_at?: string | null;
+  created_by?: string | null;
+  updated_at?: string | null;
+  updated_by?: string | null;
+  pending_op?: "add" | "change" | "remove" | null;
+}
+
+export const useListEntityIndexesSuspense = (
+  entityId: string,
+  s?: Selector<EntityIndexOut[]>,
+) =>
+  useSuspenseQuery({
+    queryKey: ["listEntityIndexes", entityId],
+    queryFn: async () =>
+      (await api.get<EntityIndexOut[]>(
+        `/entities/${encodeURIComponent(entityId)}/indexes`,
+      )).data,
+    ...s,
+  });
+
+export const useCreateEntityIndex = (
+  opts?: Opts<EntityIndexOut, { entityId: string; data: EntityIndexIn }>,
+) =>
+  useMutation({
+    mutationFn: async ({ entityId, data }) =>
+      (await api.post<EntityIndexOut>(
+        `/entities/${encodeURIComponent(entityId)}/indexes`,
+        data,
+      )).data,
+    ...opts?.mutation,
+  });
+
+export const useUpdateEntityIndex = (
+  opts?: Opts<
+    EntityIndexOut,
+    { entityId: string; indexId: string; data: EntityIndexIn }
+  >,
+) =>
+  useMutation({
+    mutationFn: async ({ entityId, indexId, data }) =>
+      (await api.put<EntityIndexOut>(
+        `/entities/${encodeURIComponent(entityId)}/indexes/${encodeURIComponent(indexId)}`,
+        data,
+      )).data,
+    ...opts?.mutation,
+  });
+
+export const useDeleteEntityIndex = (
+  opts?: Opts<{ deleted: string }, { entityId: string; indexId: string }>,
+) =>
+  useMutation({
+    mutationFn: async ({ entityId, indexId }) =>
+      (await api.delete<{ deleted: string }>(
+        `/entities/${encodeURIComponent(entityId)}/indexes/${encodeURIComponent(indexId)}`,
+      )).data,
+    ...opts?.mutation,
+  });
+
+export const useGetEntityPartitioningSuspense = (
+  entityId: string,
+  s?: Selector<EntityPartitioningOut>,
+) =>
+  useSuspenseQuery({
+    queryKey: ["getEntityPartitioning", entityId],
+    queryFn: async () =>
+      (await api.get<EntityPartitioningOut>(
+        `/entities/${encodeURIComponent(entityId)}/partitioning`,
+      )).data,
+    ...s,
+  });
+
+export const useSetEntityPartitioning = (
+  opts?: Opts<
+    EntityPartitioningOut,
+    { entityId: string; data: EntityPartitioningIn }
+  >,
+) =>
+  useMutation({
+    mutationFn: async ({ entityId, data }) =>
+      (await api.put<EntityPartitioningOut>(
+        `/entities/${encodeURIComponent(entityId)}/partitioning`,
+        data,
+      )).data,
+    ...opts?.mutation,
+  });
+
 // ─── RBAC ─────────────────────────────────────────────────────────────────────
 
 export type RoleName =

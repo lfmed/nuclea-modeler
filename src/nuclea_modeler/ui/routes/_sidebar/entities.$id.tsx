@@ -19,6 +19,8 @@ import {
 } from "@/lib/api";
 import selector from "@/lib/selector";
 import { TypePicker } from "@/components/diagram/type-picker";
+import { IndexesSection } from "@/components/diagram/indexes-section";
+import { PartitioningSection } from "@/components/diagram/partitioning-section";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -170,6 +172,9 @@ function EntityDetail() {
       <Suspense fallback={<Skeleton className="h-40 w-full" />}>
         <AttributesSection entityId={id} technology={systemTechnology} />
       </Suspense>
+
+      <IndexesSection entityId={id} technology={systemTechnology} />
+      <PartitioningSection entityId={id} technology={systemTechnology} />
     </div>
   );
 }
