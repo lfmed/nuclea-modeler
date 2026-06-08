@@ -15,7 +15,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from nuclea_modeler.backend.extractions import service as esvc
+from nuclea_modeler.backend.extractions import diff as esvc
 from nuclea_modeler.backend.extractions.models import (
     ExtractedAttribute,
     ExtractedEntity,
