@@ -172,11 +172,23 @@ function IndexRow({
   onDelete: () => void;
   deleting: boolean;
 }) {
+  const pendingOp = idx.pending_op ?? null;
+  const isRemove = pendingOp === "remove";
+  const pendingClass =
+    pendingOp === "add"
+      ? "border-emerald-500/40 bg-emerald-500/5"
+      : pendingOp === "change"
+        ? "border-amber-500/40 bg-amber-500/5"
+        : isRemove
+          ? "border-rose-500/40 bg-rose-500/5 opacity-70"
+          : "";
   return (
-    <div className="rounded-md border bg-background p-3 text-sm space-y-1.5">
+    <div className={`rounded-md border bg-background p-3 text-sm space-y-1.5 ${pendingClass}`}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 font-mono text-sm">
-          <span className="font-medium">{idx.index_name}</span>
+          <span className={`font-medium ${isRemove ? "line-through" : ""}`}>
+            {idx.index_name}
+          </span>
           <Badge variant="outline" className="text-[10px] font-mono">
             {idx.index_type}
           </Badge>
@@ -186,10 +198,27 @@ function IndexRow({
           {idx.partial_where && (
             <Badge variant="outline" className="text-[10px]">PARTIAL</Badge>
           )}
+          {pendingOp && (
+            <Badge
+              variant="outline"
+              className={`text-[10px] ${
+                pendingOp === "add"
+                  ? "border-emerald-500/60 text-emerald-700 dark:text-emerald-400"
+                  : pendingOp === "change"
+                    ? "border-amber-500/60 text-amber-700 dark:text-amber-400"
+                    : "border-rose-500/60 text-rose-700 dark:text-rose-400"
+              }`}
+              title="Mudança pendente na sessão"
+            >
+              pending · {pendingOp}
+            </Badge>
+          )}
         </div>
         <div className="flex gap-1">
-          <Button size="sm" variant="ghost" onClick={onEdit}>editar</Button>
-          <Button size="sm" variant="ghost" onClick={onDelete} disabled={deleting}>
+          {!isRemove && (
+            <Button size="sm" variant="ghost" onClick={onEdit}>editar</Button>
+          )}
+          <Button size="sm" variant="ghost" onClick={onDelete} disabled={deleting || isRemove}>
             <Trash2 className="h-3.5 w-3.5 text-destructive" />
           </Button>
         </div>

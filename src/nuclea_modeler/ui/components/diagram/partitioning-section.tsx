@@ -111,6 +111,14 @@ function PartitioningContent({
 
   return (
     <div className="space-y-3">
+      {part.pending_op && (
+        <div className="rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-xs">
+          <span className="font-medium text-amber-700 dark:text-amber-400">
+            Pendente na sessão:
+          </span>{" "}
+          mudança ainda não aprovada — aprove o ticket pra aplicar.
+        </div>
+      )}
       <div>
         <label className="text-xs font-medium block mb-1">Estratégia</label>
         <select

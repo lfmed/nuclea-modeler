@@ -974,15 +974,28 @@ def delete_attribute(
 # ─── Indexes ─────────────────────────────────────────────────────────────────
 
 
+def _session_diff_for_entity(sql, user_ws, entity_id: str) -> dict | None:
+    """Resolve o diff da sessão OPEN do user *para a entity*. None se não há."""
+    keys = _resolve_entity_keys(sql, entity_id)
+    system_id = keys[0] if keys else None
+    _, diff, _ = _get_session_diff(sql, user_ws, system_id)
+    return diff
+
+
 @router.get(
     "/{entity_id}/indexes",
     response_model=list[EntityIndexOut],
     operation_id="listEntityIndexes",
 )
-def list_entity_indexes(entity_id: str, sql: SqlDependency) -> list[EntityIndexOut]:
-    """Lista índices da entity. Sem overlay de sessão nesta versão — usar
-    GET /tickets/{id} pra ver mutações pendentes."""
-    return list_indexes_for_entity(sql, entity_id)
+def list_entity_indexes(
+    entity_id: str,
+    sql: SqlDependency,
+    user_ws: Dependencies.UserClient,
+) -> list[EntityIndexOut]:
+    """Lista índices da entity com overlay do ticket OPEN do user — mudanças
+    pendentes (add/change/remove) aparecem inline com badge."""
+    diff = _session_diff_for_entity(sql, user_ws, entity_id)
+    return list_indexes_for_entity(sql, entity_id, session_diff=diff)
 
 
 @router.post(
@@ -1101,10 +1114,15 @@ def delete_entity_index(
     response_model=EntityPartitioningOut,
     operation_id="getEntityPartitioning",
 )
-def get_entity_partitioning(entity_id: str, sql: SqlDependency) -> EntityPartitioningOut:
-    """Retorna a estratégia de particionamento. Se não existir, retorna
-    estratégia ``NONE`` (default)."""
-    part = get_partitioning(sql, entity_id)
+def get_entity_partitioning(
+    entity_id: str,
+    sql: SqlDependency,
+    user_ws: Dependencies.UserClient,
+) -> EntityPartitioningOut:
+    """Retorna a estratégia de particionamento com overlay do ticket OPEN.
+    Se não existir nem catálogo nem pending, retorna ``NONE`` (default)."""
+    diff = _session_diff_for_entity(sql, user_ws, entity_id)
+    part = get_partitioning(sql, entity_id, session_diff=diff)
     if part:
         return part
     return EntityPartitioningOut(

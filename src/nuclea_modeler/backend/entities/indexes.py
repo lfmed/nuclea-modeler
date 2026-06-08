@@ -5,9 +5,14 @@ Mantém o modelo editorial: toda mutação vai pro ticket OPEN do user via
 ``index_change:``, ``partitioning:set``. O apply em ``tickets/service.py``
 chama de volta as funções ``apply_*`` daqui pra materializar.
 
+Reads suportam overlay: ``list_indexes_for_entity`` e ``get_partitioning``
+aceitam um diff de sessão e mesclam pendings com badge ``pending_op``.
+
 Helpers públicos:
-    - ``list_indexes_for_entity(sql, entity_id) -> list[EntityIndexOut]``
-    - ``get_partitioning(sql, entity_id) -> EntityPartitioningOut | None``
+    - ``list_indexes_for_entity(sql, entity_id, *, session_diff=None)``
+    - ``get_partitioning(sql, entity_id, *, session_diff=None)``
+    - ``apply_session_overlay_to_indexes(catalog, diff, entity_id)``
+    - ``apply_session_overlay_to_partitioning(catalog, diff, entity_id)``
     - ``stage_index_*``: empilha mutação no ticket OPEN
     - ``apply_index_*`` / ``apply_partitioning_set``: chamadas pelo apply
 """
@@ -20,6 +25,10 @@ from typing import Any
 from ..core import delta
 from ..core._nuclea_config import get_settings
 from ..tickets.session import get_or_create_session_ticket, stage_entity_change
+from .index_overlay import (
+    apply_session_overlay_to_indexes as apply_session_overlay_to_indexes,
+    apply_session_overlay_to_partitioning as apply_session_overlay_to_partitioning,
+)
 from .models import (
     EntityIndexIn,
     EntityIndexOut,
@@ -129,7 +138,9 @@ _PART_COLS = [
 ]
 
 
-def list_indexes_for_entity(sql, entity_id: str) -> list[EntityIndexOut]:
+def list_indexes_for_entity(
+    sql, entity_id: str, *, session_diff: dict[str, Any] | None = None,
+) -> list[EntityIndexOut]:
     s = get_settings()
     rows = delta.fetch_all_params(
         sql,
@@ -141,10 +152,15 @@ def list_indexes_for_entity(sql, entity_id: str) -> list[EntityIndexOut]:
         """,
         [delta.param("entity_id", entity_id)],
     )
-    return [_idx_row_to_out(r) for r in rows]
+    catalog = [_idx_row_to_out(r) for r in rows]
+    if session_diff:
+        return apply_session_overlay_to_indexes(catalog, session_diff, entity_id)
+    return catalog
 
 
-def get_partitioning(sql, entity_id: str) -> EntityPartitioningOut | None:
+def get_partitioning(
+    sql, entity_id: str, *, session_diff: dict[str, Any] | None = None,
+) -> EntityPartitioningOut | None:
     s = get_settings()
     row = delta.fetch_one_params(
         sql,
@@ -155,7 +171,13 @@ def get_partitioning(sql, entity_id: str) -> EntityPartitioningOut | None:
         """,
         [delta.param("entity_id", entity_id)],
     )
-    return _part_row_to_out(row) if row else None
+    catalog = _part_row_to_out(row) if row else None
+    if session_diff:
+        return apply_session_overlay_to_partitioning(catalog, session_diff, entity_id)
+    return catalog
+
+
+# Overlay editorial: helpers em ``index_overlay.py`` (re-exportados acima).
 
 
 # ─── Stage no ticket OPEN ───────────────────────────────────────────────────
