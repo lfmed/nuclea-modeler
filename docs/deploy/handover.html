@@ -1,0 +1,1237 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Núclea Modeler — Handover Técnico</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --bg: #fafaf7;
+    --bg-card: #ffffff;
+    --bg-elev: #f3eef7;
+    --text: #1a1322;
+    --text-dim: #5a4c6e;
+    --text-soft: #8a7a9e;
+    --primary: #7b2d8e;
+    --primary-soft: #c93dad;
+    --primary-dark: #4a1a5a;
+    --accent: #ffc72c;
+    --success: #16a34a;
+    --warn: #d97706;
+    --danger: #dc2626;
+    --info: #0284c7;
+    --border: #e6dfee;
+    --code-bg: #1a1322;
+    --code-text: #f5f1f9;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    font-size: 15px;
+  }
+  .layout {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    min-height: 100vh;
+  }
+  @media (max-width: 980px) {
+    .layout { grid-template-columns: 1fr; }
+    .toc { position: relative !important; height: auto !important; }
+  }
+  /* TOC */
+  .toc {
+    background: var(--bg-card);
+    border-right: 1px solid var(--border);
+    padding: 32px 20px;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+  }
+  .toc .brand {
+    font-weight: 700;
+    color: var(--primary);
+    font-size: 18px;
+    margin-bottom: 4px;
+    letter-spacing: 0.4px;
+  }
+  .toc .brand-sub {
+    color: var(--text-soft);
+    font-size: 12px;
+    margin-bottom: 20px;
+  }
+  .toc ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  .toc li { margin: 0; }
+  .toc a {
+    display: block;
+    color: var(--text-dim);
+    text-decoration: none;
+    padding: 7px 10px;
+    border-radius: 6px;
+    font-size: 13.5px;
+    border-left: 2px solid transparent;
+  }
+  .toc a:hover {
+    background: var(--bg-elev);
+    color: var(--primary);
+    border-left-color: var(--primary-soft);
+  }
+  .toc .sub {
+    padding-left: 22px !important;
+    font-size: 12.5px;
+    color: var(--text-soft);
+  }
+  /* Conteúdo */
+  .content {
+    padding: 56px 64px;
+    max-width: 1080px;
+  }
+  @media (max-width: 760px) {
+    .content { padding: 32px 20px; }
+  }
+  header.hero {
+    border-bottom: 2px solid var(--border);
+    padding-bottom: 28px;
+    margin-bottom: 40px;
+  }
+  header.hero .pill {
+    display: inline-block;
+    background: var(--bg-elev);
+    color: var(--primary);
+    padding: 4px 12px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+  h1 {
+    font-size: 36px;
+    color: var(--primary-dark);
+    margin: 0 0 12px;
+    letter-spacing: -0.5px;
+    line-height: 1.15;
+  }
+  .meta {
+    color: var(--text-soft);
+    font-size: 14px;
+  }
+  .meta code { background: var(--bg-elev); }
+
+  h2 {
+    font-size: 26px;
+    color: var(--primary);
+    margin: 56px 0 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+    letter-spacing: -0.3px;
+  }
+  h3 {
+    font-size: 19px;
+    color: var(--text);
+    margin: 32px 0 12px;
+  }
+  h4 {
+    font-size: 16px;
+    color: var(--primary-dark);
+    margin: 24px 0 8px;
+  }
+  p, ul, ol { color: var(--text); }
+  ul, ol { padding-left: 24px; }
+  li { margin: 4px 0; }
+  a { color: var(--primary); }
+  code {
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.88em;
+    background: var(--bg-elev);
+    padding: 1.5px 6px;
+    border-radius: 4px;
+    color: var(--primary-dark);
+  }
+  pre {
+    background: var(--code-bg);
+    color: var(--code-text);
+    padding: 18px 20px;
+    border-radius: 10px;
+    overflow-x: auto;
+    font-size: 13px;
+    line-height: 1.55;
+    margin: 16px 0;
+  }
+  pre code {
+    background: transparent;
+    color: inherit;
+    padding: 0;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    background: var(--bg-card);
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    font-size: 14px;
+  }
+  th, td {
+    text-align: left;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  th {
+    background: var(--bg-elev);
+    color: var(--primary-dark);
+    font-weight: 600;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: rgba(123, 45, 142, 0.03); }
+
+  /* Callouts */
+  .callout {
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin: 18px 0;
+    border-left: 4px solid;
+    background: var(--bg-card);
+    box-shadow: 0 1px 2px rgba(26, 19, 34, 0.04);
+  }
+  .callout.info { border-color: var(--info); background: #f0f9ff; }
+  .callout.warn { border-color: var(--warn); background: #fffbeb; }
+  .callout.danger { border-color: var(--danger); background: #fef2f2; }
+  .callout.success { border-color: var(--success); background: #f0fdf4; }
+  .callout .ctitle {
+    font-weight: 600;
+    margin-bottom: 4px;
+    display: block;
+    font-size: 13.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .callout.info .ctitle { color: var(--info); }
+  .callout.warn .ctitle { color: var(--warn); }
+  .callout.danger .ctitle { color: var(--danger); }
+  .callout.success .ctitle { color: var(--success); }
+
+  /* Step list pra deploy */
+  ol.steps {
+    counter-reset: step;
+    list-style: none;
+    padding-left: 0;
+  }
+  ol.steps > li {
+    counter-increment: step;
+    position: relative;
+    padding: 16px 18px 16px 64px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin-bottom: 14px;
+  }
+  ol.steps > li::before {
+    content: counter(step);
+    position: absolute;
+    left: 18px;
+    top: 16px;
+    width: 32px;
+    height: 32px;
+    background: var(--primary);
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 14px;
+  }
+  ol.steps > li > h4 {
+    margin: 0 0 8px;
+    color: var(--primary-dark);
+    font-size: 17px;
+  }
+  ol.steps > li > .substep {
+    color: var(--text-soft);
+    font-size: 13px;
+    margin-bottom: 4px;
+  }
+
+  /* Diagram container */
+  .mermaid {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 24px;
+    margin: 18px 0;
+    text-align: center;
+    overflow-x: auto;
+  }
+
+  /* Tree */
+  .tree {
+    background: var(--code-bg);
+    color: var(--code-text);
+    padding: 22px;
+    border-radius: 10px;
+    overflow-x: auto;
+    font-family: "SFMono-Regular", Consolas, monospace;
+    font-size: 12.5px;
+    line-height: 1.55;
+    white-space: pre;
+  }
+  .tree .comment { color: #94a3b8; }
+  .tree .dir { color: #ffd166; }
+  .tree .key { color: #c93dad; font-weight: 600; }
+
+  /* Tags */
+  .tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .tag.ok { background: #dcfce7; color: #166534; }
+  .tag.warn { background: #fef3c7; color: #92400e; }
+  .tag.danger { background: #fee2e2; color: #991b1b; }
+  .tag.info { background: #dbeafe; color: #1e40af; }
+  .tag.neutral { background: var(--bg-elev); color: var(--text-dim); }
+
+  hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 48px 0;
+  }
+  .kbd {
+    background: #ffffff;
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    padding: 2px 7px;
+    border-radius: 5px;
+    font-size: 12px;
+    font-family: -apple-system, sans-serif;
+    color: var(--text);
+    box-shadow: 0 1px 0 var(--text-soft) inset;
+  }
+  .ui-path {
+    display: inline-block;
+    background: var(--bg-elev);
+    padding: 3px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    color: var(--primary-dark);
+    font-weight: 500;
+    margin: 2px 0;
+  }
+  .ui-path .arrow { color: var(--text-soft); margin: 0 4px; }
+  footer {
+    margin-top: 80px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+    color: var(--text-soft);
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+
+  <aside class="toc">
+    <div class="brand">NÚCLEA MODELER</div>
+    <div class="brand-sub">Handover técnico · v0.2.1</div>
+    <ul>
+      <li><a href="#sec-1">1. Visão Geral</a></li>
+      <li><a href="#sec-2">2. Stack Tecnológica</a></li>
+      <li><a href="#sec-3">3. Estrutura &amp; Arquitetura</a></li>
+      <li><a href="#sec-4">4. Diagramas</a></li>
+      <li><a href="#sec-4-1" class="sub">4.1 Componentes</a></li>
+      <li><a href="#sec-4-2" class="sub">4.2 Fluxo principal</a></li>
+      <li><a href="#sec-5">5. Funcionalidades</a></li>
+      <li><a href="#sec-5-1" class="sub">5.1 Engenharia reversa</a></li>
+      <li><a href="#sec-5-2" class="sub">5.2 Tickets editorial</a></li>
+      <li><a href="#sec-5-3" class="sub">5.3 Índices &amp; partição</a></li>
+      <li><a href="#sec-5-4" class="sub">5.4 DDL multi-dialeto</a></li>
+      <li><a href="#sec-5-5" class="sub">5.5 DER (M4)</a></li>
+      <li><a href="#sec-5-6" class="sub">5.6 RBAC &amp; auditoria</a></li>
+      <li><a href="#sec-6">6. Pontos de Atenção</a></li>
+      <li><a href="#sec-7">7. Deploy via UI</a></li>
+      <li><a href="#sec-7-1" class="sub">7.1 Pré-requisitos</a></li>
+      <li><a href="#sec-7-2" class="sub">7.2 Export do workspace origem</a></li>
+      <li><a href="#sec-7-3" class="sub">7.3 Import no workspace destino</a></li>
+      <li><a href="#sec-7-4" class="sub">7.4 Configuração do app</a></li>
+      <li><a href="#sec-7-5" class="sub">7.5 Grants &amp; bootstrap</a></li>
+      <li><a href="#sec-7-6" class="sub">7.6 Deploy &amp; verificação</a></li>
+      <li><a href="#sec-7-7" class="sub">7.7 Atualizações</a></li>
+      <li><a href="#sec-7-8" class="sub">7.8 Troubleshooting</a></li>
+    </ul>
+  </aside>
+
+  <main class="content">
+
+    <header class="hero">
+      <span class="pill">Handover técnico</span>
+      <h1>Núclea Modeler</h1>
+      <p class="meta">
+        Catálogo &amp; modelagem de dados corporativo — Databricks App nativo · v0.2.1 · commit <code>752b9be</code> ·
+        analisado em 2026-06-08.
+      </p>
+    </header>
+
+    <!-- ============================ SEÇÃO 1 ============================ -->
+    <section id="sec-1">
+      <h2>1. Visão Geral (Macro) e Objetivo do Projeto</h2>
+
+      <p>
+        O <strong>Núclea Modeler</strong> é um <strong>catálogo + ferramenta de modelagem de dados corporativos</strong>,
+        entregue como um <strong>Databricks App nativo</strong> (full-stack FastAPI + React). Resolve o problema clássico
+        de empresas com vários ambientes (HINT/HEXT/PROD), múltiplos SGBDs (Oracle, SQL Server, PostgreSQL, Databricks/Delta)
+        e modelos lógicos em ferramentas externas (Embarcadero ER/Studio): consolida tudo num único lugar,
+        <strong>versionado no Unity Catalog</strong>, com governança via tickets de aprovação.
+      </p>
+
+      <p>
+        O <strong>fluxo de valor principal</strong> é o ciclo <em>engenharia reversa → modelagem → DDL</em>. Um steward
+        conecta o app a uma fonte (Lakebase Postgres, Unity Catalog, arquivo <code>.DM1</code> ou SQL bruto) ou cria
+        do zero; o app extrai entities, attributes, PKs, FKs, índices e particionamento, abre um <strong>ticket de
+        reconciliação</strong> com o diff vs catálogo. Um architect/admin revisa, aprova — o app materializa as mudanças
+        nas próprias tabelas Delta do Unity Catalog (sem tocar a fonte). Modeladores então editam o DER, atributos,
+        relationships, índices — toda mutação vai pra um <strong>ticket OPEN editorial</strong> (janela de 15 minutos)
+        que é aplicado em lote. Architects geram <strong>DDL multi-dialeto</strong> ou publicam versões snapshot.
+      </p>
+
+      <p>
+        Não há banco operacional externo — todo estado vive em <strong>22 tabelas Delta</strong> dentro de
+        <code>${CATALOG}.${SCHEMA}</code> parametrizáveis. Isso torna o app <strong>workspace-agnostic</strong>
+        (mesmo binário roda em qualquer Databricks com Unity Catalog) e o backup vira <code>DEEP CLONE</code> ou
+        Delta TimeTravel.
+      </p>
+    </section>
+
+    <!-- ============================ SEÇÃO 2 ============================ -->
+    <section id="sec-2">
+      <h2>2. Stack Tecnológica e Frameworks</h2>
+
+      <table>
+        <thead>
+          <tr><th>Camada</th><th>Tecnologia</th><th>Versão</th><th>Papel / Responsabilidade</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Runtime</td><td>Databricks Apps</td><td>gerenciado</td><td>Plataforma; força SSO em todo endpoint</td></tr>
+          <tr><td>Backend lang</td><td>Python</td><td><code>&gt;= 3.11</code></td><td>Linguagem do servidor</td></tr>
+          <tr><td>API</td><td>FastAPI</td><td><code>&gt;= 0.119</code></td><td>HTTP framework, OpenAPI auto-gerado, DI</td></tr>
+          <tr><td>Server</td><td>Uvicorn</td><td><code>&gt;= 0.37</code></td><td>ASGI (2 workers em prod)</td></tr>
+          <tr><td>Validation</td><td>Pydantic v2</td><td><code>&gt;= 2</code></td><td>Models In/Out, settings, payload validation</td></tr>
+          <tr><td>Settings</td><td>pydantic-settings</td><td><code>&gt;= 2.11</code></td><td>env vars → <code>AppConfig</code></td></tr>
+          <tr><td>Databricks SDK</td><td>databricks-sdk</td><td><code>&gt;= 0.74</code></td><td>Workspace ops (UC, apps, secrets, OBO)</td></tr>
+          <tr><td>SQL Delta</td><td>databricks-sql-connector</td><td><code>&gt;= 3.5</code></td><td>Conexão ao Warehouse pra rodar SQL nas Delta tables</td></tr>
+          <tr><td>Postgres</td><td>psycopg (binary)</td><td><code>&gt;= 3.3</code></td><td>Extraction direta de Lakebase via OAuth M2M</td></tr>
+          <tr><td>SQL parser</td><td>sqlglot</td><td><code>&gt;= 25</code></td><td>Parser cross-dialect pra import <code>.sql</code></td></tr>
+          <tr><td>HTTP client</td><td>httpx</td><td><code>&gt;= 0.28</code></td><td>REST connection testers</td></tr>
+          <tr><td>ODBC</td><td>pyodbc</td><td><code>&gt;= 5.3</code></td><td>ODBC tests (opcional)</td></tr>
+          <tr><td>Frontend lang</td><td>TypeScript</td><td><code>5.9</code></td><td>Linguagem cliente</td></tr>
+          <tr><td>UI framework</td><td>React</td><td><code>19.2</code></td><td>UI</td></tr>
+          <tr><td>Build</td><td>Vite (Bun runtime)</td><td><code>7.3</code></td><td>Bundler, dev server, preview</td></tr>
+          <tr><td>Router</td><td>@tanstack/react-router</td><td><code>1.170</code></td><td>File-based routing</td></tr>
+          <tr><td>Data</td><td>@tanstack/react-query</td><td><code>5.100</code></td><td>Suspense queries + mutations</td></tr>
+          <tr><td>HTTP UI</td><td>axios</td><td><code>1.16</code></td><td>Base da <code>lib/api.ts</code> (Orval-style)</td></tr>
+          <tr><td>DER canvas</td><td>@xyflow/react + dagre</td><td><code>12.10 / 1.1</code></td><td>Flowchart + auto-layout</td></tr>
+          <tr><td>SQL editor</td><td>Monaco Editor</td><td><code>0.55</code></td><td>Visualizador/editor de DDL</td></tr>
+          <tr><td>UI base</td><td>shadcn/ui + Radix</td><td>vendored</td><td>Dialog, Button, Tooltip, etc.</td></tr>
+          <tr><td>Style</td><td>Tailwind CSS</td><td><code>4.3</code></td><td>Utility-first CSS</td></tr>
+          <tr><td>Toast</td><td>sonner</td><td><code>2.0</code></td><td>Notificações</td></tr>
+          <tr><td>Tests Python</td><td>pytest + pytest-cov</td><td><code>&gt;= 8</code></td><td>Cobertura ≥ 65% gate</td></tr>
+          <tr><td>Tests E2E</td><td>Playwright</td><td>próprio config</td><td>Smoke + features críticas</td></tr>
+          <tr><td>Linter</td><td>ruff</td><td><code>&gt;= 0.6</code></td><td>Lint + format</td></tr>
+          <tr><td>Security scan</td><td>bandit</td><td><code>&gt;= 1.7.10</code></td><td>Hard-gate em CI</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Justificativa arquitetural</h3>
+      <ul>
+        <li><strong>Databricks-native by design</strong>: distribuição via <code>databricks apps</code>, auth=SSO, estado=Delta no UC. Sem Postgres/Redis/S3 fora do workspace — reduz custo de operação a zero infra nova.</li>
+        <li><strong>FastAPI + Pydantic v2</strong>: APIs tipadas com OpenAPI gerado; cliente TS sincronizado a partir do schema. Reduz drift back↔front.</li>
+        <li><strong>TanStack Router + Suspense queries</strong>: routing file-based + reads sempre via <code>useXSuspense + selector()</code> com <code>Suspense + ErrorBoundary</code>. Pattern uniforme em toda UI.</li>
+        <li><strong>Delta para tudo</strong>: TimeTravel cobre auditoria; Change Data Feed habilitado nas tabelas mutáveis facilita observabilidade.</li>
+        <li><strong>Modelo editorial via ticket</strong>: nenhuma mutation grava direto. Vai pra ticket OPEN MANUAL (janela 15 min) → apply em lote. Decisão crítica — viabiliza governança e undo de sessão.</li>
+      </ul>
+    </section>
+
+    <!-- ============================ SEÇÃO 3 ============================ -->
+    <section id="sec-3">
+      <h2>3. Estrutura de Pastas e Arquitetura do Código</h2>
+
+<pre class="tree"><span class="dir">nuclea_modeler/</span>
+├── app.yml                          <span class="comment"># Config Databricks Apps (NÃO comitar com creds)</span>
+├── app.yml.example                  <span class="comment"># Template do cliente</span>
+├── pyproject.toml                   <span class="comment"># Deps Python + ruff/pytest config</span>
+├── package.json                     <span class="comment"># Deps frontend (React 19 + Vite)</span>
+├── requirements.txt                 <span class="comment"># Espelho do pyproject (deploy direto)</span>
+├── README.md  DEPLOY.md  SECURITY.md  CHANGELOG.md
+│
+├── <span class="dir">databricks/</span>
+│   ├── <span class="dir">sql/</span>                         <span class="comment"># Migrations versionadas (idempotentes)</span>
+│   │   ├── 001_create_schema.sql    <span class="comment">#   USE CATALOG/SCHEMA + bootstrap</span>
+│   │   ├── 002_create_tables.sql    <span class="comment">#   18 Delta tables core</span>
+│   │   ├── 003-011_*.sql            <span class="comment">#   seeds + flags + tickets + lakebase ...</span>
+│   │   └── 012_indexes_and_partitioning.sql  <span class="comment"># última (índices/partição)</span>
+│   └── <span class="dir">dashboards/</span>                  <span class="comment"># Lakeview + Genie JSONs</span>
+│
+├── <span class="dir">docs/</span>                            <span class="comment"># Tutorial / ADRs / Runbook / OpenAPI snapshot</span>
+├── <span class="dir">scripts/</span>                         <span class="comment"># run_migrations.py · dump_openapi.py</span>
+│
+├── <span class="dir">src/nuclea_modeler/</span>
+│   ├── <span class="dir">backend/</span>                     <span class="comment"># ◀ FastAPI app</span>
+│   │   ├── app.py                   <span class="comment"># Monta todos os routers + middlewares</span>
+│   │   ├── router.py                <span class="comment"># /livez, /readyz, /version</span>
+│   │   │
+│   │   ├── <span class="dir">core/</span>                    <span class="comment"># ★ Infraestrutura compartilhada</span>
+│   │   │   ├── _factory.py          <span class="comment">#   create_app() — lifespan, migrations, CORS</span>
+│   │   │   ├── _config.py           <span class="comment">#   AppConfig (env → settings)</span>
+│   │   │   ├── delta.py             <span class="comment">#   DAO Delta (fetch_*, insert, _quote_lit)</span>
+│   │   │   ├── sql.py               <span class="comment">#   Sql dependency (Statement Execution API)</span>
+│   │   │   ├── migrations.py        <span class="comment">#   Runner com checksum + drift detect</span>
+│   │   │   ├── security.py          <span class="comment">#   RateLimit + SecurityHeaders middlewares</span>
+│   │   │   ├── logging.py           <span class="comment">#   JSON logs + RequestIdMiddleware</span>
+│   │   │   ├── metrics.py           <span class="comment">#   /metrics endpoint</span>
+│   │   │   └── exceptions.py        <span class="comment">#   install_exception_handlers</span>
+│   │   │
+│   │   ├── <span class="dir">systems/</span>                 <span class="comment"># M1 — sistemas catalogados</span>
+│   │   ├── <span class="dir">connections/</span>             <span class="comment"># M1 — conexões ODBC/REST/DDL</span>
+│   │   ├── <span class="dir">extractions/</span>             <span class="comment"># M2 — reverse engineering</span>
+│   │   │   ├── embarcadero.py       <span class="comment">#   parser .DM1</span>
+│   │   │   └── service.py           <span class="comment">#   Lakebase / UC / DDL / Embarcadero</span>
+│   │   ├── <span class="dir">entities/</span>                <span class="comment"># M3 — entities + attributes + indexes</span>
+│   │   │   ├── indexes.py           <span class="comment">#   stage + apply helpers</span>
+│   │   │   ├── index_overlay.py     <span class="comment">#   editorial overlay (puro)</span>
+│   │   │   ├── index_validation.py  <span class="comment">#   regras semânticas</span>
+│   │   │   └── router.py
+│   │   ├── <span class="dir">relationships/</span>           <span class="comment"># M3 — PK→FK</span>
+│   │   ├── <span class="dir">diagram/</span>                 <span class="comment"># M4 — DER</span>
+│   │   ├── <span class="dir">tickets/</span>                 <span class="comment"># M5 — reconciliação editorial</span>
+│   │   │   ├── service.py           <span class="comment">#   apply_ticket (≈700 linhas)</span>
+│   │   │   └── session.py           <span class="comment">#   editorial session helpers</span>
+│   │   ├── <span class="dir">flags/</span>                   <span class="comment"># M6 — entity_flags / attribute_flags</span>
+│   │   ├── <span class="dir">glossary/</span>                <span class="comment"># M7 — glossary_terms + mappings</span>
+│   │   ├── <span class="dir">lineage/</span>                 <span class="comment"># M8 — upstream/downstream</span>
+│   │   ├── <span class="dir">sync/</span>                    <span class="comment"># M9 — espelha catálogo → UC</span>
+│   │   ├── <span class="dir">ddl/</span>                     <span class="comment"># M10 — generators multi-dialeto</span>
+│   │   ├── <span class="dir">versions/</span>                <span class="comment"># versioning de modelos</span>
+│   │   ├── <span class="dir">lakebase/</span>                <span class="comment"># Postgres connection helper (OAuth M2M)</span>
+│   │   ├── <span class="dir">uc/</span>                      <span class="comment"># UC SDK wrappers</span>
+│   │   ├── <span class="dir">rbac/</span>                    <span class="comment"># 4 papéis</span>
+│   │   ├── <span class="dir">audit/</span>                   <span class="comment"># Middleware + log imutável</span>
+│   │   ├── <span class="dir">admin/</span>                   <span class="comment"># Seeds + endpoints admin</span>
+│   │   ├── <span class="dir">search/</span>                  <span class="comment"># Global search (Cmd+K)</span>
+│   │   ├── <span class="dir">dashboard/</span>               <span class="comment"># KPIs cards</span>
+│   │   ├── <span class="dir">code_objects/</span>            <span class="comment"># Views/Procs/Triggers (M11)</span>
+│   │   └── <span class="dir">sessions/</span>                <span class="comment"># CRUD de tickets MANUAL</span>
+│   │
+│   ├── <span class="dir">ui/</span>                          <span class="comment"># ◀ React SPA</span>
+│   │   ├── src/main.tsx
+│   │   ├── <span class="dir">routes/</span>                  <span class="comment"># File-based routing</span>
+│   │   │   ├── __root.tsx
+│   │   │   └── _sidebar/            <span class="comment">#   Layout autenticado</span>
+│   │   │       ├── diagram.tsx      <span class="comment">#   DER (XYFlow + Dagre)</span>
+│   │   │       ├── entities.$id.tsx <span class="comment">#   Detalhe da entity</span>
+│   │   │       ├── tickets.$id.tsx
+│   │   │       └── ...
+│   │   ├── <span class="dir">components/</span>
+│   │   │   ├── <span class="dir">ui/</span>                  <span class="comment">#   shadcn base</span>
+│   │   │   ├── <span class="dir">diagram/</span>             <span class="comment">#   entity-node, indexes-section, ...</span>
+│   │   │   └── <span class="dir">apx/</span>                 <span class="comment">#   new-system-wizard, welcome-tour</span>
+│   │   └── <span class="dir">lib/</span>
+│   │       ├── api.ts               <span class="comment">#   ÚNICO arquivo gerado — não editar</span>
+│   │       └── selector.ts
+│   └── <span class="dir">__dist__/</span>                    <span class="comment"># Bundle Vite (gitignored, gerado no deploy)</span>
+│
+└── <span class="dir">tests/</span>
+    ├── conftest.py
+    ├── test_*.py                    <span class="comment"># ~29 arquivos cobrindo backend</span>
+    └── <span class="dir">e2e/</span>                         <span class="comment"># Playwright (smoke + indexes)</span>
+</pre>
+
+      <h3>Padrão arquitetural</h3>
+      <p>
+        Arquitetura em <strong>camadas modulares por feature</strong>. Cada módulo de domínio (M1-M11) é um pacote
+        Python com <em>router → service → models</em> + pacote TypeScript equivalente em <code>ui/routes</code> +
+        <code>ui/components</code>. Convenções rigorosas:
+      </p>
+      <ul>
+        <li><strong>Models 3-tier</strong>: <code>EntityIn</code> (request), <code>EntityOut</code> (response), tabela Delta correspondente.</li>
+        <li><strong>DI via <code>Dependencies</code> class</strong>: <code>.Client</code> (SP app), <code>.UserClient</code> (OBO), <code>.Config</code>, <code>.Sql</code>.</li>
+        <li><strong>SQL via DAO parametrizado</strong>: nunca f-string com input externo. Sempre <code>delta.param("nome", valor)</code>.</li>
+        <li><strong>Editorial model</strong>: mutations → <code>session.stage_entity_change()</code> → ticket OPEN → <code>apply_ticket()</code>.</li>
+        <li><strong>Migrations versionadas com checksum</strong>: registradas em <code>schema_migrations</code>. Drift detection só loga warning.</li>
+      </ul>
+    </section>
+
+    <!-- ============================ SEÇÃO 4 ============================ -->
+    <section id="sec-4">
+      <h2>4. Diagramas de Fluxo e Arquitetura</h2>
+
+      <h3 id="sec-4-1">4.1 Arquitetura de Componentes</h3>
+      <div class="mermaid">
+graph TB
+    subgraph Browser["Usuário no Browser"]
+      Chrome[Chrome/Edge + SSO]
+    end
+    subgraph DbxApp["Databricks App"]
+      Vite[Vite/React SPA]
+      FastAPI[FastAPI + uvicorn]
+      MW[Middlewares: RequestId · Audit · RateLimit · Security · Metrics]
+      Vite -->|fetch /api/*| FastAPI
+      FastAPI --> MW
+    end
+    subgraph Core["Core backend/core/"]
+      Settings[AppConfig]
+      DAO[delta.py DAO]
+      MigRunner[Migration Runner]
+      Logging[JSON Logging]
+    end
+    subgraph Domain["Módulos de Domínio"]
+      M1[M1 systems + connections]
+      M2[M2 extractions + embarcadero]
+      M3[M3 entities + attributes + indexes]
+      M4[M4 diagram DER]
+      M5[M5 tickets editorial]
+      M10[M10 ddl generators]
+      Misc[flags · glossary · lineage · sync · rbac · audit ...]
+    end
+    FastAPI --> M1 & M2 & M3 & M4 & M5 & M10 & Misc
+    M1 & M2 & M3 & M4 & M5 & M10 & Misc --> DAO
+    M5 -->|apply_ticket| M3
+    M2 -->|abre ticket REVERSE_ENG| M5
+    subgraph Workspace["Workspace do Cliente"]
+      SQL[SQL Warehouse]
+      UC[(Unity Catalog<br/>22 Delta tables)]
+      Secrets[Secrets API]
+      SDK[Workspace REST API]
+      Lakebase[(Lakebase Postgres<br/>opcional)]
+    end
+    DAO -->|Statement Execution API| SQL
+    SQL --> UC
+    MigRunner --> SQL
+    FastAPI --> SDK
+    FastAPI --> Secrets
+    M2 -->|psycopg| Lakebase
+    Chrome -->|HTTPS + SSO| Vite
+      </div>
+
+      <h3 id="sec-4-2">4.2 Fluxo principal — Reverse engineering → Ticket → Apply</h3>
+      <div class="mermaid">
+sequenceDiagram
+    autonumber
+    actor Steward
+    participant UI as React SPA
+    participant API as FastAPI
+    participant Ext as extractions/service.py
+    participant Source as Fonte (.DM1/Lakebase/UC)
+    participant Tix as tickets/service.py
+    participant Delta as Delta Tables (UC)
+    actor Admin
+
+    Steward->>UI: New System Wizard (.DM1 upload)
+    UI->>API: POST /api/extractions/embarcadero/run
+    API->>Ext: run_embarcadero_import()
+    Ext->>Ext: parse_dm1 (Entity + Attr + PK + FK + Idx)
+    Ext->>Delta: compute_diff_against_catalog
+    Delta-->>Ext: catálogo atual
+    Ext->>Tix: open_ticket(diff, REVERSE_ENG)
+    Tix->>Delta: INSERT reconciliation_tickets (OPEN)
+    Ext-->>UI: ExtractionResult + ticket_id
+    Admin->>UI: Revisar ticket
+    UI->>API: GET /api/tickets/{id}
+    API-->>UI: TicketOut com diff_json + decisions
+    Admin->>UI: Aprovar (decisions por entity/field)
+    UI->>API: POST /api/tickets/{id}/apply
+    API->>Tix: apply_ticket
+    loop pra cada DiffEntity
+      Tix->>Delta: INSERT/UPDATE/DELETE conforme op
+      Tix->>Delta: aplica attributes + indexes + partitioning
+    end
+    Tix->>Delta: UPDATE tickets (APPLIED)
+    Tix-->>UI: applied_count + errors
+    Admin->>UI: /diagram DER refletindo estado novo
+      </div>
+    </section>
+
+    <!-- ============================ SEÇÃO 5 ============================ -->
+    <section id="sec-5">
+      <h2>5. Funcionalidades Principais (Deep Dive)</h2>
+
+      <h3 id="sec-5-1">5.1 Engenharia Reversa Multi-Fonte (M2)</h3>
+      <p><strong>O que faz</strong>: extrai modelo de fonte externa e gera snapshot estruturado pra reconciliar com o catálogo.</p>
+      <p><strong>Componentes chave</strong>:</p>
+      <ul>
+        <li><code>backend/extractions/service.py</code> — orquestra 4 entradas: <code>extract_from_lakebase</code>, <code>extract_from_uc</code>, <code>run_ddl_import</code>, <code>run_embarcadero_import</code></li>
+        <li><code>backend/extractions/embarcadero.py</code> — parser <strong>.DM1</strong> ASCII multi-seção do ER/Studio</li>
+        <li><code>backend/extractions/models.py</code> — <code>ExtractionSnapshot</code>, <code>ExtractedEntity/Attribute/Index/IndexColumn</code></li>
+      </ul>
+      <p><strong>Regras críticas (não quebrar)</strong>:</p>
+      <ul>
+        <li><strong>DM1 duplicação lógico/físico</strong>: ER/Studio armazena cada entity 2x (ModelId=1 e ModelId=2). Dedup por <code>(schema, technical_name)</code> mantendo a versão física.</li>
+        <li><strong>Cap de upload 50 MB</strong> (<code>EmbarcaderoImportIn.dm1_text</code>). Não aumentar sem entender DoS no parser.</li>
+        <li><strong>Lakebase OAuth M2M</strong>: <code>app_ws</code> (SP) chama <code>database.generate_database_credential</code>. <code>user_ws</code> (OBO) <strong>não tem scope <code>postgres</code></strong>.</li>
+        <li><strong>Indexes só não-PK</strong> (<code>NOT i.indisprimary</code>). PK vai via <code>is_primary_key=true</code> no attribute.</li>
+      </ul>
+
+      <h3 id="sec-5-2">5.2 Modelo Editorial via Tickets (M5)</h3>
+      <p><strong>O que faz</strong>: toda mutation passa por ticket OPEN MANUAL com janela de 15 min — user edita várias entities/attributes/indexes/partition, revisa e aplica em lote. Materialização atômica.</p>
+      <p><strong>Componentes chave</strong>:</p>
+      <ul>
+        <li><code>backend/tickets/service.py</code> — <code>apply_ticket</code> (≈700 linhas, máquina de estados grande)</li>
+        <li><code>backend/tickets/session.py</code> — <code>find_open_session_ticket</code>, <code>stage_entity_change</code></li>
+        <li><code>backend/tickets/models.py</code> — <code>DiffEntity</code> (com <code>attributes</code> + <code>indexes</code> + <code>field_changes</code>)</li>
+      </ul>
+      <p><strong>Regras críticas</strong>:</p>
+      <ul>
+        <li><strong><code>pre_allocated_entity_id</code> deve ser preservado</strong> no apply. Sem isso, relationships virtuais ficam órfãos.</li>
+        <li><strong>Field changes prefixados</strong> (apply roteia por prefixo): <code>attribute_add:</code>, <code>attribute_remove:</code>, <code>attribute:NAME.update</code>, <code>index_add:</code>, <code>index_remove:</code>, <code>index_change:</code>, <code>partitioning:set</code>. Novos prefixos exigem match no <code>apply_ticket</code>.</li>
+        <li><strong><code>_quote_lit</code> escapa backslash <em>antes</em> de aspas</strong> (linha 48-72 de <code>delta.py</code>). Bug histórico: JSON com <code>\"</code> ficava corrompido.</li>
+        <li><strong>/apply ≠ /reopen</strong>: 2 decorators <code>@router.post</code> empilhados na mesma função zeram a rota. Sempre cada decorator em sua função.</li>
+      </ul>
+
+      <h3 id="sec-5-3">5.3 Índices &amp; Particionamento (F1-F9)</h3>
+      <p><strong>O que faz</strong>: catálogo + governança editorial + DDL generation + overlay no DER pra índices e particionamento por entity.</p>
+      <p><strong>Componentes chave</strong>:</p>
+      <ul>
+        <li><code>databricks/sql/012_indexes_and_partitioning.sql</code> — schema das tabelas</li>
+        <li><code>backend/entities/indexes.py</code> + <code>index_overlay.py</code> + <code>index_validation.py</code></li>
+        <li><code>backend/ddl/generators.py</code> — <code>_render_indexes_postgres/oracle/tsql/mysql</code> + <code>_partition_clause_*</code></li>
+        <li><code>ui/components/diagram/{indexes,partitioning}-section.tsx</code> · <code>index-types-by-tech.ts</code> · <code>entity-node.tsx</code></li>
+      </ul>
+      <p><strong>Regras críticas</strong>:</p>
+      <ul>
+        <li><strong><code>origin='EXTRACTED'</code> vs <code>'MANUAL'</code></strong> — preservar pra futura sync round-trip.</li>
+        <li><strong><code>columns</code> em <code>entity_indexes</code> é JSON string</strong> (não ARRAY&lt;STRUCT&gt;) — Statement Execution API tem fricção com struct arrays.</li>
+        <li><strong>Liquid clustering Delta</strong> → emitido como <code>ALTER TABLE ... CLUSTER BY</code> <em>fora</em> do CREATE.</li>
+        <li><strong>Partition em coluna nullable</strong> → warning (PG/Oracle exigem NOT NULL).</li>
+      </ul>
+
+      <h3 id="sec-5-4">5.4 DDL Multi-Dialeto (M10)</h3>
+      <p><strong>O que faz</strong>: gera DDL portável a partir do catálogo, em 6 dialetos (ANSI, T-SQL, PL/SQL, PostgreSQL, MySQL, Spark/Delta).</p>
+      <p><strong>Componentes chave</strong>:</p>
+      <ul>
+        <li><code>backend/ddl/generators.py</code> — <code>gen_ansi/tsql/plsql/postgres/mysql/sparksql</code> + <code>map_type</code></li>
+        <li><code>backend/ddl/service.py</code> — <code>fetch_entities_with_attrs</code> + <code>fetch_indexes_and_partitioning</code></li>
+      </ul>
+      <p><strong>Regras críticas</strong>:</p>
+      <ul>
+        <li><strong>Generator é função pura</strong> — recebe <code>entity, attrs, opts</code>, retorna string. Não acessa DB. Facilita golden tests.</li>
+        <li><strong><code>map_type</code> heurística</strong> — tipos desconhecidos viram <code>VARCHAR(255)</code>. Mudança aqui aciona 61 testes de regressão.</li>
+      </ul>
+
+      <h3 id="sec-5-5">5.5 Diagrama Entidade-Relacionamento (M4)</h3>
+      <p><strong>O que faz</strong>: render visual do modelo com drag-and-drop, overlay editorial, badges de índices/partição, edição inline.</p>
+      <p><strong>Componentes chave</strong>:</p>
+      <ul>
+        <li><code>ui/routes/_sidebar/diagram.tsx</code> — página container (XYFlow + Dagre)</li>
+        <li><code>ui/components/diagram/entity-node.tsx</code> — custom node</li>
+        <li><code>backend/diagram/router.py</code> — <code>GET /api/diagram</code> com overlay de ticket OPEN</li>
+      </ul>
+      <p><strong>Regras críticas</strong>:</p>
+      <ul>
+        <li><strong>Overlay no backend</strong> (<code>_apply_session_overlay</code>). Entities virtuais (op=add) recebem <code>entity_id</code> virtual; FK overlay usa <code>pre_allocated_entity_id</code>.</li>
+        <li><strong><code>is_indexed</code> calculado por loop</strong> no <code>_build_diagram</code> — se DER lento com 1000+ atributos, otimizar aqui.</li>
+        <li><strong>Layout salvo</strong> em <code>der_layouts</code> (migration 007). Fallback p/ dagre auto.</li>
+      </ul>
+
+      <h3 id="sec-5-6">5.6 RBAC + Auditoria</h3>
+      <p><strong>O que faz</strong>: 4 papéis (<code>VIEWER</code> · <code>STEWARD</code> · <code>ARCHITECT</code> · <code>ADMIN</code>) + audit log imutável.</p>
+      <p><strong>Componentes chave</strong>:</p>
+      <ul>
+        <li><code>backend/rbac/router.py</code> — <code>require_role()</code></li>
+        <li><code>backend/audit/middleware.py</code> — grava request/response em <code>audit_log</code></li>
+        <li>Migration <code>005_tickets_and_roles.sql</code> — tabela <code>user_roles</code></li>
+      </ul>
+      <p><strong>Regras críticas</strong>:</p>
+      <ul>
+        <li><strong>Decisão por ação</strong>, não por endpoint: <code>apply_ticket</code> exige <code>ADMIN</code>; <code>publish_version</code> exige <code>ARCHITECT+ADMIN</code>.</li>
+        <li><strong>Audit é Delta TimeTravel-friendly</strong> — só <code>INSERT</code>, nunca <code>UPDATE/DELETE</code>.</li>
+        <li><strong>Primeiro user precisa seed manual</strong> de <code>ADMIN</code> em <code>user_roles</code>.</li>
+      </ul>
+    </section>
+
+    <!-- ============================ SEÇÃO 6 ============================ -->
+    <section id="sec-6">
+      <h2>6. Pontos de Atenção e Débito Técnico</h2>
+
+      <h3>Hotspots de complexidade</h3>
+      <table>
+        <thead><tr><th>Arquivo</th><th>Linhas</th><th>Risco</th><th>Mitigação</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><code>backend/tickets/service.py</code></td>
+            <td>~759</td>
+            <td><code>apply_ticket</code> parsing + roteamento por prefixo + apply em 5 tabelas. Mudança pode quebrar attribute/index/partition em cascata.</td>
+            <td>Cobrir cada caminho com test. Quebrar em sub-handlers por prefixo.</td>
+          </tr>
+          <tr>
+            <td><code>backend/extractions/service.py</code></td>
+            <td>~1181</td>
+            <td>4 entradas (Lakebase/UC/DDL/DM1) + <code>compute_diff_against_catalog</code> + persistência.</td>
+            <td>Extrair <code>compute_diff_against_catalog</code> p/ módulo próprio.</td>
+          </tr>
+          <tr>
+            <td><code>backend/diagram/router.py</code></td>
+            <td>~934</td>
+            <td>Build do DER + overlay + endpoints virtuais.</td>
+            <td>Mover overlay p/ <code>diagram/overlay.py</code>.</td>
+          </tr>
+          <tr>
+            <td><code>backend/entities/router.py</code></td>
+            <td>~1205</td>
+            <td>Concentra entities + attributes + indexes + partitioning.</td>
+            <td>Mover indexes/partitioning p/ <code>indexes_router.py</code>.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Limitações estruturais conhecidas</h3>
+      <ul>
+        <li><strong>Statement Execution API sem array params</strong> — queries com <code>WHERE id IN (...)</code> usam <code>_quote_id()</code> manual. Trust pela origem (id veio de SELECT prévio do app).</li>
+        <li><strong>DM1 datatype map é calibrado por amostra</strong> — IDs desconhecidos viram heurística. Calibrar com novos exports do cliente.</li>
+        <li><strong>Liquid clustering</strong>: assume <code>properties['clusteringColumns']</code> em JSON. Formato UC pode mudar.</li>
+        <li><strong>Coverage gate em 65%</strong> (<code>pyproject.toml</code>). Subir gradual.</li>
+        <li><strong>Drift de migrations só loga</strong> — em rollback de versão pode ficar inconsistente.</li>
+      </ul>
+
+      <h3>Bugs históricos pra não repetir</h3>
+      <ul>
+        <li><strong>/apply colidindo com /reopen</strong>: 2 decorators na mesma função → Python sobrescreve. Sempre 1 decorator por função.</li>
+        <li><strong>JSON com <code>\"</code> corrompido</strong>: <code>_quote_lit</code> precisava escapar backslash antes de aspas.</li>
+        <li><strong>FK entre entities virtuais retornava 400</strong>: overlay usava <code>pending-ent-public.X</code> ao invés de <code>pre_allocated_entity_id</code>.</li>
+      </ul>
+
+      <h3>Próximos passos sugeridos</h3>
+      <ol>
+        <li>Subir coverage gate p/ 75-80%. Gaps conhecidos: <code>tickets/service.py:_apply_relationship_change</code>, <code>extractions/service.py:run_uc_extraction</code>.</li>
+        <li>Refatorar <code>apply_ticket</code> em sub-handlers por prefixo.</li>
+        <li>Round-trip Lakebase: mudanças no app viram <code>ALTER TABLE</code> no Postgres real (hoje só read).</li>
+        <li>E2E coverage: hoje só smoke + indexes. Adicionar tickets approval + DDL export.</li>
+        <li>Manter <code>scripts.dump_openapi</code> após qualquer mudança de signature (CI tem drift check).</li>
+      </ol>
+    </section>
+
+    <!-- ============================ SEÇÃO 7 — DEPLOY VIA UI ============================ -->
+    <section id="sec-7">
+      <h2>7. Deploy em Outro Workspace — Estritamente Pela Interface</h2>
+
+      <div class="callout info">
+        <span class="ctitle">Cenário</span>
+        Este guia assume que o código <strong>já está num workspace Databricks origem</strong> (o que entregamos) e precisa
+        ser <strong>movido pra outro workspace destino</strong> usando <strong>somente</strong> a UI do Databricks
+        (Workspace Browser, Apps, SQL Editor, Catalog Explorer). Nenhum comando CLI, nenhum git push do laptop.
+      </div>
+
+      <h3 id="sec-7-1">7.1 Pré-requisitos no workspace destino</h3>
+      <table>
+        <thead><tr><th>Item</th><th>Mínimo</th><th>Onde verificar na UI</th></tr></thead>
+        <tbody>
+          <tr><td>Workspace Databricks ativo</td><td>tier com Unity Catalog</td><td>Logado no workspace destino</td></tr>
+          <tr><td>SQL Warehouse</td><td>Serverless ou Pro, 2X-Small basta</td><td><span class="ui-path">SQL <span class="arrow">›</span> SQL Warehouses</span></td></tr>
+          <tr><td>Unity Catalog</td><td>1 catalog onde o app vai guardar estado</td><td><span class="ui-path">Catalog</span></td></tr>
+          <tr><td>Permissão do seu usuário</td><td>Workspace Admin ou <strong>Can Manage</strong> em Apps + <code>CREATE SCHEMA</code> no catalog</td><td><span class="ui-path">Settings <span class="arrow">›</span> Workspace Admin</span></td></tr>
+          <tr><td>(Opcional) Lakebase Postgres</td><td>Apenas se for usar reverse engineering Postgres</td><td><span class="ui-path">Compute <span class="arrow">›</span> Lakebase</span></td></tr>
+        </tbody>
+      </table>
+
+      <div class="callout warn">
+        <span class="ctitle">Atenção · Não precisa Node / Python local</span>
+        Toda a build (vite, deps Python via <code>uv</code>) acontece dentro do container do Databricks Apps no workspace
+        destino. Você só clica na UI.
+      </div>
+
+      <h3 id="sec-7-2">7.2 Export do código do workspace origem</h3>
+
+      <p>O código já está sincronizado num caminho do tipo <code>/Workspace/Users/&lt;seu-usuário&gt;/nuclea-modeler</code>
+      no workspace origem. Pra exportá-lo:</p>
+
+      <ol class="steps">
+        <li>
+          <h4>Acesse o workspace origem</h4>
+          <div class="substep">Faça login no workspace Databricks onde o app está rodando hoje.</div>
+        </li>
+        <li>
+          <h4>Abra o Workspace Browser</h4>
+          <div class="substep">Menu lateral: <span class="ui-path">Workspace</span></div>
+          <div class="substep">Navegue até a pasta do código: <span class="ui-path">Users <span class="arrow">›</span> &lt;email@origem&gt; <span class="arrow">›</span> nuclea-modeler</span>.</div>
+        </li>
+        <li>
+          <h4>Exporte como arquivo</h4>
+          <div class="substep">Clique no <strong>menu de três pontinhos</strong> ao lado do nome da pasta <code>nuclea-modeler</code>.</div>
+          <div class="substep">Selecione <span class="ui-path">Export <span class="arrow">›</span> Source File (.zip)</span> (ou DBC, mas .zip preserva estrutura de arquivos texto e é mais portável).</div>
+          <div class="substep">O browser baixa um <code>nuclea-modeler.zip</code> contendo <em>todo</em> o source: <code>src/</code>, <code>databricks/sql/</code>, <code>app.yml</code>, <code>pyproject.toml</code>, <code>package.json</code>, <code>requirements.txt</code>, <code>scripts/</code>, <code>docs/</code> e tests.</div>
+          <div class="callout info" style="margin-top:8px">
+            <span class="ctitle">Por que .zip</span>
+            DBC empacota notebooks e perde arquivos não-notebook (.py puros sem cell markers, .ts, .json). O <strong>Source File (.zip)</strong> preserva bytes exatamente.
+          </div>
+        </li>
+        <li>
+          <h4>(Opcional) Exporte o estado atual do catálogo</h4>
+          <div class="substep">Se quiser <strong>migrar também os dados</strong> (não só o código), abra o <span class="ui-path">SQL Editor</span> e rode no workspace origem:</div>
+          <pre><code>-- Substitua pelos seus valores
+CREATE TABLE &lt;DESTINO_CATALOG&gt;.&lt;DESTINO_SCHEMA&gt;.systems
+  DEEP CLONE &lt;ORIGEM_CATALOG&gt;.&lt;ORIGEM_SCHEMA&gt;.systems;
+-- Repita para cada uma das 22 tabelas (lista completa na seção 7.6)</code></pre>
+          <div class="substep">Alternativa mais simples se os workspaces compartilham metastore: <strong>Delta Sharing</strong> via Catalog UI.</div>
+          <div class="substep">Se você só quer <em>recomeçar limpo no destino</em> (cliente novo, modelo zerado), pule este passo — as migrations criam tudo vazio.</div>
+        </li>
+      </ol>
+
+      <h3 id="sec-7-3">7.3 Import no workspace destino</h3>
+
+      <ol class="steps">
+        <li>
+          <h4>Faça login no workspace destino</h4>
+          <div class="substep">URL diferente do origem. Use a conta com permissão de admin/can-manage-apps.</div>
+        </li>
+        <li>
+          <h4>Crie pasta do app na sua home</h4>
+          <div class="substep"><span class="ui-path">Workspace <span class="arrow">›</span> Users <span class="arrow">›</span> &lt;seu-email&gt;</span> — três pontinhos <span class="ui-path">Create <span class="arrow">›</span> Folder</span> — nome: <code>nuclea-modeler</code>.</div>
+        </li>
+        <li>
+          <h4>Importe o .zip</h4>
+          <div class="substep">Entre na pasta <code>nuclea-modeler</code> que acabou de criar.</div>
+          <div class="substep">Três pontinhos <span class="ui-path">Import</span>. Selecione o <code>nuclea-modeler.zip</code> baixado no passo 7.2.3.</div>
+          <div class="substep">No diálogo, escolha <strong>"Source files"</strong>. Confirme.</div>
+          <div class="substep">A UI mostra um spinner; alguns segundos depois a pasta vai conter toda a árvore: <code>src/</code>, <code>databricks/sql/</code>, <code>app.yml</code>, <code>pyproject.toml</code>, etc.</div>
+          <div class="callout warn">
+            <span class="ctitle">Limite de tamanho</span>
+            Workspace Import aceita até ~10MB por upload de zip. O repo descompactado tem ~5MB. Se exceder, exporte
+            por subpastas (ex: <code>src.zip</code> separado de <code>databricks.zip</code>) e importe sequencialmente.
+          </div>
+        </li>
+        <li>
+          <h4>Confirme a estrutura</h4>
+          <div class="substep">Navegue dentro da pasta importada e verifique que existem:</div>
+          <ul style="margin-top:4px">
+            <li><code>app.yml</code> (vai editar nos próximos passos)</li>
+            <li><code>app.yml.example</code> (template de referência)</li>
+            <li><code>requirements.txt</code></li>
+            <li><code>pyproject.toml</code></li>
+            <li><code>package.json</code></li>
+            <li><code>databricks/sql/001_create_schema.sql</code> até <code>012_indexes_and_partitioning.sql</code></li>
+            <li><code>src/nuclea_modeler/backend/app.py</code></li>
+            <li><code>scripts/run_migrations.py</code></li>
+          </ul>
+        </li>
+      </ol>
+
+      <h3 id="sec-7-4">7.4 Configuração do app — editar <code>app.yml</code> pela UI</h3>
+
+      <ol class="steps">
+        <li>
+          <h4>Abra <code>app.yml</code> no editor da Workspace</h4>
+          <div class="substep">No Workspace Browser, dê duplo-clique em <code>app.yml</code>. Ele abre num editor de texto inline (sem precisar baixar/editar local).</div>
+          <div class="callout info" style="margin-top:8px">
+            <span class="ctitle">Dica</span>
+            Se preferir um template do zero: copie tudo de <code>app.yml.example</code> e cole sobrescrevendo <code>app.yml</code>. O <code>.example</code> tem os placeholders <code>&lt;ALTERAR&gt;</code> explícitos.
+          </div>
+        </li>
+        <li>
+          <h4>Anote os valores que vai usar</h4>
+          <p style="margin-bottom:8px">Abra outra aba do navegador no workspace destino e colete:</p>
+          <table>
+            <thead><tr><th>Valor</th><th>Onde achar na UI</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><strong>Warehouse ID</strong></td>
+                <td><span class="ui-path">SQL <span class="arrow">›</span> SQL Warehouses</span> — clique no seu warehouse — copie o trecho final da URL <code>/sql/warehouses/<strong>abc123def</strong></code></td>
+              </tr>
+              <tr>
+                <td><strong>Catalog name</strong></td>
+                <td><span class="ui-path">Catalog</span> — navegue até o catalog escolhido — o nome aparece no topo (ex: <code>main</code>, <code>nuclea_prod</code>)</td>
+              </tr>
+              <tr>
+                <td><strong>Lakebase instance name</strong> (opcional)</td>
+                <td><span class="ui-path">Compute <span class="arrow">›</span> Lakebase</span> — clique na instance — copie o "Instance name" (ex: <code>JDBCTESTLAKEBASE</code>)</td>
+              </tr>
+            </tbody>
+          </table>
+        </li>
+        <li>
+          <h4>Edite <code>app.yml</code> substituindo os placeholders</h4>
+          <div class="substep">No editor inline, troque os 4 placeholders. Exemplo do estado final:</div>
+          <pre><code>resources:
+  - name: nuclea-warehouse
+    sql_warehouse:
+      id: "abc123def"                <span style="color:#94a3b8">## ← seu Warehouse ID</span>
+      permission: CAN_USE
+
+  - name: nuclea-lakebase             <span style="color:#94a3b8">## remova este bloco inteiro se não usar Lakebase</span>
+    database:
+      database_name: "databricks_postgres"
+      instance_name: "JDBCTESTLAKEBASE"  <span style="color:#94a3b8">## ← seu Lakebase</span>
+      permission: CAN_CONNECT_AND_CREATE
+
+env:
+  - name: NUCLEA_CATALOG
+    value: "main"                    <span style="color:#94a3b8">## ← seu catalog</span>
+  - name: NUCLEA_SCHEMA
+    value: "nuclea_modeler"          <span style="color:#94a3b8">## deixa este, é criado automaticamente</span>
+  - name: NUCLEA_WAREHOUSE_ID
+    value: "abc123def"               <span style="color:#94a3b8">## ← mesmo Warehouse ID</span>
+  - name: DATABRICKS_SQL_WAREHOUSE_ID
+    value: "abc123def"               <span style="color:#94a3b8">## ← mesmo</span></code></pre>
+        </li>
+        <li>
+          <h4>Salve com <span class="kbd">Ctrl</span>+<span class="kbd">S</span> (ou <span class="kbd">⌘</span>+<span class="kbd">S</span>)</h4>
+          <div class="substep">O editor do Workspace persiste imediatamente. Sem commit, sem push.</div>
+        </li>
+      </ol>
+
+      <h3 id="sec-7-5">7.5 Criar o app + grants pelo Catalog Explorer</h3>
+
+      <ol class="steps">
+        <li>
+          <h4>Crie o app pela UI de Apps</h4>
+          <div class="substep">Menu lateral <span class="ui-path">Compute <span class="arrow">›</span> Apps</span> — botão <strong>Create app</strong> no canto superior direito.</div>
+          <div class="substep">Nome: <code>nuclea-modeler</code>. Descrição livre. Clique <strong>Create</strong>.</div>
+          <div class="substep">Na tela do app criado, vá na aba <strong>"Service Principal"</strong> e <strong>copie o Application ID (UUID)</strong>. Você vai usar nos grants do passo seguinte.</div>
+        </li>
+        <li>
+          <h4>Conceda permissões ao SP do app via Catalog UI</h4>
+          <div class="substep">Vá em <span class="ui-path">Catalog</span> — clique no catalog escolhido (ex: <code>main</code>).</div>
+          <div class="substep">Aba <strong>Permissions</strong> — botão <strong>Grant</strong>.</div>
+          <div class="substep">No campo <strong>Principals</strong>: cole o <strong>Application ID</strong> do SP do app que você copiou (UUID).</div>
+          <div class="substep">Marque os checkboxes:
+            <ul>
+              <li><code>USE_CATALOG</code></li>
+              <li><code>USE_SCHEMA</code> (se já existir um schema padrão)</li>
+              <li><code>CREATE_SCHEMA</code></li>
+              <li><code>CREATE_TABLE</code></li>
+              <li><code>MODIFY</code></li>
+              <li><code>SELECT</code></li>
+            </ul>
+          </div>
+          <div class="substep">Confirme com <strong>Grant</strong>.</div>
+          <div class="callout success" style="margin-top:8px">
+            <span class="ctitle">Atalho via SQL Editor</span>
+            Equivalente pela UI do SQL Editor (cole no editor e Run):
+            <pre style="margin-top:6px"><code>GRANT USE CATALOG, CREATE SCHEMA ON CATALOG &lt;catalog_name&gt;
+  TO `&lt;application_id&gt;`;</code></pre>
+          </div>
+        </li>
+        <li>
+          <h4>(Se usar Lakebase) Grant no Lakebase</h4>
+          <div class="substep"><span class="ui-path">Compute <span class="arrow">›</span> Lakebase</span> — clique na instance — aba <strong>Permissions</strong>.</div>
+          <div class="substep">Adicione o <strong>Application ID</strong> do SP com permissão <strong>Can Connect and Create</strong>.</div>
+        </li>
+      </ol>
+
+      <h3 id="sec-7-6">7.6 Deploy &amp; verificação pela UI</h3>
+
+      <ol class="steps">
+        <li>
+          <h4>Configure o source-code-path no app</h4>
+          <div class="substep">Volte em <span class="ui-path">Compute <span class="arrow">›</span> Apps <span class="arrow">›</span> nuclea-modeler</span>.</div>
+          <div class="substep">Aba <strong>Settings</strong> (ou "App configuration") — campo <strong>Source code path</strong>.</div>
+          <div class="substep">Cole o caminho onde você importou: <code>/Workspace/Users/&lt;seu-email&gt;/nuclea-modeler</code>.</div>
+          <div class="substep">Salve.</div>
+        </li>
+        <li>
+          <h4>Dispare o deploy</h4>
+          <div class="substep">Na tela do app, botão <strong>Deploy</strong> (canto superior direito).</div>
+          <div class="substep">A UI mostra o status: <em>Provisioning → Starting → Running</em>. Demora ~1-2 min.</div>
+          <div class="substep">Durante o deploy o container roda:</div>
+          <ol style="margin-top:4px">
+            <li><code>vite build</code> — gera o bundle React em <code>src/nuclea_modeler/__dist__/</code></li>
+            <li><code>python -m scripts.run_migrations</code> — aplica as 12 migrations SQL em ordem</li>
+            <li><code>uvicorn nuclea_modeler.backend.app:app</code> — sobe o servidor FastAPI (2 workers)</li>
+          </ol>
+        </li>
+        <li>
+          <h4>Verifique os logs pela UI</h4>
+          <div class="substep">Aba <strong>Logs</strong> do app. Procure por:</div>
+          <ul>
+            <li><code>[NUCLEA] Building UI...</code></li>
+            <li><code>[NUCLEA] Running migrations</code></li>
+            <li><code>summary: {'applied': N, 'skipped': M, ...}</code> — N migrations aplicadas (12 no deploy limpo)</li>
+            <li><code>Application startup complete</code> — uvicorn pronto</li>
+          </ul>
+          <div class="callout danger" style="margin-top:8px">
+            <span class="ctitle">Se aparecer erro de SCHEMA_NOT_FOUND</span>
+            Volte ao passo 7.5.2 e confirme que o grant <code>CREATE_SCHEMA</code> foi aplicado ao Application ID
+            correto. O Application ID está na aba <strong>Service Principal</strong> do app.
+          </div>
+          <div class="callout danger" style="margin-top:8px">
+            <span class="ctitle">Se aparecer "Provided OAuth token does not have required scopes: postgres"</span>
+            O bloco <code>nuclea-lakebase</code> em <code>resources:</code> do <code>app.yml</code> não foi declarado
+            ou tem placeholder. Edite o YAML pela UI (passo 7.4) e re-deploy.
+          </div>
+        </li>
+        <li>
+          <h4>Verifique que as tabelas foram criadas</h4>
+          <div class="substep">Vá em <span class="ui-path">Catalog <span class="arrow">›</span> &lt;catalog_name&gt; <span class="arrow">›</span> nuclea_modeler</span>.</div>
+          <div class="substep">Você deve ver as <strong>22 tabelas Delta</strong>:</div>
+          <table>
+            <thead><tr><th>Domínio</th><th>Tabelas</th></tr></thead>
+            <tbody>
+              <tr><td>M1 Sistemas + Conexões</td><td><code>systems</code> · <code>connections</code></td></tr>
+              <tr><td>M3 Modelagem</td><td><code>entities</code> · <code>attributes</code> · <code>relationships</code></td></tr>
+              <tr><td>M5 Workflow</td><td><code>reconciliation_tickets</code> · <code>user_roles</code></td></tr>
+              <tr><td>M2 Extractions</td><td><code>extractions</code></td></tr>
+              <tr><td>M4 DER</td><td><code>der_layouts</code></td></tr>
+              <tr><td>M6 Flags</td><td><code>flags</code> · <code>entity_flags</code> · <code>attribute_flags</code></td></tr>
+              <tr><td>M7 Glossário</td><td><code>glossary_terms</code> · <code>glossary_mappings</code></td></tr>
+              <tr><td>M8 Linhagem</td><td><code>lineage_upstream</code> · <code>lineage_downstream</code></td></tr>
+              <tr><td>M9/M11 Operacional</td><td><code>sync_log</code> · <code>audit_log</code> · <code>model_versions</code> · <code>views_catalog</code> · <code>procedures_catalog</code> · <code>triggers_catalog</code></td></tr>
+              <tr><td>F1-F9 Storage</td><td><code>entity_indexes</code> · <code>entity_partitioning</code></td></tr>
+              <tr><td>Interno</td><td><code>schema_migrations</code> · <code>sequences</code></td></tr>
+            </tbody>
+          </table>
+        </li>
+        <li>
+          <h4>Acesse o app</h4>
+          <div class="substep">Na tela do app, copie a URL pública (formato <code>https://nuclea-modeler-&lt;workspace_id&gt;.cloud.databricksapps.com</code>).</div>
+          <div class="substep">Abra num nova aba. SSO força login automático.</div>
+        </li>
+        <li>
+          <h4>Bootstrap do primeiro admin</h4>
+          <div class="substep">O primeiro user a entrar fica como <code>VIEWER</code>. Pra dar role <code>ADMIN</code> via UI:</div>
+          <div class="substep"><span class="ui-path">SQL <span class="arrow">›</span> SQL Editor</span> — cole e Run:</div>
+          <pre><code>INSERT INTO &lt;catalog_name&gt;.nuclea_modeler.user_roles
+  (role_id, user_email, role_name, granted_at, granted_by)
+VALUES (uuid(), 'seu-email@cliente.com', 'ADMIN',
+        current_timestamp(), 'bootstrap');</code></pre>
+          <div class="substep">Recarregue o app — agora você tem acesso completo.</div>
+        </li>
+        <li>
+          <h4>(Opcional) Dashboard Lakeview + Genie</h4>
+          <div class="substep"><span class="ui-path">Workspace <span class="arrow">›</span> Users <span class="arrow">›</span> &lt;seu-email&gt; <span class="arrow">›</span> nuclea-modeler <span class="arrow">›</span> databricks <span class="arrow">›</span> dashboards</span>.</div>
+          <div class="substep">Clique em <code>nuclea_modeler_dashboard.json</code>, três pontinhos <span class="ui-path">Open in dashboard editor</span>.</div>
+          <div class="substep">A UI vai pedir pra substituir o catalog/schema — aponte para o seu (<code>&lt;catalog&gt;.nuclea_modeler</code>) e salve.</div>
+          <div class="substep">Genie: <span class="ui-path">SQL <span class="arrow">›</span> Genie Spaces <span class="arrow">›</span> Create new space</span> — siga <code>databricks/dashboards/GENIE_SETUP.md</code> (instruções de UI passo-a-passo).</div>
+        </li>
+      </ol>
+
+      <h3 id="sec-7-7">7.7 Atualizações (re-deploy de nova versão)</h3>
+
+      <p>Quando publicarmos uma nova versão (cliente recebe novo <code>.zip</code> nosso):</p>
+
+      <ol class="steps">
+        <li>
+          <h4>Re-import sobrescrevendo</h4>
+          <div class="substep"><span class="ui-path">Workspace <span class="arrow">›</span> nuclea-modeler</span> — três pontinhos <span class="ui-path">Import</span> — selecione o zip novo. Aceite "overwrite existing files".</div>
+          <div class="callout warn" style="margin-top:8px">
+            <span class="ctitle">Cuidado</span>
+            O Import sobrescreve <strong>incluindo <code>app.yml</code></strong>. Se você editou o YAML manualmente
+            no passo 7.4, salve uma cópia em outra pasta antes do import — ou faça o backup baixando o <code>app.yml</code>
+            atual via three-dots <span class="ui-path">Export</span> antes.
+          </div>
+        </li>
+        <li>
+          <h4>Re-edite <code>app.yml</code> se necessário</h4>
+          <div class="substep">Confirme que os placeholders ainda estão substituídos (passo 7.4) — se o overwrite trouxe o template do <code>.example</code>, reaplique seus valores.</div>
+        </li>
+        <li>
+          <h4>Re-deploy pelo botão</h4>
+          <div class="substep">No app: <strong>Deploy</strong>. Migrations novas (ex: <code>013_*.sql</code>) aplicam automaticamente; migrations existentes ficam como <code>skipped</code> via checksum.</div>
+        </li>
+      </ol>
+
+      <h3 id="sec-7-8">7.8 Troubleshooting (sintomas → fix pela UI)</h3>
+
+      <table>
+        <thead><tr><th>Sintoma nos Logs</th><th>Causa</th><th>Fix via UI</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><code>SCHEMA_NOT_FOUND</code></td>
+            <td>SP do app sem <code>CREATE SCHEMA</code> no catalog</td>
+            <td>Volte ao 7.5.2 — Catalog UI → Permissions → Grant CREATE_SCHEMA pro Application ID</td>
+          </tr>
+          <tr>
+            <td><code>required scopes: postgres</code></td>
+            <td>Bloco <code>nuclea-lakebase</code> não declarado em <code>resources:</code></td>
+            <td>Edite <code>app.yml</code> pela UI (7.4) + Deploy de novo</td>
+          </tr>
+          <tr>
+            <td><code>DRIFT detected: 0XX_*.sql</code></td>
+            <td>SQL já aplicado teve hash mudado</td>
+            <td>Normal em upgrades — app continua subindo. Investigue só se for migration sua, não nossa</td>
+          </tr>
+          <tr>
+            <td>DER vazio / Dashboard sem dados</td>
+            <td>Seeds (003-004-009) falharam</td>
+            <td>Logs do app — procure stack trace nas migrations. Geralmente é grant ou catalog inválido</td>
+          </tr>
+          <tr>
+            <td>401 em todos os endpoints</td>
+            <td>SSO força auth, browser sem cookie</td>
+            <td>Abra a URL do app na <em>mesma sessão</em> em que está logado no workspace</td>
+          </tr>
+          <tr>
+            <td>App fica em "Starting" pra sempre</td>
+            <td>Container OOM (UI build pesado) ou ECONNREFUSED</td>
+            <td>Logs do app — se viu OOM, aumente memory na config do app (Settings → Resource size)</td>
+          </tr>
+          <tr>
+            <td>Bundle UI antigo após deploy</td>
+            <td>Browser cache</td>
+            <td>Hard refresh: <span class="kbd">⌘</span>+<span class="kbd">Shift</span>+<span class="kbd">R</span> (ou <span class="kbd">Ctrl</span>+<span class="kbd">Shift</span>+<span class="kbd">R</span>)</td>
+          </tr>
+          <tr>
+            <td>Coverage gate falhando em CI (não bloqueia deploy)</td>
+            <td>Ajuste de testes pendente</td>
+            <td>Não afeta o app rodando. Tem que ajustar <code>cov-fail-under</code> em <code>pyproject.toml</code> pela UI</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="callout success" style="margin-top:32px">
+        <span class="ctitle">Pronto</span>
+        Se chegou aqui com logs verdes e UI acessível, o handover está concluído.
+        Estado migrado, app rodando independente do workspace origem.
+      </div>
+    </section>
+
+    <footer>
+      <p>
+        <strong>Núclea Modeler</strong> · Handover técnico v0.2.1 · Repositório:
+        <code>github.com/lfmed/nuclea-modeler</code> · Para contato técnico abrir issue.
+      </p>
+      <p>
+        Arquivos relacionados no repo: <code>HANDOVER.md</code> · <code>DEPLOY.md</code> · <code>SECURITY.md</code>
+        · <code>README.md</code> · <code>CHANGELOG.md</code> · <code>docs/architecture/</code> ·
+        <code>docs/operations/</code>.
+      </p>
+    </footer>
+
+  </main>
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: "default",
+    themeVariables: {
+      primaryColor: "#f3eef7",
+      primaryTextColor: "#1a1322",
+      primaryBorderColor: "#7b2d8e",
+      lineColor: "#5a4c6e",
+      secondaryColor: "#fffbeb",
+      tertiaryColor: "#f0fdf4",
+      fontSize: "14px",
+    },
+    flowchart: { curve: "basis", htmlLabels: true },
+    sequence: { showSequenceNumbers: false, mirrorActors: true },
+  });
+</script>
+</body>
+</html>
