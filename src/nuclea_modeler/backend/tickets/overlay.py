@@ -74,8 +74,17 @@ def field_changes_by_target(
         after = fc.get("after")
         if fld.startswith("attribute_add:"):
             name = fld.split(":", 1)[1]
-            payload = fc.get("payload") if isinstance(fc.get("payload"), dict) else {}
-            attr_adds.append({"technical_name": name, **(payload or {})})
+            # Convenção atual do app: payload completo do attribute está em `after`
+            # (ver entities/router.py:create_attribute). Aceita também `payload`
+            # como fallback pra compatibilidade com tickets antigos.
+            payload_dict: dict[str, Any] = {}
+            if isinstance(after, dict):
+                payload_dict = after
+            elif isinstance(fc.get("payload"), dict):
+                payload_dict = fc.get("payload") or {}
+            merged = {"technical_name": name, **payload_dict}
+            merged["technical_name"] = merged.get("technical_name") or name
+            attr_adds.append(merged)
         elif fld.startswith("attribute_remove:"):
             name = fld.split(":", 1)[1]
             attr_removes.append({"technical_name": name})

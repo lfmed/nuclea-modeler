@@ -20,7 +20,6 @@ from ..core import delta
 from ..core._nuclea_config import get_settings
 from ..core.sql import Sql
 from ..lakebase.service import open_connection
-from ..tickets.models import DiffEntity, TicketDiff
 from ..tickets.service import open_ticket
 from .embarcadero import parse_dm1
 from .diff import compute_diff_against_catalog as compute_diff_against_catalog

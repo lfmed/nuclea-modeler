@@ -451,12 +451,16 @@ sequenceDiagram
 
 ### Hotspots de complexidade
 
-| Arquivo | Linhas | Risco | Como mitigar |
+> **Status (2026-06-08)**: os 4 hotspots abaixo foram refatorados. Esta seção fica como histórico — os arquivos atuais já refletem o estado pós-refactor.
+
+| Arquivo | Antes → Depois | Refactor aplicado | Commit |
 |---|---|---|---|
-| `backend/tickets/service.py` | ~759 | Função `apply_ticket` faz parsing de field_changes + roteamento por prefixo + apply em 5 tabelas. Mudança aqui pode quebrar attribute / index / partition em cascata. | Cobrir cada caminho com test; considerar quebrar em sub-handlers por prefixo (`_apply_attribute_change`, `_apply_index_change` já existe, faltam mais). |
-| `backend/extractions/service.py` | ~1181 | 4 entradas (Lakebase/UC/DDL/DM1) + `compute_diff_against_catalog` + persistência. | Extrair `compute_diff_against_catalog` pra módulo próprio. Os 4 `run_*` poderiam ser uma classe `ExtractionRunner` com template method. |
-| `backend/diagram/router.py` | ~934 | Build do DER + overlay + endpoints virtuais. Bug pendente lembrado: `_apply_session_overlay` skippa `schema_name == "__relationship__"`. | Mover overlay pra módulo separado tipo `diagram/overlay.py` (espelhando `index_overlay.py`). |
-| `backend/entities/router.py` | ~1205 | Concentra entities + attributes + indexes + partitioning endpoints. | Mover indexes/partitioning pra `entities/indexes_router.py`. |
+| `backend/tickets/service.py` | 759 linhas, função `apply_ticket` ~400 linhas | Quebrado em `_ApplyState` dataclass + `_apply_op_add/remove/change` + `_dispatch_field_change`. `apply_ticket` virou orquestrador de ~140 linhas. | `67f0e70` |
+| `backend/extractions/service.py` | 1181 → 1021 linhas | `compute_diff_against_catalog` extraído pra novo módulo `extractions/diff.py` (função pura, testável). Service re-exporta pra compat. | `f8974f5` |
+| `backend/diagram/router.py` | 934 → 781 linhas | `_apply_session_overlay` movido pra `diagram/overlay.py` (puro, 6 tests novos em `test_diagram_overlay.py`). | `cbeedae` |
+| `backend/entities/router.py` | 1198 → 965 linhas | 7 endpoints de índices + partição + helpers movidos pra `entities/indexes_router.py`. Montado em `app.py` junto com o original. | `cbeedae` |
+
+Coverage gate subido **65% → 70%** (`pyproject.toml`) acompanhando o aumento de cobertura via tests novos para módulos puros (`diagram/overlay`, `extractions/diff`, `entities/index_overlay`, `entities/index_validation`).
 
 ### Limitações estruturais conhecidas
 

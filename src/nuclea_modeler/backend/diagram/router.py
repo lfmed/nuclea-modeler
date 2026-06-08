@@ -13,7 +13,6 @@ from ..core import Dependencies, delta
 from ..core._nuclea_config import get_settings
 from ..core.sql import SqlDependency
 from ..rbac.router import _current_email
-from ..tickets.overlay import index_session_diff
 from .overlay import apply_session_overlay
 from ..tickets.session import (
     find_open_session_ticket,
