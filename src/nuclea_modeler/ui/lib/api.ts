@@ -2034,6 +2034,9 @@ export interface DiagramEntity {
   criticality?: string | null;
   attributes: DiagramAttribute[];
   has_lgpd_flag: boolean;
+  // Storage badges (F5): contagem de índices + estratégia de partição
+  indexes_count?: number;
+  partition_strategy?: "RANGE" | "LIST" | "HASH" | "LIQUID" | "NONE" | null;
   // Editorial session — entidade com mudança pendente no ticket atual
   pending_op?: "add" | "change" | "remove" | null;
   pending_ticket_id?: string | null;

@@ -162,6 +162,34 @@ def _build_diagram(
             if ent:
                 ent.has_lgpd_flag = True
 
+        # Storage badges: contagem de índices + estratégia de partição.
+        idx_count_rows = delta.fetch_all(
+            sql,
+            f"""
+            SELECT entity_id, COUNT(*) AS n
+            FROM {s.fq_table('entity_indexes')}
+            WHERE entity_id IN ({ids_csv})
+            GROUP BY entity_id
+            """,
+        )
+        for r in idx_count_rows:
+            ent = entities_by_id.get(r[0])
+            if ent:
+                ent.indexes_count = int(r[1])
+
+        part_rows = delta.fetch_all(
+            sql,
+            f"""
+            SELECT entity_id, strategy
+            FROM {s.fq_table('entity_partitioning')}
+            WHERE entity_id IN ({ids_csv})
+            """,
+        )
+        for r in part_rows:
+            ent = entities_by_id.get(r[0])
+            if ent and r[1]:
+                ent.partition_strategy = r[1]
+
     rel_rows = delta.fetch_all_params(
         sql,
         f"""

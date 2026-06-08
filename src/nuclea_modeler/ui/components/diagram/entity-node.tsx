@@ -108,6 +108,22 @@ export const EntityNode = memo(({ data, selected }: EntityNodeProps) => {
               {entity.domain}
             </span>
           )}
+          {(entity.indexes_count ?? 0) > 0 && (
+            <span
+              className="text-[10px] rounded px-1.5 py-0.5 border bg-sky-500/10 border-sky-500/30 font-mono"
+              title={`${entity.indexes_count} índice(s) catalogado(s)`}
+            >
+              {entity.indexes_count} idx
+            </span>
+          )}
+          {entity.partition_strategy && entity.partition_strategy !== "NONE" && (
+            <span
+              className="text-[10px] rounded px-1.5 py-0.5 border bg-violet-500/10 border-violet-500/30 font-mono"
+              title={`Particionamento: ${entity.partition_strategy}`}
+            >
+              {entity.partition_strategy}
+            </span>
+          )}
           {hasPending && (
             <span
               className={`text-[10px] rounded px-1.5 py-0.5 border font-medium ${pendingBadgeClass(pendingOp)}`}

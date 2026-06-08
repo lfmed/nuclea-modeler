@@ -35,6 +35,11 @@ class DiagramEntity(BaseModel):
     criticality: str | None = None
     attributes: list[DiagramAttribute] = Field(default_factory=list)
     has_lgpd_flag: bool = False  # propagated from columns or applied at entity level
+    # Storage badges no DER — agregados a partir de entity_indexes /
+    # entity_partitioning. Mantemos compactos (só contagem + estratégia)
+    # pra não inflar o payload do diagrama.
+    indexes_count: int = 0
+    partition_strategy: Literal["RANGE", "LIST", "HASH", "LIQUID", "NONE"] | None = None
     # Editorial overlay — preenchido quando há ticket OPEN do user com
     # mudança pendente. Frontend renderiza com badge/opacidade.
     pending_op: PendingOp | None = None
