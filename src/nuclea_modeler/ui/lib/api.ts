@@ -525,11 +525,14 @@ export const useUpdateEntityIndex = (
   });
 
 export const useDeleteEntityIndex = (
-  opts?: Opts<{ deleted: string }, { entityId: string; indexId: string }>,
+  opts?: Opts<
+    { deleted: string; pending?: boolean; ticket_id?: string },
+    { entityId: string; indexId: string }
+  >,
 ) =>
   useMutation({
     mutationFn: async ({ entityId, indexId }) =>
-      (await api.delete<{ deleted: string }>(
+      (await api.delete<{ deleted: string; pending?: boolean; ticket_id?: string }>(
         `/entities/${encodeURIComponent(entityId)}/indexes/${encodeURIComponent(indexId)}`,
       )).data,
     ...opts?.mutation,

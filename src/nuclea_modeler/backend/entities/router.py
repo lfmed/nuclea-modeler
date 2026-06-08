@@ -29,8 +29,6 @@ from ..tickets.session import (
     stage_entity_change,
 )
 from .indexes import (
-    apply_index_add, apply_index_change, apply_index_remove,
-    apply_partitioning_set,
     get_partitioning, list_indexes_for_entity,
     stage_index_add, stage_index_remove, stage_index_update,
     stage_partitioning_set,
