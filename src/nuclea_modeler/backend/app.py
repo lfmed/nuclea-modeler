@@ -3,6 +3,7 @@ from .router import router as base_router
 from .connections.router import router as connections_router
 from .systems.router import router as systems_router
 from .entities.router import router as entities_router
+from .entities.indexes_router import router as entities_indexes_router
 from .glossary.router import attr_glossary_router, router as glossary_router
 from .rbac.router import router as rbac_router
 from .tickets.router import router as tickets_router
@@ -50,6 +51,7 @@ app = create_app(
         systems_router,
         connections_router,
         entities_router,
+        entities_indexes_router,
         glossary_router,
         attr_glossary_router,
         rbac_router,
