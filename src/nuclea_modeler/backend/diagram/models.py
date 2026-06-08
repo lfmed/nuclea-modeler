@@ -19,9 +19,20 @@ class DiagramAttribute(BaseModel):
     is_nullable: bool | None = None
     ordinal_position: int | None = None
     has_lgpd_flag: bool = False
+    # F9: true se a coluna aparece em pelo menos um índice (não-PK)
+    is_indexed: bool = False
     # Editorial overlay — set quando o atributo tem mudança pendente na
     # sessão atual do usuário. NÃO é estado committed.
     pending_op: PendingOp | None = None
+
+
+class DiagramIndexSummary(BaseModel):
+    """Resumo compacto do índice pra mostrar inline no node do DER."""
+
+    index_name: str
+    index_type: str
+    is_unique: bool = False
+    columns: list[str] = Field(default_factory=list)
 
 
 class DiagramEntity(BaseModel):
@@ -40,6 +51,10 @@ class DiagramEntity(BaseModel):
     # pra não inflar o payload do diagrama.
     indexes_count: int = 0
     partition_strategy: Literal["RANGE", "LIST", "HASH", "LIQUID", "NONE"] | None = None
+    # F9: índices resumidos pra renderizar inline (max 5 por node — se tiver
+    # mais, mostra "(+N)" e dirige pro detail da entity).
+    indexes: list[DiagramIndexSummary] = Field(default_factory=list)
+    partition_columns: list[str] = Field(default_factory=list)
     # Editorial overlay — preenchido quando há ticket OPEN do user com
     # mudança pendente. Frontend renderiza com badge/opacidade.
     pending_op: PendingOp | None = None

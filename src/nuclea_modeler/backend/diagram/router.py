@@ -26,6 +26,7 @@ from ..tickets.session import (
 from .models import (
     DiagramAttribute,
     DiagramEntity,
+    DiagramIndexSummary,
     DiagramRelationship,
     DiagramView,
     LayoutOut,
@@ -162,33 +163,73 @@ def _build_diagram(
             if ent:
                 ent.has_lgpd_flag = True
 
-        # Storage badges: contagem de índices + estratégia de partição.
-        idx_count_rows = delta.fetch_all(
+        # Storage: detalhes pros nodes do DER (contagem + lista resumida).
+        # Carregamos todos os índices num único fetch, agrupamos por entity
+        # e marcamos quais colunas estão em algum índice (pra ícone no attr).
+        import json as _json
+        idx_detail_rows = delta.fetch_all(
             sql,
             f"""
-            SELECT entity_id, COUNT(*) AS n
+            SELECT entity_id, index_name, index_type, is_unique, columns_json
             FROM {s.fq_table('entity_indexes')}
             WHERE entity_id IN ({ids_csv})
-            GROUP BY entity_id
+            ORDER BY entity_id, index_name
             """,
         )
-        for r in idx_count_rows:
-            ent = entities_by_id.get(r[0])
-            if ent:
-                ent.indexes_count = int(r[1])
+        indexed_attr_names_by_entity: dict[str, set[str]] = {}
+        for r in idx_detail_rows:
+            eid_v, ix_name, ix_type, ix_unique, cols_json = r
+            ent = entities_by_id.get(eid_v)
+            if not ent:
+                continue
+            cols: list[str] = []
+            try:
+                parsed = _json.loads(cols_json) if cols_json else []
+                cols = [
+                    str(c.get("name", ""))
+                    for c in parsed
+                    if isinstance(c, dict) and c.get("name")
+                ]
+            except (ValueError, TypeError):
+                pass
+            ent.indexes_count += 1
+            ent.indexes.append(DiagramIndexSummary(
+                index_name=ix_name,
+                index_type=ix_type or "BTREE",
+                is_unique=bool(ix_unique),
+                columns=cols,
+            ))
+            indexed_attr_names_by_entity.setdefault(eid_v, set()).update(cols)
 
+        # Aplica is_indexed nos atributos (após o loop acima ter populado).
+        for eid_v, indexed_cols in indexed_attr_names_by_entity.items():
+            ent = entities_by_id.get(eid_v)
+            if not ent:
+                continue
+            for a in ent.attributes:
+                if a.technical_name in indexed_cols:
+                    a.is_indexed = True
+
+        # Particionamento: estratégia + colunas
         part_rows = delta.fetch_all(
             sql,
             f"""
-            SELECT entity_id, strategy
+            SELECT entity_id, strategy, columns_json
             FROM {s.fq_table('entity_partitioning')}
             WHERE entity_id IN ({ids_csv})
             """,
         )
         for r in part_rows:
             ent = entities_by_id.get(r[0])
-            if ent and r[1]:
-                ent.partition_strategy = r[1]
+            if not ent or not r[1]:
+                continue
+            ent.partition_strategy = r[1]
+            try:
+                parsed = _json.loads(r[2]) if r[2] else []
+                if isinstance(parsed, list):
+                    ent.partition_columns = [str(c) for c in parsed if c]
+            except (ValueError, TypeError):
+                pass
 
     rel_rows = delta.fetch_all_params(
         sql,

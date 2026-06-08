@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { Handle, Position } from "@xyflow/react";
-import { Key, ShieldAlert, Hash } from "lucide-react";
+import { Key, ShieldAlert, Hash, Zap, GitBranch } from "lucide-react";
 import type { DiagramEntity } from "@/lib/api";
 
 interface EntityNodeData {
@@ -156,6 +156,11 @@ export const EntityNode = memo(({ data, selected }: EntityNodeProps) => {
               >
                 {attr.is_primary_key ? (
                   <Key className="h-3 w-3 text-nuclea-primary shrink-0" />
+                ) : attr.is_indexed ? (
+                  <Zap
+                    className="h-3 w-3 text-sky-500 shrink-0"
+                    aria-label="Está em índice"
+                  />
                 ) : (
                   <span className="h-3 w-3 shrink-0" />
                 )}
@@ -199,9 +204,53 @@ export const EntityNode = memo(({ data, selected }: EntityNodeProps) => {
         </ul>
       )}
 
+      {showAttributes && (entity.indexes?.length || entity.partition_strategy && entity.partition_strategy !== "NONE") && (
+        <div className="border-t bg-muted/10 px-3 py-1.5 space-y-1">
+          {(entity.indexes ?? []).slice(0, 5).map((ix) => (
+            <div
+              key={ix.index_name}
+              className="flex items-center gap-1.5 text-[10px] font-mono"
+              title={`${ix.index_type}${ix.is_unique ? " UNIQUE" : ""}`}
+            >
+              <Zap className="h-2.5 w-2.5 text-sky-500 shrink-0" />
+              <span className="text-muted-foreground truncate">
+                <span className="text-foreground">{ix.index_name}</span>
+                {" · "}
+                {ix.columns.join(", ") || "(sem colunas)"}
+              </span>
+            </div>
+          ))}
+          {(entity.indexes?.length ?? 0) > 5 && (
+            <div className="text-[10px] text-muted-foreground italic">
+              + {(entity.indexes!.length - 5)} índice(s) — veja na entity
+            </div>
+          )}
+          {entity.partition_strategy && entity.partition_strategy !== "NONE" && (
+            <div
+              className="flex items-center gap-1.5 text-[10px] font-mono"
+              title={`Particionamento ${entity.partition_strategy}`}
+            >
+              <GitBranch className="h-2.5 w-2.5 text-violet-500 shrink-0" />
+              <span className="text-muted-foreground truncate">
+                <span className="text-foreground">{entity.partition_strategy}</span>
+                {(entity.partition_columns?.length ?? 0) > 0 && (
+                  <>
+                    {" · "}
+                    {entity.partition_columns!.join(", ")}
+                  </>
+                )}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
       {!showAttributes && entity.attributes.length > 0 && (
         <div className="px-3 py-1.5 text-[10px] text-muted-foreground bg-muted/20 rounded-b-lg">
           {entity.attributes.length} atributo{entity.attributes.length !== 1 ? "s" : ""}
+          {(entity.indexes_count ?? 0) > 0 && (
+            <span className="ml-2">· {entity.indexes_count} idx</span>
+          )}
         </div>
       )}
 

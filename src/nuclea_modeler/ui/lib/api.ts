@@ -2043,9 +2043,17 @@ export interface DiagramAttribute {
   is_nullable?: boolean | null;
   ordinal_position?: number | null;
   has_lgpd_flag: boolean;
+  is_indexed?: boolean;
   // Editorial session — atributo com mudança pendente
   pending_op?: "add" | "change" | "remove" | null;
   pending_ticket_id?: string | null;
+}
+
+export interface DiagramIndexSummary {
+  index_name: string;
+  index_type: string;
+  is_unique: boolean;
+  columns: string[];
 }
 
 export interface DiagramEntity {
@@ -2062,6 +2070,9 @@ export interface DiagramEntity {
   // Storage badges (F5): contagem de índices + estratégia de partição
   indexes_count?: number;
   partition_strategy?: "RANGE" | "LIST" | "HASH" | "LIQUID" | "NONE" | null;
+  // F9: lista completa de índices + colunas de partição pro DER
+  indexes?: DiagramIndexSummary[];
+  partition_columns?: string[];
   // Editorial session — entidade com mudança pendente no ticket atual
   pending_op?: "add" | "change" | "remove" | null;
   pending_ticket_id?: string | null;
