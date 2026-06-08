@@ -16,7 +16,13 @@ import io
 import re
 from datetime import datetime
 
-from .models import ExtractedAttribute, ExtractedEntity, ExtractionSnapshot
+from .models import (
+    ExtractedAttribute,
+    ExtractedEntity,
+    ExtractedIndex,
+    ExtractedIndexColumn,
+    ExtractionSnapshot,
+)
 
 # ─── Mapping DatatypeId → nome canônico ──────────────────────────────────────
 # IDs observados em exports reais de IDEF1 / Generic do ER/Studio. Lista não
@@ -211,14 +217,71 @@ def parse_dm1(text: str, system_id: str) -> tuple[ExtractionSnapshot, list[str]]
 
     # Index attributes por (EntityId, AttributeId) e por EntityId
     attrs_by_entity: dict[str, list[dict[str, str]]] = {}
+    attr_name_by_key: dict[tuple[str, str], str] = {}
     for a in attrs_raw:
         eid = a.get("EntityId", "")
         attrs_by_entity.setdefault(eid, []).append(a)
+        attr_name_by_key[(eid, a.get("AttributeId", ""))] = (
+            strings.get(a.get("AttributeNameId", ""), "").strip()
+        )
 
     # Index PKs por (EntityId, AttributeId)
     pk_set: set[tuple[str, str]] = set()
     for p in pks_raw:
         pk_set.add((p.get("EntityId", ""), p.get("AttributeId", "")))
+
+    # Index Indexes + IndexColumn por (EntityId, IndexId).
+    # Skip KeyType=="P" (primary keys já cobertas pela seção PrimaryKey).
+    idx_rows = sections.get("Indexes", [])
+    idx_col_rows = sections.get("IndexColumn", [])
+    # ER/Studio duplica rows entre modelo lógico (ModelId=1) e físico (=2).
+    # Dedup por (EntityId, IndexId) e (EntityId, IndexId, AttributeId).
+    idx_cols_by_key: dict[tuple[str, str], list[dict[str, str]]] = {}
+    seen_idx_col: set[tuple[str, str, str]] = set()
+    for c in idx_col_rows:
+        ck = (c.get("EntityId", ""), c.get("IndexId", ""), c.get("AttributeId", ""))
+        if ck in seen_idx_col:
+            continue
+        seen_idx_col.add(ck)
+        key = (c.get("EntityId", ""), c.get("IndexId", ""))
+        idx_cols_by_key.setdefault(key, []).append(c)
+    indexes_by_entity: dict[str, list[ExtractedIndex]] = {}
+    seen_idx: set[tuple[str, str]] = set()
+    for ix in idx_rows:
+        if ix.get("KeyType") == "P":
+            continue
+        ent_id = ix.get("EntityId", "")
+        idx_id = ix.get("IndexId", "")
+        if (ent_id, idx_id) in seen_idx:
+            continue
+        seen_idx.add((ent_id, idx_id))
+        idx_name = strings.get(ix.get("IndexNameId", ""), "").strip()
+        if not idx_name:
+            continue
+        cols_for_idx = sorted(
+            idx_cols_by_key.get((ent_id, idx_id), []),
+            key=lambda r: _to_int(r.get("SequenceNo"), default=0),
+        )
+        index_cols: list[ExtractedIndexColumn] = []
+        for c in cols_for_idx:
+            cname = attr_name_by_key.get((ent_id, c.get("AttributeId", "")), "").strip()
+            if not cname:
+                continue
+            direction = "DESC" if (c.get("SortOrdering") or "A").upper() == "D" else "ASC"
+            index_cols.append(ExtractedIndexColumn(name=cname, direction=direction))
+        if not index_cols:
+            continue
+        # KeyType="U" → UNIQUE constraint. is_unique é flag separada
+        # (não duplica em index_type pra evitar redundância na UI).
+        is_unique = (ix.get("KeyType") or "").upper() == "U"
+        indexes_by_entity.setdefault(ent_id, []).append(
+            ExtractedIndex(
+                index_name=idx_name,
+                index_type="BTREE",
+                is_unique=is_unique,
+                columns=index_cols,
+            )
+        )
 
     # Index entity name por EntityId pra resolver FKs
     entity_name_by_id: dict[str, str] = {}
@@ -291,6 +354,7 @@ def parse_dm1(text: str, system_id: str) -> tuple[ExtractionSnapshot, list[str]]
                 entity_type="TABLE",
                 native_comment=definition,
                 attributes=ent_attrs,
+                indexes=indexes_by_entity.get(eid, []),
             )
         )
 
@@ -318,11 +382,28 @@ def parse_dm1(text: str, system_id: str) -> tuple[ExtractionSnapshot, list[str]]
             + ", ".join(str(x) for x in sorted(unknown_types))
         )
 
+    # Dedup por (schema, technical_name): ER/Studio armazena cada entity 2x
+    # — uma no modelo lógico (ModelId=1) e outra no físico (ModelId=2). A
+    # representação física vem depois e geralmente tem tipos mais corretos,
+    # então mantemos a última ocorrência por chave (e mesclamos índices,
+    # que podem aparecer no lógico mas não no físico ou vice-versa).
+    deduped: dict[tuple[str, str], ExtractedEntity] = {}
+    for e in entities:
+        key = (e.schema_name, e.technical_name)
+        prev = deduped.get(key)
+        if prev:
+            # Mescla índices que faltam (dedup por nome) sem sobrescrever atributos.
+            seen_idx_names = {ix.index_name for ix in e.indexes}
+            for ix in prev.indexes:
+                if ix.index_name not in seen_idx_names:
+                    e.indexes.append(ix)
+        deduped[key] = e
+
     snapshot = ExtractionSnapshot(
         source_kind="EMBARCADERO",
         system_id=system_id,
         captured_at=datetime.utcnow(),
-        schemas=sorted({e.schema_name for e in entities}),
-        entities=entities,
+        schemas=sorted({e.schema_name for e in deduped.values()}),
+        entities=list(deduped.values()),
     )
     return snapshot, warnings

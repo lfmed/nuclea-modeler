@@ -269,6 +269,7 @@ def compute_diff_against_catalog(
                         "row_count_approx": entity.row_count_approx,
                     },
                     attributes=[a.model_dump() for a in entity.attributes],
+                    indexes=[ix.model_dump() for ix in getattr(entity, "indexes", []) or []],
                 )
             )
         else:

@@ -106,6 +106,49 @@ def test_relationships_emitted_as_warnings():
     assert any("1 relacionamento" in w for w in warns)
 
 
+def test_extracts_indexes_with_columns():
+    """Seção Indexes + IndexColumn é extraída, com dedup lógico/físico e
+    skip de KeyType=P (já coberto pela seção PrimaryKey)."""
+    payload = (
+        "Entity\n"
+        "DiagramId,ModelId,EntityId,EntityNameId,TableNameId,OwnerId,DefinitionId\n"
+        "1,2,10,100,100,0,0\n"
+        "\n"
+        "Attribute\n"
+        "DiagramId,ModelId,EntityId,AttributeId,AttributeNameId,DatatypeId,Length,Scale,Nullable,DefinitionId\n"
+        "1,2,10,1,200,8,-2,-1,N,0\n"
+        "1,2,10,2,201,10,80,-1,Y,0\n"
+        "\n"
+        "Indexes\n"
+        "DiagramId,ModelId,EntityId,IndexId,Indexes_ID,Entity_ID,IsUniqueId,IndexTypeId,KeyType,HashSize,HashSizeTypeId,IgnoreDupKeyId,DupRowId,NoSortId,SortOrderingId,IndexNameId,Flags,NSTFlag,CompareFlags,Global_User_ID,Row_Time_Stamp,ColumnStoreId\n"
+        "1,2,10,1,1,10,13,0,U,0,0,0,0,0,0,300,0,0,0,0,0,0\n"
+        "1,2,10,2,2,10,13,0,P,0,0,0,0,0,0,301,0,0,0,0,0,0\n"
+        "\n"
+        "IndexColumn\n"
+        "DiagramId,ModelId,EntityId,IndexId,AttributeId,IndexColumn_ID,Attribute_ID,Indexes_ID,SequenceNo,SortOrdering,ColumnName_PDId,Global_User_ID,Row_Time_Stamp\n"
+        "1,2,10,1,2,1,201,1,1,D,0,0,0\n"
+        "\n"
+        "SmallString\n"
+        "String_Id,Data,Overflow,ConstantString,Row_Time_Stamp\n"
+        "100,clientes,0,0,0\n"
+        "200,id_cliente,0,0,0\n"
+        "201,email,0,0,0\n"
+        "300,ix_email_unico,0,0,0\n"
+        "301,pk_clientes,0,0,0\n"
+    )
+    snap, _ = parse_dm1(payload, system_id="sys-test")
+    assert len(snap.entities) == 1
+    ent = snap.entities[0]
+    # KeyType=P pulado, KeyType=U mantido como UNIQUE
+    assert len(ent.indexes) == 1
+    ix = ent.indexes[0]
+    assert ix.index_name == "ix_email_unico"
+    assert ix.is_unique is True
+    assert len(ix.columns) == 1
+    assert ix.columns[0].name == "email"
+    assert ix.columns[0].direction == "DESC"  # SortOrdering=D
+
+
 def test_unknown_datatype_emits_warning():
     """DatatypeId fora do mapping conhecido cai pra fallback VARCHAR/UNKNOWN com warning."""
     payload = (

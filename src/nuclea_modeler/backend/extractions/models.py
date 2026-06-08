@@ -73,6 +73,19 @@ class ExtractedAttribute(BaseModel):
     native_comment: str | None = None
 
 
+class ExtractedIndexColumn(BaseModel):
+    name: str
+    direction: Literal["ASC", "DESC"] = "ASC"
+
+
+class ExtractedIndex(BaseModel):
+    index_name: str
+    index_type: str = "BTREE"
+    is_unique: bool = False
+    columns: list[ExtractedIndexColumn] = Field(default_factory=list)
+    native_comment: str | None = None
+
+
 class ExtractedEntity(BaseModel):
     schema_name: str
     technical_name: str
@@ -80,6 +93,7 @@ class ExtractedEntity(BaseModel):
     native_comment: str | None = None
     row_count_approx: int | None = None
     attributes: list[ExtractedAttribute] = Field(default_factory=list)
+    indexes: list[ExtractedIndex] = Field(default_factory=list)
 
 
 class ExtractionSnapshot(BaseModel):

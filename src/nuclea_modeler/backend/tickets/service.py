@@ -245,6 +245,21 @@ def apply_ticket(
                     },
                 )
                 applied_entities += 1
+                # Insert indexes (if reverse-engineering provided them).
+                # Mantém origin=EXTRACTED pra que UI possa diferenciar
+                # índices "vindos do source" de índices manuais.
+                for ix_payload in ent_change.get("indexes") or []:
+                    try:
+                        from ..entities.indexes import apply_index_add
+                        apply_index_add(
+                            sql, entity_id=eid,
+                            payload={**ix_payload, "origin": "EXTRACTED"},
+                            now=now, actor=applied_by,
+                        )
+                    except Exception as exc:
+                        errors.append(
+                            f"index {schema_name}.{technical_name}.{ix_payload.get('index_name')}: {exc}"
+                        )
                 # Insert attributes (if provided in `attributes`)
                 for idx, attr in enumerate(ent_change.get("attributes") or []):
                     # Mesma lógica: respeita attribute_id se foi pré-alocado.

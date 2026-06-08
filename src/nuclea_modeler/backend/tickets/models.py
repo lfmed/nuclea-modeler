@@ -23,6 +23,8 @@ class DiffEntity(BaseModel):
     field_changes: list[dict[str, Any]] | None = None
     # When op=add: list of attributes (columns) to create with the entity
     attributes: list[dict[str, Any]] | None = None
+    # When op=add: list of indexes to create with the entity (from reverse eng)
+    indexes: list[dict[str, Any]] | None = None
 
 
 class TicketDiff(BaseModel):
