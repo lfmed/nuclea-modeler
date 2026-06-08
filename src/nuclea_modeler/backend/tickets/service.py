@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
@@ -14,6 +15,27 @@ from ..core.sql import Sql
 from .models import EntityDecision, TicketApplyResult, TicketDiff, TicketSource
 
 log = logging.getLogger(__name__)
+
+
+@dataclass
+class _ApplyState:
+    """State compartilhado pelos sub-handlers de apply_ticket.
+
+    Centraliza contadores + dependências (sql, ws, sandbox_info) pra que
+    handlers privados sejam testáveis individualmente.
+    """
+    sql: Sql
+    system_id: str
+    applied_by: str
+    now: datetime
+    decisions: list[EntityDecision] | None
+    ws: WorkspaceClient | None
+    sandbox_info: dict[str, Any] | None
+    applied_entities: int = 0
+    applied_attributes: int = 0
+    reversed_items: int = 0
+    ignored_items: int = 0
+    errors: list[str] = field(default_factory=list)
 
 
 def _decision_for_entity(
@@ -153,12 +175,11 @@ def apply_ticket(
             "database": sb[1] or "databricks_postgres",
         }
 
-    applied_entities = 0
-    applied_attributes = 0
-    reversed_items = 0
-    ignored_items = 0
-    errors: list[str] = []
     now = datetime.utcnow()
+    state = _ApplyState(
+        sql=sql, system_id=system_id, applied_by=applied_by, now=now,
+        decisions=decisions, ws=ws, sandbox_info=sandbox_info,
+    )
 
     # Ordem: entities primeiro, relationships depois — pra que FKs com source
     # virtual encontrem a entity recém-materializada com o id pré-alocado.
@@ -176,14 +197,10 @@ def apply_ticket(
         if schema_name == "__relationship__":
             try:
                 _apply_relationship_change(sql, ent_change, applied_by, now)
-                if op == "add":
-                    applied_entities += 1
-                elif op == "change":
-                    applied_entities += 1
-                elif op == "remove":
-                    applied_entities += 1
+                if op in ("add", "change", "remove"):
+                    state.applied_entities += 1
             except Exception as exc:
-                errors.append(f"relationship {op} {technical_name}: {exc}")
+                state.errors.append(f"relationship {op} {technical_name}: {exc}")
             continue
 
         ent_dec = _decision_for_entity(decisions, schema_name, technical_name, op)
@@ -191,267 +208,32 @@ def apply_ticket(
         # Para op=add/remove: decisão é da entity inteira (sem field-level split).
         # Para op=change: decisão é por field — entity-level action é fallback.
         if op in ("add", "remove") and ent_dec and ent_dec.action == "ignore":
-            ignored_items += 1
+            state.ignored_items += 1
             continue
         if op in ("add", "remove") and ent_dec and ent_dec.action == "reverse":
             try:
                 _apply_reverse_entity(ws, sandbox_info, ent_change)  # type: ignore[arg-type]
-                reversed_items += 1
+                state.reversed_items += 1
             except Exception as exc:
-                errors.append(f"reverse {op} {schema_name}.{technical_name}: {exc}")
+                state.errors.append(f"reverse {op} {schema_name}.{technical_name}: {exc}")
             continue
 
         try:
             if op == "add":
-                # Skip if an entity with same key already exists
-                existing = delta.fetch_one_params(
-                    sql,
-                    f"SELECT entity_id FROM {s.fq_table('entities')} "
-                    f"WHERE system_id = :system_id "
-                    f"AND schema_name = :schema_name "
-                    f"AND technical_name = :technical_name",
-                    [
-                        delta.param("system_id", system_id),
-                        delta.param("schema_name", schema_name),
-                        delta.param("technical_name", technical_name),
-                    ],
-                )
-                if existing:
-                    continue
-                payload = ent_change.get("payload") or {}
-                # Respeita o entity_id pré-alocado na sessão. Crítico pra que
-                # relationships criados na mesma sessão (que apontam pra esse
-                # source_entity_id virtual) batam após o apply.
-                eid = payload.get("pre_allocated_entity_id") or delta.new_id("ent-")
-                delta.insert(
-                    sql,
-                    s.fq_table("entities"),
-                    {
-                        "entity_id": eid,
-                        "system_id": system_id,
-                        "schema_name": schema_name,
-                        "technical_name": technical_name,
-                        "logical_name": payload.get("logical_name"),
-                        "description_md": payload.get("description_md") or payload.get("native_comment"),
-                        "domain": payload.get("domain"),
-                        "entity_type": ent_change.get("entity_type", "TABLE"),
-                        "native_comment": payload.get("native_comment"),
-                        "row_count_approx": payload.get("row_count_approx"),
-                        "tags": payload.get("tags", []),
-                        "is_shared": bool(payload.get("is_shared", False)),
-                        "last_extracted_at": now,
-                        "created_at": now, "created_by": applied_by,
-                        "updated_at": now, "updated_by": applied_by,
-                    },
-                )
-                applied_entities += 1
-                # Insert indexes (if reverse-engineering provided them).
-                # Mantém origin=EXTRACTED pra que UI possa diferenciar
-                # índices "vindos do source" de índices manuais.
-                for ix_payload in ent_change.get("indexes") or []:
-                    try:
-                        from ..entities.indexes import apply_index_add
-                        apply_index_add(
-                            sql, entity_id=eid,
-                            payload={**ix_payload, "origin": "EXTRACTED"},
-                            now=now, actor=applied_by,
-                        )
-                    except Exception as exc:
-                        errors.append(
-                            f"index {schema_name}.{technical_name}.{ix_payload.get('index_name')}: {exc}"
-                        )
-                # Insert attributes (if provided in `attributes`)
-                for idx, attr in enumerate(ent_change.get("attributes") or []):
-                    # Mesma lógica: respeita attribute_id se foi pré-alocado.
-                    aid = attr.get("attribute_id") or delta.new_id("attr-")
-                    delta.insert(
-                        sql,
-                        s.fq_table("attributes"),
-                        {
-                            "attribute_id": aid,
-                            "entity_id": eid,
-                            "technical_name": attr.get("technical_name", ""),
-                            "logical_name": attr.get("logical_name"),
-                            "ordinal_position": attr.get("ordinal_position", idx + 1),
-                            "native_data_type": attr.get("native_data_type"),
-                            "is_nullable": attr.get("is_nullable"),
-                            "default_value": attr.get("default_value"),
-                            "is_primary_key": bool(attr.get("is_primary_key", False)),
-                            "native_comment": attr.get("native_comment"),
-                            "created_at": now, "created_by": applied_by,
-                            "updated_at": now, "updated_by": applied_by,
-                        },
-                    )
-                    applied_attributes += 1
+                _apply_op_add(state, ent_change)
             elif op == "remove":
-                # Lookup entity and hard-delete entity + attributes.
-                existing = delta.fetch_one_params(
-                    sql,
-                    f"SELECT entity_id FROM {s.fq_table('entities')} "
-                    f"WHERE system_id = :system_id "
-                    f"AND schema_name = :schema_name "
-                    f"AND technical_name = :technical_name",
-                    [
-                        delta.param("system_id", system_id),
-                        delta.param("schema_name", schema_name),
-                        delta.param("technical_name", technical_name),
-                    ],
-                )
-                if not existing:
-                    # Já não está no catálogo — nada a fazer.
-                    continue
-                eid = existing[0]
-                delta.run_params(
-                    sql,
-                    f"DELETE FROM {s.fq_table('attributes')} WHERE entity_id = :entity_id",
-                    [delta.param("entity_id", eid)],
-                )
-                delta.run_params(
-                    sql,
-                    f"DELETE FROM {s.fq_table('entities')} WHERE entity_id = :entity_id",
-                    [delta.param("entity_id", eid)],
-                )
-                applied_entities += 1
+                _apply_op_remove(state, ent_change)
             elif op == "change":
-                # Apply field-level changes when target entity exists
-                existing = delta.fetch_one_params(
-                    sql,
-                    f"SELECT entity_id FROM {s.fq_table('entities')} "
-                    f"WHERE system_id = :system_id "
-                    f"AND schema_name = :schema_name "
-                    f"AND technical_name = :technical_name",
-                    [
-                        delta.param("system_id", system_id),
-                        delta.param("schema_name", schema_name),
-                        delta.param("technical_name", technical_name),
-                    ],
-                )
-                if not existing:
-                    errors.append(f"change target not found: {schema_name}.{technical_name}")
-                    continue
-                eid = existing[0]
-                updates: dict[str, Any] = {}
-                for fc in ent_change.get("field_changes") or []:
-                    fld = fc.get("field")
-                    new_val = fc.get("after")
-                    field_action = _decision_for_field(ent_dec, fld or "")
-
-                    if field_action == "ignore":
-                        ignored_items += 1
-                        continue
-                    if field_action == "reverse":
-                        try:
-                            _apply_reverse_field(
-                                ws, sandbox_info,  # type: ignore[arg-type]
-                                schema_name, technical_name, fc, sql, eid,
-                            )
-                            reversed_items += 1
-                        except Exception as exc:
-                            errors.append(
-                                f"reverse {schema_name}.{technical_name}.{fld}: {exc}"
-                            )
-                        continue
-                    # action == "apply" (default):
-                    # 1. Metadados de entity (field na allowlist) → batch em updates
-                    # 2. attribute_add:NAME → INSERT em attributes
-                    # 3. attribute_remove:NAME → DELETE em attributes
-                    # 4. attribute:NAME.update → UPDATE em attributes
-                    if fld in {
-                        "logical_name", "description_md", "native_comment",
-                        "row_count_approx", "domain", "is_shared",
-                    }:
-                        updates[fld] = new_val
-                    elif fld and fld.startswith("attribute_add:"):
-                        attr_payload = new_val or {}
-                        aid = delta.new_id("attr-")
-                        delta.insert(
-                            sql,
-                            s.fq_table("attributes"),
-                            {
-                                "attribute_id": aid,
-                                "entity_id": eid,
-                                "technical_name": attr_payload.get("technical_name", fld.split(":", 1)[1]),
-                                "logical_name": attr_payload.get("logical_name"),
-                                "ordinal_position": attr_payload.get("ordinal_position"),
-                                "native_data_type": attr_payload.get("native_data_type"),
-                                "is_nullable": attr_payload.get("is_nullable"),
-                                "default_value": attr_payload.get("default_value"),
-                                "is_primary_key": bool(attr_payload.get("is_primary_key", False)),
-                                "native_comment": attr_payload.get("native_comment"),
-                                "created_at": now, "created_by": applied_by,
-                                "updated_at": now, "updated_by": applied_by,
-                            },
-                        )
-                        applied_attributes += 1
-                    elif fld and fld.startswith("attribute_remove:"):
-                        name = fld.split(":", 1)[1]
-                        delta.run_params(
-                            sql,
-                            f"DELETE FROM {s.fq_table('attributes')} "
-                            f"WHERE entity_id = :entity_id AND technical_name = :name",
-                            [delta.param("entity_id", eid), delta.param("name", name)],
-                        )
-                        applied_attributes += 1
-                    elif fld and fld.startswith("attribute:") and fld.endswith(".update"):
-                        name = fld.split(":", 1)[1].rsplit(".", 1)[0]
-                        attr_payload = new_val or {}
-                        attr_updates = {
-                            k: v for k, v in {
-                                "logical_name": attr_payload.get("logical_name"),
-                                "native_data_type": attr_payload.get("native_data_type"),
-                                "is_nullable": attr_payload.get("is_nullable"),
-                                "default_value": attr_payload.get("default_value"),
-                                "is_primary_key": attr_payload.get("is_primary_key"),
-                                "native_comment": attr_payload.get("native_comment"),
-                            }.items() if v is not None
-                        }
-                        if attr_updates:
-                            attr_updates["updated_at"] = now
-                            attr_updates["updated_by"] = applied_by
-                            # update_by_id requer key+key_val. attributes não tem
-                            # PK conhecida aqui — usamos um UPDATE explícito.
-                            sets = ", ".join(f"{k} = :{k}" for k in attr_updates.keys())
-                            params = [delta.param(k, v) for k, v in attr_updates.items()]
-                            params.append(delta.param("entity_id", eid))
-                            params.append(delta.param("name", name))
-                            delta.run_params(
-                                sql,
-                                f"UPDATE {s.fq_table('attributes')} SET {sets} "
-                                f"WHERE entity_id = :entity_id AND technical_name = :name",
-                                params,
-                            )
-                            applied_attributes += 1
-                    elif fld and fld.startswith("index_add:"):
-                        from ..entities.indexes import apply_index_add
-                        apply_index_add(
-                            sql, entity_id=eid, payload=(new_val or {}),
-                            now=now, actor=applied_by,
-                        )
-                    elif fld and fld.startswith("index_remove:"):
-                        from ..entities.indexes import apply_index_remove
-                        name = fld.split(":", 1)[1]
-                        apply_index_remove(sql, entity_id=eid, index_name=name)
-                    elif fld and fld.startswith("index_change:"):
-                        from ..entities.indexes import apply_index_change
-                        index_id = fld.split(":", 1)[1]
-                        apply_index_change(
-                            sql, entity_id=eid, index_id=index_id,
-                            payload=(new_val or {}), now=now, actor=applied_by,
-                        )
-                    elif fld == "partitioning:set":
-                        from ..entities.indexes import apply_partitioning_set
-                        apply_partitioning_set(
-                            sql, entity_id=eid, payload=(new_val or {}),
-                            now=now, actor=applied_by,
-                        )
-                if updates:
-                    updates["updated_at"] = now
-                    updates["updated_by"] = applied_by
-                    updates["last_extracted_at"] = now
-                    delta.update_by_id(sql, s.fq_table("entities"), "entity_id", eid, updates)
-                    applied_entities += 1
+                _apply_op_change(state, ent_change, ent_dec)
         except Exception as exc:  # keep going on per-entity errors
-            errors.append(f"{op} {schema_name}.{technical_name}: {exc}")
+            state.errors.append(f"{op} {schema_name}.{technical_name}: {exc}")
+
+    # Compatibilidade com código antigo abaixo: aliases pra contadores.
+    applied_entities = state.applied_entities
+    applied_attributes = state.applied_attributes
+    reversed_items = state.reversed_items
+    ignored_items = state.ignored_items
+    errors = state.errors
 
     # Update ticket status:
     # - APPLIED se houve ao menos 1 entity/attribute/reverse aplicado E nenhum erro
@@ -757,3 +539,321 @@ def _apply_relationship_change(
         return
 
     raise ValueError(f"op de relationship desconhecida: {op!r}")
+
+
+# ─── Sub-handlers de apply_ticket (extraídos do bloco gigante) ──────────────
+
+
+def _apply_op_add(state: _ApplyState, ent_change: dict[str, Any]) -> None:
+    """Materializa um entity novo + attributes + indexes (op='add').
+
+    Idempotente: se entity com mesma key já existe no catálogo, skip silencioso.
+    Preserva ``pre_allocated_entity_id`` quando presente (necessário pra FKs
+    entre entities criadas na mesma sessão).
+    """
+    s = get_settings()
+    schema_name = ent_change.get("schema_name", "")
+    technical_name = ent_change.get("technical_name", "")
+
+    existing = delta.fetch_one_params(
+        state.sql,
+        f"SELECT entity_id FROM {s.fq_table('entities')} "
+        f"WHERE system_id = :system_id "
+        f"AND schema_name = :schema_name "
+        f"AND technical_name = :technical_name",
+        [
+            delta.param("system_id", state.system_id),
+            delta.param("schema_name", schema_name),
+            delta.param("technical_name", technical_name),
+        ],
+    )
+    if existing:
+        return
+
+    payload = ent_change.get("payload") or {}
+    eid = payload.get("pre_allocated_entity_id") or delta.new_id("ent-")
+    delta.insert(
+        state.sql,
+        s.fq_table("entities"),
+        {
+            "entity_id": eid,
+            "system_id": state.system_id,
+            "schema_name": schema_name,
+            "technical_name": technical_name,
+            "logical_name": payload.get("logical_name"),
+            "description_md": payload.get("description_md") or payload.get("native_comment"),
+            "domain": payload.get("domain"),
+            "entity_type": ent_change.get("entity_type", "TABLE"),
+            "native_comment": payload.get("native_comment"),
+            "row_count_approx": payload.get("row_count_approx"),
+            "tags": payload.get("tags", []),
+            "is_shared": bool(payload.get("is_shared", False)),
+            "last_extracted_at": state.now,
+            "created_at": state.now, "created_by": state.applied_by,
+            "updated_at": state.now, "updated_by": state.applied_by,
+        },
+    )
+    state.applied_entities += 1
+
+    # Insert indexes (reverse engineering) — origin=EXTRACTED diferencia
+    # da criação manual via UI.
+    for ix_payload in ent_change.get("indexes") or []:
+        try:
+            from ..entities.indexes import apply_index_add
+            apply_index_add(
+                state.sql, entity_id=eid,
+                payload={**ix_payload, "origin": "EXTRACTED"},
+                now=state.now, actor=state.applied_by,
+            )
+        except Exception as exc:
+            state.errors.append(
+                f"index {schema_name}.{technical_name}."
+                f"{ix_payload.get('index_name')}: {exc}"
+            )
+
+    # Insert attributes
+    for idx, attr in enumerate(ent_change.get("attributes") or []):
+        aid = attr.get("attribute_id") or delta.new_id("attr-")
+        delta.insert(
+            state.sql,
+            s.fq_table("attributes"),
+            {
+                "attribute_id": aid,
+                "entity_id": eid,
+                "technical_name": attr.get("technical_name", ""),
+                "logical_name": attr.get("logical_name"),
+                "ordinal_position": attr.get("ordinal_position", idx + 1),
+                "native_data_type": attr.get("native_data_type"),
+                "is_nullable": attr.get("is_nullable"),
+                "default_value": attr.get("default_value"),
+                "is_primary_key": bool(attr.get("is_primary_key", False)),
+                "native_comment": attr.get("native_comment"),
+                "created_at": state.now, "created_by": state.applied_by,
+                "updated_at": state.now, "updated_by": state.applied_by,
+            },
+        )
+        state.applied_attributes += 1
+
+
+def _apply_op_remove(state: _ApplyState, ent_change: dict[str, Any]) -> None:
+    """Hard-delete entity + attributes (op='remove'). Idempotente."""
+    s = get_settings()
+    schema_name = ent_change.get("schema_name", "")
+    technical_name = ent_change.get("technical_name", "")
+
+    existing = delta.fetch_one_params(
+        state.sql,
+        f"SELECT entity_id FROM {s.fq_table('entities')} "
+        f"WHERE system_id = :system_id "
+        f"AND schema_name = :schema_name "
+        f"AND technical_name = :technical_name",
+        [
+            delta.param("system_id", state.system_id),
+            delta.param("schema_name", schema_name),
+            delta.param("technical_name", technical_name),
+        ],
+    )
+    if not existing:
+        return
+    eid = existing[0]
+    delta.run_params(
+        state.sql,
+        f"DELETE FROM {s.fq_table('attributes')} WHERE entity_id = :entity_id",
+        [delta.param("entity_id", eid)],
+    )
+    delta.run_params(
+        state.sql,
+        f"DELETE FROM {s.fq_table('entities')} WHERE entity_id = :entity_id",
+        [delta.param("entity_id", eid)],
+    )
+    state.applied_entities += 1
+
+
+def _apply_op_change(
+    state: _ApplyState,
+    ent_change: dict[str, Any],
+    ent_dec: EntityDecision | None,
+) -> None:
+    """Aplica field_changes (op='change'). Acumula entity-level updates e
+    despacha field_changes por prefixo (attribute_*, index_*, partitioning:set)."""
+    s = get_settings()
+    schema_name = ent_change.get("schema_name", "")
+    technical_name = ent_change.get("technical_name", "")
+
+    existing = delta.fetch_one_params(
+        state.sql,
+        f"SELECT entity_id FROM {s.fq_table('entities')} "
+        f"WHERE system_id = :system_id "
+        f"AND schema_name = :schema_name "
+        f"AND technical_name = :technical_name",
+        [
+            delta.param("system_id", state.system_id),
+            delta.param("schema_name", schema_name),
+            delta.param("technical_name", technical_name),
+        ],
+    )
+    if not existing:
+        state.errors.append(
+            f"change target not found: {schema_name}.{technical_name}"
+        )
+        return
+    eid = existing[0]
+
+    updates: dict[str, Any] = {}
+    for fc in ent_change.get("field_changes") or []:
+        fld = fc.get("field")
+        new_val = fc.get("after")
+        field_action = _decision_for_field(ent_dec, fld or "")
+
+        if field_action == "ignore":
+            state.ignored_items += 1
+            continue
+        if field_action == "reverse":
+            try:
+                _apply_reverse_field(
+                    state.ws, state.sandbox_info,  # type: ignore[arg-type]
+                    schema_name, technical_name, fc, state.sql, eid,
+                )
+                state.reversed_items += 1
+            except Exception as exc:
+                state.errors.append(
+                    f"reverse {schema_name}.{technical_name}.{fld}: {exc}"
+                )
+            continue
+        # action == "apply" — dispatch por prefixo
+        _dispatch_field_change(state, eid, fld, new_val, updates)
+
+    if updates:
+        updates["updated_at"] = state.now
+        updates["updated_by"] = state.applied_by
+        updates["last_extracted_at"] = state.now
+        delta.update_by_id(
+            state.sql, s.fq_table("entities"), "entity_id", eid, updates,
+        )
+        state.applied_entities += 1
+
+
+def _dispatch_field_change(
+    state: _ApplyState,
+    eid: str,
+    fld: str | None,
+    new_val: Any,
+    updates_acc: dict[str, Any],
+) -> None:
+    """Despacha 1 field_change pelo prefixo do nome do campo.
+
+    - Entity metadata (allowlist) → acumula em ``updates_acc`` (batch update no fim)
+    - ``attribute_add:NAME`` → INSERT em attributes
+    - ``attribute_remove:NAME`` → DELETE em attributes
+    - ``attribute:NAME.update`` → UPDATE em attributes (subset de fields)
+    - ``index_add:NAME`` / ``index_remove:NAME`` / ``index_change:ID``
+    - ``partitioning:set``
+    """
+    if not fld:
+        return
+    s = get_settings()
+    ENTITY_FIELDS = {
+        "logical_name", "description_md", "native_comment",
+        "row_count_approx", "domain", "is_shared",
+    }
+
+    if fld in ENTITY_FIELDS:
+        updates_acc[fld] = new_val
+        return
+
+    if fld.startswith("attribute_add:"):
+        attr_payload = new_val or {}
+        aid = delta.new_id("attr-")
+        delta.insert(
+            state.sql,
+            s.fq_table("attributes"),
+            {
+                "attribute_id": aid,
+                "entity_id": eid,
+                "technical_name": attr_payload.get(
+                    "technical_name", fld.split(":", 1)[1]
+                ),
+                "logical_name": attr_payload.get("logical_name"),
+                "ordinal_position": attr_payload.get("ordinal_position"),
+                "native_data_type": attr_payload.get("native_data_type"),
+                "is_nullable": attr_payload.get("is_nullable"),
+                "default_value": attr_payload.get("default_value"),
+                "is_primary_key": bool(attr_payload.get("is_primary_key", False)),
+                "native_comment": attr_payload.get("native_comment"),
+                "created_at": state.now, "created_by": state.applied_by,
+                "updated_at": state.now, "updated_by": state.applied_by,
+            },
+        )
+        state.applied_attributes += 1
+        return
+
+    if fld.startswith("attribute_remove:"):
+        name = fld.split(":", 1)[1]
+        delta.run_params(
+            state.sql,
+            f"DELETE FROM {s.fq_table('attributes')} "
+            f"WHERE entity_id = :entity_id AND technical_name = :name",
+            [delta.param("entity_id", eid), delta.param("name", name)],
+        )
+        state.applied_attributes += 1
+        return
+
+    if fld.startswith("attribute:") and fld.endswith(".update"):
+        name = fld.split(":", 1)[1].rsplit(".", 1)[0]
+        attr_payload = new_val or {}
+        attr_updates = {
+            k: v for k, v in {
+                "logical_name": attr_payload.get("logical_name"),
+                "native_data_type": attr_payload.get("native_data_type"),
+                "is_nullable": attr_payload.get("is_nullable"),
+                "default_value": attr_payload.get("default_value"),
+                "is_primary_key": attr_payload.get("is_primary_key"),
+                "native_comment": attr_payload.get("native_comment"),
+            }.items() if v is not None
+        }
+        if attr_updates:
+            attr_updates["updated_at"] = state.now
+            attr_updates["updated_by"] = state.applied_by
+            sets = ", ".join(f"{k} = :{k}" for k in attr_updates.keys())
+            params = [delta.param(k, v) for k, v in attr_updates.items()]
+            params.append(delta.param("entity_id", eid))
+            params.append(delta.param("name", name))
+            delta.run_params(
+                state.sql,
+                f"UPDATE {s.fq_table('attributes')} SET {sets} "
+                f"WHERE entity_id = :entity_id AND technical_name = :name",
+                params,
+            )
+            state.applied_attributes += 1
+        return
+
+    if fld.startswith("index_add:"):
+        from ..entities.indexes import apply_index_add
+        apply_index_add(
+            state.sql, entity_id=eid, payload=(new_val or {}),
+            now=state.now, actor=state.applied_by,
+        )
+        return
+
+    if fld.startswith("index_remove:"):
+        from ..entities.indexes import apply_index_remove
+        name = fld.split(":", 1)[1]
+        apply_index_remove(state.sql, entity_id=eid, index_name=name)
+        return
+
+    if fld.startswith("index_change:"):
+        from ..entities.indexes import apply_index_change
+        index_id = fld.split(":", 1)[1]
+        apply_index_change(
+            state.sql, entity_id=eid, index_id=index_id,
+            payload=(new_val or {}), now=state.now, actor=state.applied_by,
+        )
+        return
+
+    if fld == "partitioning:set":
+        from ..entities.indexes import apply_partitioning_set
+        apply_partitioning_set(
+            state.sql, entity_id=eid, payload=(new_val or {}),
+            now=state.now, actor=state.applied_by,
+        )
+        return
