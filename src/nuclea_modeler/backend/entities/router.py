@@ -28,9 +28,17 @@ from ..tickets.session import (
     get_or_create_session_ticket,
     stage_entity_change,
 )
+from .indexes import (
+    apply_index_add, apply_index_change, apply_index_remove,
+    apply_partitioning_set,
+    get_partitioning, list_indexes_for_entity,
+    stage_index_add, stage_index_remove, stage_index_update,
+    stage_partitioning_set,
+)
 from .models import (
     AttributeIn, AttributeOut,
-    EntityIn, EntityListOut, EntityOut, PaginatedEntities,
+    EntityIn, EntityIndexIn, EntityIndexOut, EntityListOut, EntityOut,
+    EntityPartitioningIn, EntityPartitioningOut, PaginatedEntities,
 )
 
 router = APIRouter(prefix=f"{api_prefix}/entities", tags=["entities"])
@@ -962,3 +970,179 @@ def delete_attribute(
         raise HTTPException(404, f"entity '{entity_id}' not found")
     ticket_id, _ = res
     return {"deleted": attribute_id, "pending": True, "ticket_id": ticket_id}
+
+
+# ─── Indexes ─────────────────────────────────────────────────────────────────
+
+
+@router.get(
+    "/{entity_id}/indexes",
+    response_model=list[EntityIndexOut],
+    operation_id="listEntityIndexes",
+)
+def list_entity_indexes(entity_id: str, sql: SqlDependency) -> list[EntityIndexOut]:
+    """Lista índices da entity. Sem overlay de sessão nesta versão — usar
+    GET /tickets/{id} pra ver mutações pendentes."""
+    return list_indexes_for_entity(sql, entity_id)
+
+
+@router.post(
+    "/{entity_id}/indexes",
+    response_model=EntityIndexOut,
+    operation_id="createEntityIndex",
+)
+def create_entity_index(
+    entity_id: str,
+    payload: EntityIndexIn,
+    sql: SqlDependency,
+    user_ws: Dependencies.UserClient,
+) -> EntityIndexOut:
+    """Stage criação de índice no ticket OPEN. Não grava no catálogo."""
+    if payload.entity_id != entity_id:
+        raise HTTPException(400, "entity_id in path and payload must match")
+    actor = _current_email(user_ws) or "unknown"
+    iid = delta.new_id("idx-")
+    res = stage_index_add(
+        sql, actor=actor, entity_id=entity_id, index_id=iid, payload=payload,
+    )
+    if not res:
+        raise HTTPException(404, f"entity '{entity_id}' not found")
+    return EntityIndexOut(
+        index_id=iid,
+        entity_id=entity_id,
+        index_name=payload.index_name,
+        index_type=payload.index_type,
+        columns=payload.columns,
+        include_columns=payload.include_columns,
+        partial_where=payload.partial_where,
+        is_unique=payload.is_unique,
+        description_md=payload.description_md,
+        native_comment=payload.native_comment,
+        origin="MANUAL",
+        created_at=datetime.utcnow(),
+        created_by=actor,
+        updated_at=datetime.utcnow(),
+        updated_by=actor,
+        pending_op="add",
+    )
+
+
+@router.put(
+    "/{entity_id}/indexes/{index_id}",
+    response_model=EntityIndexOut,
+    operation_id="updateEntityIndex",
+)
+def update_entity_index(
+    entity_id: str,
+    index_id: str,
+    payload: EntityIndexIn,
+    sql: SqlDependency,
+    user_ws: Dependencies.UserClient,
+) -> EntityIndexOut:
+    """Stage update de índice no ticket OPEN. Replace-style."""
+    actor = _current_email(user_ws) or "unknown"
+    res = stage_index_update(
+        sql, actor=actor, entity_id=entity_id, index_id=index_id, payload=payload,
+    )
+    if not res:
+        raise HTTPException(404, f"entity '{entity_id}' not found")
+    return EntityIndexOut(
+        index_id=index_id,
+        entity_id=entity_id,
+        index_name=payload.index_name,
+        index_type=payload.index_type,
+        columns=payload.columns,
+        include_columns=payload.include_columns,
+        partial_where=payload.partial_where,
+        is_unique=payload.is_unique,
+        description_md=payload.description_md,
+        native_comment=payload.native_comment,
+        origin="MANUAL",
+        created_at=datetime.utcnow(),
+        created_by=actor,
+        updated_at=datetime.utcnow(),
+        updated_by=actor,
+        pending_op="change",
+    )
+
+
+@router.delete(
+    "/{entity_id}/indexes/{index_id}",
+    operation_id="deleteEntityIndex",
+)
+def delete_entity_index(
+    entity_id: str,
+    index_id: str,
+    sql: SqlDependency,
+    user_ws: Dependencies.UserClient,
+) -> dict:
+    """Stage delete de índice no ticket OPEN."""
+    s = get_settings()
+    row = delta.fetch_one_params(
+        sql,
+        f"SELECT index_name FROM {s.fq_table('entity_indexes')} WHERE index_id = :index_id",
+        [delta.param("index_id", index_id)],
+    )
+    idx_name = row[0] if row else index_id
+    actor = _current_email(user_ws) or "unknown"
+    res = stage_index_remove(
+        sql, actor=actor, entity_id=entity_id, index_id=index_id, index_name=idx_name,
+    )
+    if not res:
+        raise HTTPException(404, f"entity '{entity_id}' not found")
+    ticket_id, _ = res
+    return {"deleted": index_id, "pending": True, "ticket_id": ticket_id}
+
+
+# ─── Partitioning ────────────────────────────────────────────────────────────
+
+
+@router.get(
+    "/{entity_id}/partitioning",
+    response_model=EntityPartitioningOut,
+    operation_id="getEntityPartitioning",
+)
+def get_entity_partitioning(entity_id: str, sql: SqlDependency) -> EntityPartitioningOut:
+    """Retorna a estratégia de particionamento. Se não existir, retorna
+    estratégia ``NONE`` (default)."""
+    part = get_partitioning(sql, entity_id)
+    if part:
+        return part
+    return EntityPartitioningOut(
+        entity_id=entity_id,
+        strategy="NONE",
+        columns=[],
+    )
+
+
+@router.put(
+    "/{entity_id}/partitioning",
+    response_model=EntityPartitioningOut,
+    operation_id="setEntityPartitioning",
+)
+def set_entity_partitioning(
+    entity_id: str,
+    payload: EntityPartitioningIn,
+    sql: SqlDependency,
+    user_ws: Dependencies.UserClient,
+) -> EntityPartitioningOut:
+    """Stage estratégia de particionamento no ticket OPEN. Replace-style
+    (toda a estratégia é substituída)."""
+    if payload.entity_id != entity_id:
+        raise HTTPException(400, "entity_id in path and payload must match")
+    actor = _current_email(user_ws) or "unknown"
+    res = stage_partitioning_set(
+        sql, actor=actor, entity_id=entity_id, payload=payload,
+    )
+    if not res:
+        raise HTTPException(404, f"entity '{entity_id}' not found")
+    return EntityPartitioningOut(
+        entity_id=entity_id,
+        strategy=payload.strategy,
+        columns=payload.columns,
+        num_partitions=payload.num_partitions,
+        bounds=payload.bounds,
+        description_md=payload.description_md,
+        origin="MANUAL",
+        pending_op="change",
+    )

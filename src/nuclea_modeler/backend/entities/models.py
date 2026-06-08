@@ -128,3 +128,76 @@ class AttributeOut(BaseModel):
     updated_at: datetime
     updated_by: str
     pending_op: PendingOp | None = None
+
+
+# -------------------- Indexes & Partitioning --------------------
+
+IndexType = Literal[
+    "BTREE", "HASH", "UNIQUE", "GIN", "BRIN", "GIST",
+    "BITMAP", "CLUSTERED", "NONCLUSTERED",
+    "Z-ORDER", "LIQUID",
+]
+ColumnDirection = Literal["ASC", "DESC"]
+PartitionStrategy = Literal["RANGE", "LIST", "HASH", "LIQUID", "NONE"]
+
+
+class IndexColumn(BaseModel):
+    """Coluna de um índice — ordem na lista importa."""
+
+    name: str = Field(min_length=1)
+    direction: ColumnDirection = "ASC"
+
+
+class EntityIndexIn(BaseModel):
+    entity_id: str
+    index_name: str = Field(min_length=1, max_length=128)
+    index_type: IndexType = "BTREE"
+    columns: list[IndexColumn] = Field(min_length=1)
+    include_columns: list[str] = Field(default_factory=list)
+    partial_where: str | None = None
+    is_unique: bool = False
+    description_md: str | None = None
+    native_comment: str | None = None
+
+
+class EntityIndexOut(BaseModel):
+    index_id: str
+    entity_id: str
+    index_name: str
+    index_type: IndexType
+    columns: list[IndexColumn]
+    include_columns: list[str] = Field(default_factory=list)
+    partial_where: str | None = None
+    is_unique: bool = False
+    description_md: str | None = None
+    native_comment: str | None = None
+    origin: Literal["EXTRACTED", "MANUAL"] | None = None
+    created_at: datetime
+    created_by: str
+    updated_at: datetime
+    updated_by: str
+    pending_op: PendingOp | None = None
+
+
+class EntityPartitioningIn(BaseModel):
+    entity_id: str
+    strategy: PartitionStrategy = "NONE"
+    columns: list[str] = Field(default_factory=list)
+    num_partitions: int | None = None
+    bounds: dict[str, list] | None = None  # {part_name: [bound_low, bound_high]} ou {part_name: [valor1, valor2]}
+    description_md: str | None = None
+
+
+class EntityPartitioningOut(BaseModel):
+    entity_id: str
+    strategy: PartitionStrategy
+    columns: list[str] = Field(default_factory=list)
+    num_partitions: int | None = None
+    bounds: dict[str, list] | None = None
+    description_md: str | None = None
+    origin: Literal["EXTRACTED", "MANUAL"] | None = None
+    created_at: datetime | None = None
+    created_by: str | None = None
+    updated_at: datetime | None = None
+    updated_by: str | None = None
+    pending_op: PendingOp | None = None

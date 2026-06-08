@@ -406,6 +406,29 @@ def apply_ticket(
                                 params,
                             )
                             applied_attributes += 1
+                    elif fld and fld.startswith("index_add:"):
+                        from ..entities.indexes import apply_index_add
+                        apply_index_add(
+                            sql, entity_id=eid, payload=(new_val or {}),
+                            now=now, actor=applied_by,
+                        )
+                    elif fld and fld.startswith("index_remove:"):
+                        from ..entities.indexes import apply_index_remove
+                        name = fld.split(":", 1)[1]
+                        apply_index_remove(sql, entity_id=eid, index_name=name)
+                    elif fld and fld.startswith("index_change:"):
+                        from ..entities.indexes import apply_index_change
+                        index_id = fld.split(":", 1)[1]
+                        apply_index_change(
+                            sql, entity_id=eid, index_id=index_id,
+                            payload=(new_val or {}), now=now, actor=applied_by,
+                        )
+                    elif fld == "partitioning:set":
+                        from ..entities.indexes import apply_partitioning_set
+                        apply_partitioning_set(
+                            sql, entity_id=eid, payload=(new_val or {}),
+                            now=now, actor=applied_by,
+                        )
                 if updates:
                     updates["updated_at"] = now
                     updates["updated_by"] = applied_by
