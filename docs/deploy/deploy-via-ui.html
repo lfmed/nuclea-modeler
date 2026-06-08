@@ -1,0 +1,1097 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Núclea Modeler — Deploy via UI do Databricks</title>
+<style>
+  :root {
+    --bg: #fafaf7;
+    --bg-card: #ffffff;
+    --bg-elev: #f3eef7;
+    --text: #1a1322;
+    --text-dim: #5a4c6e;
+    --text-soft: #8a7a9e;
+    --primary: #7b2d8e;
+    --primary-soft: #c93dad;
+    --primary-dark: #4a1a5a;
+    --accent: #ffc72c;
+    --success: #16a34a;
+    --warn: #d97706;
+    --danger: #dc2626;
+    --info: #0284c7;
+    --border: #e6dfee;
+    --code-bg: #1a1322;
+    --code-text: #f5f1f9;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    font-size: 15px;
+  }
+  .layout {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    min-height: 100vh;
+  }
+  @media (max-width: 980px) {
+    .layout { grid-template-columns: 1fr; }
+    .toc { position: relative !important; height: auto !important; }
+  }
+  .toc {
+    background: var(--bg-card);
+    border-right: 1px solid var(--border);
+    padding: 32px 20px;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+  }
+  .toc .brand {
+    font-weight: 700;
+    color: var(--primary);
+    font-size: 18px;
+    margin-bottom: 4px;
+  }
+  .toc .brand-sub {
+    color: var(--text-soft);
+    font-size: 12px;
+    margin-bottom: 20px;
+  }
+  .toc ul { list-style: none; padding: 0; margin: 0; }
+  .toc li { margin: 0; }
+  .toc a {
+    display: block;
+    color: var(--text-dim);
+    text-decoration: none;
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 13.5px;
+    border-left: 2px solid transparent;
+  }
+  .toc a:hover {
+    background: var(--bg-elev);
+    color: var(--primary);
+    border-left-color: var(--primary-soft);
+  }
+  .toc .step-num {
+    display: inline-block;
+    width: 22px;
+    height: 22px;
+    background: var(--primary);
+    color: white;
+    border-radius: 50%;
+    text-align: center;
+    line-height: 22px;
+    font-size: 11px;
+    font-weight: 700;
+    margin-right: 8px;
+  }
+  .content {
+    padding: 56px 64px;
+    max-width: 1000px;
+  }
+  @media (max-width: 760px) { .content { padding: 32px 20px; } }
+  header.hero {
+    border-bottom: 2px solid var(--border);
+    padding-bottom: 28px;
+    margin-bottom: 40px;
+  }
+  header.hero .pill {
+    display: inline-block;
+    background: var(--bg-elev);
+    color: var(--primary);
+    padding: 4px 12px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+  h1 {
+    font-size: 36px;
+    color: var(--primary-dark);
+    margin: 0 0 12px;
+    letter-spacing: -0.5px;
+    line-height: 1.15;
+  }
+  .meta { color: var(--text-soft); font-size: 14px; }
+  h2 {
+    font-size: 26px;
+    color: var(--primary);
+    margin: 56px 0 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+    letter-spacing: -0.3px;
+  }
+  h3 {
+    font-size: 19px;
+    color: var(--text);
+    margin: 28px 0 12px;
+  }
+  h4 {
+    font-size: 16px;
+    color: var(--primary-dark);
+    margin: 18px 0 8px;
+  }
+  p, ul, ol { color: var(--text); }
+  ul, ol { padding-left: 24px; }
+  li { margin: 4px 0; }
+  a { color: var(--primary); }
+  code {
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.88em;
+    background: var(--bg-elev);
+    padding: 1.5px 6px;
+    border-radius: 4px;
+    color: var(--primary-dark);
+  }
+  pre {
+    background: var(--code-bg);
+    color: var(--code-text);
+    padding: 18px 20px;
+    border-radius: 10px;
+    overflow-x: auto;
+    font-size: 13px;
+    line-height: 1.55;
+    margin: 16px 0;
+  }
+  pre code { background: transparent; color: inherit; padding: 0; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    background: var(--bg-card);
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    font-size: 14px;
+  }
+  th, td {
+    text-align: left;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  th {
+    background: var(--bg-elev);
+    color: var(--primary-dark);
+    font-weight: 600;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: rgba(123, 45, 142, 0.03); }
+
+  .callout {
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin: 18px 0;
+    border-left: 4px solid;
+    background: var(--bg-card);
+  }
+  .callout.info { border-color: var(--info); background: #f0f9ff; }
+  .callout.warn { border-color: var(--warn); background: #fffbeb; }
+  .callout.danger { border-color: var(--danger); background: #fef2f2; }
+  .callout.success { border-color: var(--success); background: #f0fdf4; }
+  .callout .ctitle {
+    font-weight: 600;
+    margin-bottom: 4px;
+    display: block;
+    font-size: 13.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .callout.info .ctitle { color: var(--info); }
+  .callout.warn .ctitle { color: var(--warn); }
+  .callout.danger .ctitle { color: var(--danger); }
+  .callout.success .ctitle { color: var(--success); }
+
+  /* Steps */
+  ol.steps {
+    counter-reset: step;
+    list-style: none;
+    padding-left: 0;
+  }
+  ol.steps > li {
+    counter-increment: step;
+    position: relative;
+    padding: 18px 18px 18px 64px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin-bottom: 14px;
+  }
+  ol.steps > li::before {
+    content: counter(step);
+    position: absolute;
+    left: 18px;
+    top: 16px;
+    width: 32px;
+    height: 32px;
+    background: var(--primary);
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 14px;
+  }
+  ol.steps > li > h4 {
+    margin: 0 0 10px;
+    color: var(--primary-dark);
+    font-size: 17px;
+  }
+  ol.steps .substep {
+    color: var(--text-dim);
+    font-size: 14px;
+    margin: 6px 0;
+  }
+  ol.steps .substep b {
+    color: var(--primary-dark);
+  }
+
+  /* UI element badges */
+  .kbd {
+    background: #ffffff;
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    padding: 2px 7px;
+    border-radius: 5px;
+    font-size: 12px;
+    font-family: -apple-system, sans-serif;
+    color: var(--text);
+  }
+  .ui-path {
+    display: inline-block;
+    background: var(--bg-elev);
+    padding: 3px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    color: var(--primary-dark);
+    font-weight: 500;
+    margin: 2px 0;
+    white-space: nowrap;
+  }
+  .ui-path .arrow { color: var(--text-soft); margin: 0 4px; }
+  .menu-action {
+    display: inline-block;
+    background: white;
+    border: 1.5px solid var(--primary);
+    padding: 2px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    color: var(--primary);
+    font-weight: 600;
+    margin: 0 2px;
+  }
+  .dots {
+    display: inline-block;
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0 6px;
+    font-weight: 700;
+    color: var(--text-dim);
+    font-size: 14px;
+  }
+
+  /* File diff style */
+  .file-block {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-card);
+    margin: 16px 0;
+    overflow: hidden;
+  }
+  .file-block .file-header {
+    background: var(--bg-elev);
+    padding: 8px 14px;
+    font-family: "SFMono-Regular", Consolas, monospace;
+    font-size: 13px;
+    color: var(--primary-dark);
+    font-weight: 600;
+    border-bottom: 1px solid var(--border);
+  }
+  .file-block pre {
+    margin: 0;
+    border-radius: 0;
+  }
+
+  /* Placeholders highlight */
+  .placeholder {
+    background: rgba(255, 199, 44, 0.2);
+    color: #92400e;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-family: "SFMono-Regular", monospace;
+    font-size: 0.88em;
+  }
+
+  /* Tag chips */
+  .tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .tag.must { background: #fee2e2; color: #991b1b; }
+  .tag.optional { background: #dbeafe; color: #1e40af; }
+  .tag.auto { background: #dcfce7; color: #166534; }
+
+  /* ASCII screenshot box */
+  .screenshot {
+    background: #faf7fc;
+    border: 1px dashed var(--primary-soft);
+    border-radius: 8px;
+    padding: 18px 20px;
+    margin: 12px 0;
+    font-family: -apple-system, sans-serif;
+    font-size: 13px;
+  }
+  .screenshot .ss-title {
+    font-weight: 600;
+    color: var(--primary);
+    margin-bottom: 6px;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .screenshot .ss-row {
+    padding: 4px 0;
+    border-bottom: 1px solid rgba(123, 45, 142, 0.08);
+    display: flex;
+    justify-content: space-between;
+  }
+  .screenshot .ss-row:last-child { border-bottom: none; }
+  .screenshot .ss-label {
+    color: var(--text-dim);
+    margin-right: 12px;
+  }
+  .screenshot .ss-value {
+    color: var(--primary-dark);
+    font-family: "SFMono-Regular", monospace;
+    font-weight: 500;
+  }
+
+  footer {
+    margin-top: 80px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+    color: var(--text-soft);
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+
+  <aside class="toc">
+    <div class="brand">DEPLOY VIA UI</div>
+    <div class="brand-sub">Núclea Modeler · sem CLI</div>
+    <ul>
+      <li><a href="#sec-0"><span class="step-num">i</span>Visão geral</a></li>
+      <li><a href="#sec-1"><span class="step-num">1</span>Pré-requisitos</a></li>
+      <li><a href="#sec-2"><span class="step-num">2</span>Exportar do origem</a></li>
+      <li><a href="#sec-3"><span class="step-num">3</span>Importar no destino</a></li>
+      <li><a href="#sec-4"><span class="step-num">4</span>Arquivos a editar</a></li>
+      <li><a href="#sec-5"><span class="step-num">5</span>Criar o app</a></li>
+      <li><a href="#sec-6"><span class="step-num">6</span>Conceder grants</a></li>
+      <li><a href="#sec-7"><span class="step-num">7</span>Deploy</a></li>
+      <li><a href="#sec-8"><span class="step-num">8</span>Verificação</a></li>
+      <li><a href="#sec-9"><span class="step-num">9</span>Bootstrap admin</a></li>
+      <li><a href="#sec-10"><span class="step-num">10</span>Atualizações</a></li>
+      <li><a href="#sec-tshoot"><span class="step-num">?</span>Troubleshooting</a></li>
+    </ul>
+  </aside>
+
+  <main class="content">
+
+    <header class="hero">
+      <span class="pill">Operação · sem terminal</span>
+      <h1>Deploy em outro workspace</h1>
+      <p class="meta">
+        Guia 100% via interface do Databricks (Workspace Browser, Apps,
+        Catalog Explorer, SQL Editor). Nenhum comando CLI, nenhum git
+        local. Pega o código pela UI do workspace origem, importa no
+        destino, edita 1 arquivo, clica Deploy.
+      </p>
+    </header>
+
+    <!-- ============================ Visão geral ============================ -->
+    <section id="sec-0">
+      <h2>Visão geral em 1 minuto</h2>
+      <ol>
+        <li>No <b>workspace origem</b>: exporta a pasta do código como <code>.zip</code> (Workspace Browser → Export).</li>
+        <li>No <b>workspace destino</b>: importa o <code>.zip</code> na sua home (Workspace Browser → Import).</li>
+        <li>Edita <b>apenas 1 arquivo</b>: <code>app.yml</code>. Quatro placeholders.</li>
+        <li>Cria o app, copia o <i>Application ID</i> do Service Principal, dá os grants no Catalog UI.</li>
+        <li>Clica <b>Deploy</b>. O Databricks faz build, roda migrations (cria as 22 tabelas Delta) e sobe o uvicorn.</li>
+        <li>Acessa a URL do app, faz bootstrap do primeiro <code>ADMIN</code> via SQL Editor.</li>
+      </ol>
+      <div class="callout info">
+        <span class="ctitle">Nada local</span>
+        Sem Python, Node, git push, ou Databricks CLI. Tudo browser. Build da UI
+        (Vite) e instalação Python (uv) rodam dentro do container do Databricks
+        Apps no momento do deploy.
+      </div>
+    </section>
+
+    <!-- ============================ Pré-requisitos ============================ -->
+    <section id="sec-1">
+      <h2><span style="color: var(--primary-soft)">1.</span> Pré-requisitos no workspace destino</h2>
+
+      <table>
+        <thead><tr><th>Item</th><th>Mínimo</th><th>Onde validar na UI</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Workspace destino</td>
+            <td>Unity Catalog ativado</td>
+            <td>Logado no workspace</td>
+          </tr>
+          <tr>
+            <td>SQL Warehouse</td>
+            <td>Serverless ou Pro, <code>2X-Small</code> basta</td>
+            <td><span class="ui-path">SQL <span class="arrow">›</span> SQL Warehouses</span></td>
+          </tr>
+          <tr>
+            <td>Unity Catalog</td>
+            <td>1 catalog onde o app vai guardar estado</td>
+            <td><span class="ui-path">Catalog</span> (Catalog Explorer)</td>
+          </tr>
+          <tr>
+            <td>Permissão do seu usuário</td>
+            <td>Workspace Admin <strong>ou</strong> Can Manage Apps + Create Schema no catalog</td>
+            <td><span class="ui-path">Settings <span class="arrow">›</span> Workspace Admin</span></td>
+          </tr>
+          <tr>
+            <td>(Opcional) Lakebase Postgres</td>
+            <td>Só se for usar reverse engineering Postgres</td>
+            <td><span class="ui-path">Compute <span class="arrow">›</span> Lakebase</span></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Valores que você vai coletar agora</h3>
+
+      <p>Abra abas separadas no navegador no workspace destino e anote os 4 valores que vai usar no <code>app.yml</code>:</p>
+
+      <div class="screenshot">
+        <div class="ss-title">Valores a anotar (cole num bloco de notas)</div>
+        <div class="ss-row">
+          <span class="ss-label">Warehouse ID</span>
+          <span class="ss-value">ex: 1a2b3c4d5e6f7g8h</span>
+        </div>
+        <div class="ss-row">
+          <span class="ss-label">Catalog name</span>
+          <span class="ss-value">ex: main, nuclea_prod</span>
+        </div>
+        <div class="ss-row">
+          <span class="ss-label">Lakebase instance name (opcional)</span>
+          <span class="ss-value">ex: JDBCTESTLAKEBASE</span>
+        </div>
+        <div class="ss-row">
+          <span class="ss-label">Application ID (vai surgir no passo 5)</span>
+          <span class="ss-value">ex: 11111111-2222-3333-4444-555555555555</span>
+        </div>
+      </div>
+
+      <table>
+        <thead><tr><th>Valor</th><th>Caminho exato na UI</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><b>Warehouse ID</b></td>
+            <td><span class="ui-path">SQL <span class="arrow">›</span> SQL Warehouses</span> → clique no seu warehouse → copie o final da URL: <code>/sql/warehouses/<b>abc123def</b></code></td>
+          </tr>
+          <tr>
+            <td><b>Catalog name</b></td>
+            <td><span class="ui-path">Catalog</span> → navegue até o catalog escolhido → nome aparece no topo</td>
+          </tr>
+          <tr>
+            <td><b>Lakebase instance name</b></td>
+            <td><span class="ui-path">Compute <span class="arrow">›</span> Lakebase</span> → clique na instance → campo "Instance name"</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ============================ Exportar ============================ -->
+    <section id="sec-2">
+      <h2><span style="color: var(--primary-soft)">2.</span> Exportar código do workspace origem</h2>
+
+      <p>O código já está sincronizado num path tipo <code>/Workspace/Users/&lt;email-deployer&gt;/nuclea-modeler</code> no workspace origem.</p>
+
+      <ol class="steps">
+        <li>
+          <h4>Faça login no workspace origem</h4>
+          <div class="substep">URL do workspace onde o app está rodando hoje.</div>
+        </li>
+        <li>
+          <h4>Abra a pasta do código</h4>
+          <div class="substep">Menu lateral: <span class="ui-path">Workspace</span></div>
+          <div class="substep">Navegue até <span class="ui-path">Users <span class="arrow">›</span> &lt;email-deployer&gt; <span class="arrow">›</span> nuclea-modeler</span></div>
+        </li>
+        <li>
+          <h4>Exporte como <code>.zip</code></h4>
+          <div class="substep">Clique no <span class="dots">⋮</span> ao lado do nome da pasta <code>nuclea-modeler</code></div>
+          <div class="substep">Selecione <span class="menu-action">Export</span> → <strong>Source File (.zip)</strong></div>
+          <div class="substep">O browser baixa <code>nuclea-modeler.zip</code> contendo todo o código.</div>
+
+          <div class="callout warn">
+            <span class="ctitle">Importante · escolha "Source File", NÃO "DBC"</span>
+            DBC empacota só notebooks e perde arquivos não-notebook (<code>.py</code>, <code>.ts</code>, <code>.json</code>). <strong>Source File (.zip)</strong> preserva todos os bytes como estão.
+          </div>
+        </li>
+        <li>
+          <h4>(Opcional) Exporte também os dados</h4>
+          <div class="substep">Só se quiser <b>migrar os dados existentes</b> (modelos, tickets, etc), não só começar limpo.</div>
+          <div class="substep">No <span class="ui-path">SQL <span class="arrow">›</span> SQL Editor</span> do workspace origem, rode:</div>
+          <pre><code>-- Substitua origem e destino
+CREATE TABLE <span class="placeholder">CATALOG_DESTINO</span>.<span class="placeholder">SCHEMA_DESTINO</span>.systems
+  DEEP CLONE <span class="placeholder">CATALOG_ORIGEM</span>.<span class="placeholder">SCHEMA_ORIGEM</span>.systems;
+-- Repita pras 22 tabelas (lista no passo 8.4)</code></pre>
+          <div class="substep">Alternativa: <strong>Delta Sharing</strong> entre os 2 workspaces se eles compartilham metastore.</div>
+        </li>
+      </ol>
+    </section>
+
+    <!-- ============================ Importar ============================ -->
+    <section id="sec-3">
+      <h2><span style="color: var(--primary-soft)">3.</span> Importar no workspace destino</h2>
+
+      <ol class="steps">
+        <li>
+          <h4>Faça login no workspace destino</h4>
+          <div class="substep">URL diferente do origem. Use sua conta com permissão de admin/can-manage-apps.</div>
+        </li>
+        <li>
+          <h4>Crie a pasta na sua home</h4>
+          <div class="substep"><span class="ui-path">Workspace <span class="arrow">›</span> Users <span class="arrow">›</span> &lt;seu-email&gt;</span></div>
+          <div class="substep">No <span class="dots">⋮</span>, escolha <span class="menu-action">Create</span> → <strong>Folder</strong></div>
+          <div class="substep">Nome: <code>nuclea-modeler</code></div>
+        </li>
+        <li>
+          <h4>Importe o <code>.zip</code></h4>
+          <div class="substep">Entre na pasta <code>nuclea-modeler</code> que acabou de criar.</div>
+          <div class="substep">No <span class="dots">⋮</span> da pasta vazia, escolha <span class="menu-action">Import</span></div>
+          <div class="substep">Selecione o arquivo <code>nuclea-modeler.zip</code> baixado.</div>
+          <div class="substep">No diálogo, escolha o tipo "Source files". Confirme.</div>
+          <div class="substep">A UI mostra um spinner. Depois alguns segundos a pasta exibe toda a árvore.</div>
+
+          <div class="callout warn">
+            <span class="ctitle">Limite de upload</span>
+            Workspace Import aceita até ~10MB por zip. O Núclea Modeler descompactado tem &lt;5MB,
+            sem problemas. Se exceder por algum motivo, exporte em subpastas separadas
+            (<code>src.zip</code>, <code>databricks.zip</code>, etc) e importe sequencialmente.
+          </div>
+        </li>
+        <li>
+          <h4>Confirme a estrutura</h4>
+          <div class="substep">Você deve ver dentro da pasta importada:</div>
+          <ul>
+            <li><code>app.yml</code> ← <strong>esse é o único que você vai editar</strong></li>
+            <li><code>app.yml.example</code> (template de referência)</li>
+            <li><code>requirements.txt</code>, <code>pyproject.toml</code>, <code>package.json</code></li>
+            <li><code>databricks/sql/001_create_schema.sql</code> até <code>012_indexes_and_partitioning.sql</code></li>
+            <li><code>src/nuclea_modeler/backend/app.py</code></li>
+            <li><code>scripts/run_migrations.py</code></li>
+          </ul>
+        </li>
+      </ol>
+    </section>
+
+    <!-- ============================ ARQUIVOS A EDITAR ============================ -->
+    <section id="sec-4">
+      <h2><span style="color: var(--primary-soft)">4.</span> Arquivos a editar</h2>
+
+      <div class="callout success">
+        <span class="ctitle">Apenas 1 arquivo</span>
+        Só o <code>app.yml</code>. Todo o resto (migrations, código, deps) é parametrizado via env vars dentro desse YAML.
+      </div>
+
+      <h3>Lista completa de arquivos que mudam</h3>
+
+      <table>
+        <thead><tr><th>Arquivo</th><th>Status</th><th>O que muda</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><code>app.yml</code></td>
+            <td><span class="tag must">obrigatório</span></td>
+            <td>4 placeholders: Warehouse ID (2x), Catalog name, Lakebase instance (opcional)</td>
+          </tr>
+          <tr>
+            <td><code>app.yml.example</code></td>
+            <td><span class="tag auto">referência</span></td>
+            <td>Não muda — é o template original</td>
+          </tr>
+          <tr>
+            <td><code>databricks/sql/*.sql</code></td>
+            <td><span class="tag auto">auto</span></td>
+            <td>SQLs usam <code>${CATALOG}/${SCHEMA}</code> que o runner resolve via env vars. Não toque.</td>
+          </tr>
+          <tr>
+            <td><code>requirements.txt</code></td>
+            <td><span class="tag auto">auto</span></td>
+            <td>Não toca. <code>uv</code> instala no container do app.</td>
+          </tr>
+          <tr>
+            <td><code>package.json</code></td>
+            <td><span class="tag auto">auto</span></td>
+            <td>Não toca. <code>vite build</code> dispara no container.</td>
+          </tr>
+          <tr>
+            <td><code>databricks/dashboards/*.json</code></td>
+            <td><span class="tag optional">opcional</span></td>
+            <td>Só se for instalar o Lakeview Dashboard — substituir 1 placeholder de catalog (passo 8.6)</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Editando o <code>app.yml</code></h3>
+
+      <ol class="steps">
+        <li>
+          <h4>Abra o arquivo no editor da Workspace</h4>
+          <div class="substep">Na pasta importada (passo 3), duplo-clique em <code>app.yml</code>.</div>
+          <div class="substep">A Workspace abre o arquivo num editor de texto inline (sem precisar download/upload).</div>
+          <div class="callout info" style="margin-top:8px">
+            <span class="ctitle">Dica · começar do zero</span>
+            Se quiser começar do template limpo: copie todo o conteúdo de <code>app.yml.example</code>
+            e cole sobrescrevendo <code>app.yml</code>. O <code>.example</code> tem comentários explicativos
+            ao lado de cada placeholder.
+          </div>
+        </li>
+        <li>
+          <h4>Substitua os 4 placeholders</h4>
+          <p>Procure por <span class="placeholder">&lt;WAREHOUSE_ID&gt;</span>, <span class="placeholder">&lt;CATALOG_NAME&gt;</span>, <span class="placeholder">&lt;LAKEBASE_INSTANCE_NAME&gt;</span> e substitua pelos valores que anotou no passo 1.</p>
+
+          <h4 style="color: var(--primary-soft)">Estado final esperado:</h4>
+
+          <div class="file-block">
+            <div class="file-header">app.yml</div>
+            <pre><code>command:
+  - sh
+  - -c
+  - >
+    set -e;
+    cd /app/python/source_code;
+    echo '[NUCLEA] Building UI...';
+    if [ -f node_modules/.bin/vite ]; then
+      ./node_modules/.bin/vite build || echo '[NUCLEA] UI build failed';
+    fi;
+    echo '[NUCLEA] Running migrations...';
+    PYTHONPATH=src python -m scripts.run_migrations || exit 1;
+    echo '[NUCLEA] Starting uvicorn...';
+    exec uvicorn nuclea_modeler.backend.app:app \
+      --host 0.0.0.0 --port 8000 --workers 2 --app-dir src
+
+resources:
+  - name: nuclea-warehouse
+    description: SQL Warehouse para tabelas Delta do app
+    sql_warehouse:
+      id: "<span class="placeholder">abc123def</span>"            <span style="color:#94a3b8">## ← Warehouse ID anotado</span>
+      permission: CAN_USE
+
+  # ↓ Bloco abaixo é OPCIONAL. Remova/comente se NÃO usar Lakebase.
+  - name: nuclea-lakebase
+    description: Lakebase Postgres para validação dos modelos
+    database:
+      database_name: "databricks_postgres"
+      instance_name: "<span class="placeholder">JDBCTESTLAKEBASE</span>"  <span style="color:#94a3b8">## ← Lakebase instance</span>
+      permission: CAN_CONNECT_AND_CREATE
+
+env:
+  - name: PYTHONPATH
+    value: /app/python/source_code/src
+  - name: NODE_OPTIONS
+    value: --max-old-space-size=2048
+
+  # Catalog onde o app armazena estado (cria schema automaticamente)
+  - name: NUCLEA_CATALOG
+    value: "<span class="placeholder">main</span>"                <span style="color:#94a3b8">## ← seu Catalog name</span>
+  - name: NUCLEA_SCHEMA
+    value: "nuclea_modeler"           <span style="color:#94a3b8">## deixa este, é criado automaticamente</span>
+
+  # Mesmo Warehouse ID declarado em resources (acima)
+  - name: NUCLEA_WAREHOUSE_ID
+    value: "<span class="placeholder">abc123def</span>"            <span style="color:#94a3b8">## ← idêntico ao resources</span>
+  - name: DATABRICKS_SQL_WAREHOUSE_ID
+    value: "<span class="placeholder">abc123def</span>"            <span style="color:#94a3b8">## ← idêntico</span>
+
+  # Secret scope (criado opcionalmente no passo 7 — só pra ODBC/REST)
+  - name: NUCLEA_SECRETS_SCOPE
+    value: "nuclea-modeler"
+
+  # Migrations rodam no `command:` (single-shot) — não deixar auto
+  - name: NUCLEA_MIGRATIONS_AUTO_APPLY
+    value: "false"
+
+  # Logging
+  - name: NUCLEA_LOG_JSON
+    value: "true"
+  - name: NUCLEA_LOG_LEVEL
+    value: "INFO"</code></pre>
+          </div>
+
+          <div class="callout danger">
+            <span class="ctitle">SE NÃO USAR LAKEBASE</span>
+            Remova ou comente <strong>todo</strong> o bloco <code>- name: nuclea-lakebase</code> em <code>resources:</code>.
+            Senão o app sobe mas falha em chamadas que tentam usar OAuth M2M com escopo <code>postgres</code>.
+          </div>
+        </li>
+        <li>
+          <h4>Salve o arquivo</h4>
+          <div class="substep">Pressione <span class="kbd">Ctrl</span>+<span class="kbd">S</span> (Windows/Linux) ou <span class="kbd">⌘</span>+<span class="kbd">S</span> (Mac).</div>
+          <div class="substep">A Workspace persiste imediatamente. Sem git commit, sem push.</div>
+        </li>
+      </ol>
+
+      <h3>Outros arquivos que <em>NÃO</em> precisa tocar</h3>
+
+      <table>
+        <thead><tr><th>Por que não tocar</th><th>Arquivos</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><b>Workspace-agnostic por design</b><br/>SQLs usam <code>${CATALOG}/${SCHEMA}</code> resolvidos no boot via env vars do <code>app.yml</code>.</td>
+            <td><code>databricks/sql/001_create_schema.sql</code> ... <code>012_indexes_and_partitioning.sql</code></td>
+          </tr>
+          <tr>
+            <td><b>Build interno do container</b><br/>Tudo declarado no <code>command:</code> de <code>app.yml</code>.</td>
+            <td><code>requirements.txt</code>, <code>pyproject.toml</code>, <code>package.json</code>, <code>scripts/*.py</code></td>
+          </tr>
+          <tr>
+            <td><b>Lógica de aplicação</b><br/>Modificações de funcionalidade saem do origem em <code>main</code>.</td>
+            <td><code>src/nuclea_modeler/**</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ============================ Criar app ============================ -->
+    <section id="sec-5">
+      <h2><span style="color: var(--primary-soft)">5.</span> Criar o app pela UI</h2>
+
+      <ol class="steps">
+        <li>
+          <h4>Abra Apps</h4>
+          <div class="substep">Menu lateral: <span class="ui-path">Compute <span class="arrow">›</span> Apps</span></div>
+        </li>
+        <li>
+          <h4>Crie novo app</h4>
+          <div class="substep">Botão <span class="menu-action">Create app</span> no canto superior direito</div>
+          <div class="substep">Campo <strong>Name</strong>: <code>nuclea-modeler</code></div>
+          <div class="substep">Campo <strong>Description</strong>: livre (ex: "Núclea data catalog & modeling")</div>
+          <div class="substep">Confirme</div>
+        </li>
+        <li>
+          <h4>Copie o Application ID do Service Principal</h4>
+          <div class="substep">Na tela do app criado, vá em <span class="ui-path">Service Principal</span> (aba ou seção)</div>
+          <div class="substep">Copie o <strong>Application ID</strong> (UUID tipo <code>11111111-2222-3333-4444-555555555555</code>)</div>
+          <div class="substep">Anote — vai usar nos grants do próximo passo.</div>
+          <div class="callout info" style="margin-top:8px">
+            <span class="ctitle">Por que esse ID?</span>
+            O app autentica no Unity Catalog / Lakebase como esse Service Principal. Todos os grants
+            precisam ser feitos pra <strong>esse UUID</strong>, não pro seu usuário.
+          </div>
+        </li>
+      </ol>
+    </section>
+
+    <!-- ============================ Grants ============================ -->
+    <section id="sec-6">
+      <h2><span style="color: var(--primary-soft)">6.</span> Conceder grants ao Service Principal</h2>
+
+      <ol class="steps">
+        <li>
+          <h4>Abra o Catalog Explorer</h4>
+          <div class="substep"><span class="ui-path">Catalog</span></div>
+          <div class="substep">Clique no catalog escolhido (ex: <code>main</code>)</div>
+        </li>
+        <li>
+          <h4>Acesse Permissions</h4>
+          <div class="substep">Aba <strong>Permissions</strong> no topo</div>
+          <div class="substep">Botão <span class="menu-action">Grant</span></div>
+        </li>
+        <li>
+          <h4>Cole o Application ID</h4>
+          <div class="substep">Campo <strong>Principals</strong>: cole o UUID copiado no passo 5</div>
+          <div class="substep">Marque os checkboxes:</div>
+          <ul>
+            <li><code>USE_CATALOG</code></li>
+            <li><code>USE_SCHEMA</code> (se já existir um schema)</li>
+            <li><code>CREATE_SCHEMA</code></li>
+            <li><code>CREATE_TABLE</code></li>
+            <li><code>MODIFY</code></li>
+            <li><code>SELECT</code></li>
+          </ul>
+          <div class="substep">Confirme com <span class="menu-action">Grant</span></div>
+
+          <div class="callout success" style="margin-top:8px">
+            <span class="ctitle">Atalho via SQL Editor</span>
+            Equivalente — se preferir, abra <span class="ui-path">SQL <span class="arrow">›</span> SQL Editor</span> e rode:
+            <pre style="margin-top:6px"><code>GRANT USE CATALOG, CREATE SCHEMA, CREATE TABLE, MODIFY, SELECT
+  ON CATALOG <span class="placeholder">main</span>
+  TO `<span class="placeholder">SEU_APPLICATION_ID</span>`;</code></pre>
+          </div>
+        </li>
+        <li>
+          <h4>(Se usar Lakebase) Grant na instance</h4>
+          <div class="substep"><span class="ui-path">Compute <span class="arrow">›</span> Lakebase</span> → clique na instance</div>
+          <div class="substep">Aba <strong>Permissions</strong> → adicione o Application ID com permissão <strong>Can Connect and Create</strong></div>
+        </li>
+      </ol>
+    </section>
+
+    <!-- ============================ Deploy ============================ -->
+    <section id="sec-7">
+      <h2><span style="color: var(--primary-soft)">7.</span> Deploy</h2>
+
+      <ol class="steps">
+        <li>
+          <h4>Configure o source code path</h4>
+          <div class="substep">Volte em <span class="ui-path">Compute <span class="arrow">›</span> Apps <span class="arrow">›</span> nuclea-modeler</span></div>
+          <div class="substep">Aba <strong>Settings</strong> (ou "App configuration")</div>
+          <div class="substep">No campo <strong>Source code path</strong>: cole o caminho onde você importou no passo 3:</div>
+          <pre><code>/Workspace/Users/<span class="placeholder">seu-email@cliente.com</span>/nuclea-modeler</code></pre>
+          <div class="substep">Salve</div>
+        </li>
+        <li>
+          <h4>(Opcional) Crie secret scope</h4>
+          <div class="substep">Só se vai usar conexões ODBC ou REST a sistemas externos.</div>
+          <div class="substep">Atualmente o Workspace UI não tem editor de secret scope pleno —
+            crie via Admin Settings se disponível, ou peça pro admin Databricks rodar
+            <code>databricks secrets create-scope nuclea-modeler</code> no terminal dele.</div>
+          <div class="substep"><strong>Pra primeiro deploy, pode pular.</strong></div>
+        </li>
+        <li>
+          <h4>Clique Deploy</h4>
+          <div class="substep">No header do app, botão <span class="menu-action">Deploy</span></div>
+          <div class="substep">Status passa por <em>Provisioning → Starting → Running</em> em ~1-2 min.</div>
+          <div class="substep">Durante o deploy o container roda 3 etapas:</div>
+          <ol>
+            <li><b>vite build</b> — gera o bundle React em <code>src/nuclea_modeler/__dist__/</code></li>
+            <li><b>python -m scripts.run_migrations</b> — aplica as 12 migrations SQL em ordem (cria schema, tabelas, seeds)</li>
+            <li><b>uvicorn</b> — sobe o servidor FastAPI (2 workers, porta 8000)</li>
+          </ol>
+        </li>
+      </ol>
+    </section>
+
+    <!-- ============================ Verificação ============================ -->
+    <section id="sec-8">
+      <h2><span style="color: var(--primary-soft)">8.</span> Verificação</h2>
+
+      <ol class="steps">
+        <li>
+          <h4>Veja os logs</h4>
+          <div class="substep">Aba <strong>Logs</strong> do app</div>
+          <div class="substep">Procure pelas linhas:</div>
+          <ul>
+            <li><code>[NUCLEA] Building UI...</code></li>
+            <li><code>[NUCLEA] Running migrations</code></li>
+            <li><code>summary: {'applied': 12, 'skipped': 0, ...}</code> — 12 migrations aplicadas no deploy limpo</li>
+            <li><code>Application startup complete</code> — uvicorn pronto</li>
+          </ul>
+        </li>
+        <li>
+          <h4>Confirme as 22 tabelas Delta criadas</h4>
+          <div class="substep"><span class="ui-path">Catalog <span class="arrow">›</span> &lt;catalog&gt; <span class="arrow">›</span> nuclea_modeler</span></div>
+          <div class="substep">Você deve ver:</div>
+          <table>
+            <thead><tr><th>Domínio</th><th>Tabelas</th></tr></thead>
+            <tbody>
+              <tr><td>Sistemas + Conexões</td><td><code>systems</code> · <code>connections</code></td></tr>
+              <tr><td>Modelagem</td><td><code>entities</code> · <code>attributes</code> · <code>relationships</code></td></tr>
+              <tr><td>Workflow</td><td><code>reconciliation_tickets</code> · <code>user_roles</code></td></tr>
+              <tr><td>Extractions</td><td><code>extractions</code></td></tr>
+              <tr><td>DER</td><td><code>der_layouts</code></td></tr>
+              <tr><td>Flags</td><td><code>flags</code> · <code>entity_flags</code> · <code>attribute_flags</code></td></tr>
+              <tr><td>Glossário</td><td><code>glossary_terms</code> · <code>glossary_mappings</code></td></tr>
+              <tr><td>Linhagem</td><td><code>lineage_upstream</code> · <code>lineage_downstream</code></td></tr>
+              <tr><td>Operacional</td><td><code>sync_log</code> · <code>audit_log</code> · <code>model_versions</code></td></tr>
+              <tr><td>Code objects</td><td><code>views_catalog</code> · <code>procedures_catalog</code> · <code>triggers_catalog</code></td></tr>
+              <tr><td>Storage (F1-F9)</td><td><code>entity_indexes</code> · <code>entity_partitioning</code></td></tr>
+              <tr><td>Sequences</td><td><code>sequences</code></td></tr>
+              <tr><td>Migration tracking</td><td><code>schema_migrations</code></td></tr>
+            </tbody>
+          </table>
+        </li>
+        <li>
+          <h4>Acesse o app</h4>
+          <div class="substep">Na tela do app, copie a URL pública (formato <code>https://nuclea-modeler-&lt;workspace_id&gt;.cloud.databricksapps.com</code>)</div>
+          <div class="substep">Abra numa nova aba — SSO força login automático com a conta do workspace.</div>
+        </li>
+      </ol>
+    </section>
+
+    <!-- ============================ Bootstrap admin ============================ -->
+    <section id="sec-9">
+      <h2><span style="color: var(--primary-soft)">9.</span> Bootstrap do primeiro admin</h2>
+
+      <p>O primeiro usuário que acessa fica como <code>VIEWER</code> por default. Pra ter <code>ADMIN</code> e poder aprovar tickets, gerenciar conexões, etc:</p>
+
+      <ol class="steps">
+        <li>
+          <h4>Abra o SQL Editor do workspace destino</h4>
+          <div class="substep"><span class="ui-path">SQL <span class="arrow">›</span> SQL Editor</span></div>
+        </li>
+        <li>
+          <h4>Cole e rode</h4>
+          <pre><code>INSERT INTO <span class="placeholder">CATALOG_NAME</span>.nuclea_modeler.user_roles
+  (role_id, user_email, role_name, granted_at, granted_by)
+VALUES (
+  uuid(),
+  '<span class="placeholder">seu-email@cliente.com</span>',
+  'ADMIN',
+  current_timestamp(),
+  'bootstrap'
+);</code></pre>
+        </li>
+        <li>
+          <h4>Recarregue o app</h4>
+          <div class="substep">Volte na URL do app e faça reload. Agora você tem acesso completo:
+            criar sistemas, fazer reverse engineering, aprovar tickets, gerar DDL, gerenciar RBAC.</div>
+        </li>
+      </ol>
+
+      <h3>(Opcional) Instalar Lakeview Dashboard</h3>
+
+      <ol class="steps">
+        <li>
+          <h4>Localize o JSON do dashboard</h4>
+          <div class="substep"><span class="ui-path">Workspace <span class="arrow">›</span> Users <span class="arrow">›</span> &lt;seu-email&gt; <span class="arrow">›</span> nuclea-modeler <span class="arrow">›</span> databricks <span class="arrow">›</span> dashboards</span></div>
+          <div class="substep">Arquivo: <code>nuclea_modeler_dashboard.json</code></div>
+        </li>
+        <li>
+          <h4>Edite o JSON</h4>
+          <div class="substep">Duplo-clique no JSON, busque <code>stable_classic_pg4xe1_catalog.data_catalog_app</code></div>
+          <div class="substep">Substitua por <code>&lt;seu_catalog&gt;.nuclea_modeler</code></div>
+          <div class="substep">Salve</div>
+        </li>
+        <li>
+          <h4>Importe no Lakeview</h4>
+          <div class="substep"><span class="ui-path">Dashboards</span> → <span class="menu-action">Create dashboard</span> → <strong>Import file</strong></div>
+          <div class="substep">Selecione o JSON editado.</div>
+          <div class="substep">Confirme. Dashboard sobe com 7 tiles de KPI.</div>
+        </li>
+      </ol>
+    </section>
+
+    <!-- ============================ Atualizações ============================ -->
+    <section id="sec-10">
+      <h2><span style="color: var(--primary-soft)">10.</span> Atualizações de versão</h2>
+
+      <p>Quando a equipe Núclea Modeler publicar uma nova versão (você recebe um novo <code>.zip</code>):</p>
+
+      <ol class="steps">
+        <li>
+          <h4>Backup do <code>app.yml</code> atual</h4>
+          <div class="substep">No <span class="dots">⋮</span> do arquivo <code>app.yml</code> na sua pasta → <span class="menu-action">Export</span> → salve uma cópia local.</div>
+          <div class="callout warn" style="margin-top:8px">
+            <span class="ctitle">Por que esse backup</span>
+            O Import seguinte vai sobrescrever <code>app.yml</code> com o template novo (placeholders sem valores).
+            Backup garante que você consegue reaplicar seus valores rapidamente.
+          </div>
+        </li>
+        <li>
+          <h4>Re-import sobrescrevendo</h4>
+          <div class="substep">Na pasta <code>nuclea-modeler</code>, <span class="dots">⋮</span> → <span class="menu-action">Import</span></div>
+          <div class="substep">Selecione o zip novo. Aceite <strong>"Overwrite existing files"</strong>.</div>
+        </li>
+        <li>
+          <h4>Re-edite <code>app.yml</code></h4>
+          <div class="substep">Abra <code>app.yml</code> e cole novamente seus valores (Warehouse ID, Catalog, Lakebase) — ou compare com o backup.</div>
+        </li>
+        <li>
+          <h4>Deploy</h4>
+          <div class="substep">No app: <span class="menu-action">Deploy</span></div>
+          <div class="substep">Migrations novas (ex: <code>013_*.sql</code>) aplicam automaticamente. Migrations já aplicadas ficam como <code>skipped</code> via checksum.</div>
+        </li>
+      </ol>
+    </section>
+
+    <!-- ============================ Troubleshooting ============================ -->
+    <section id="sec-tshoot">
+      <h2><span style="color: var(--primary-soft)">?</span> Troubleshooting</h2>
+
+      <table>
+        <thead><tr><th>Sintoma nos Logs</th><th>Causa</th><th>Fix via UI</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><code>SCHEMA_NOT_FOUND</code></td>
+            <td>SP do app sem <code>CREATE SCHEMA</code> no catalog</td>
+            <td>Volte ao passo 6.3 — Catalog UI → Permissions → Grant <code>CREATE_SCHEMA</code> pro Application ID</td>
+          </tr>
+          <tr>
+            <td><code>required scopes: postgres</code></td>
+            <td>Bloco <code>nuclea-lakebase</code> não declarado em <code>resources:</code> do <code>app.yml</code></td>
+            <td>Edite <code>app.yml</code> pela UI (passo 4) + Deploy</td>
+          </tr>
+          <tr>
+            <td><code>DRIFT detected: 0XX_*.sql</code></td>
+            <td>SQL já aplicado teve hash mudado</td>
+            <td>Normal em upgrades — app continua subindo. Investigue só se for migration sua</td>
+          </tr>
+          <tr>
+            <td>DER vazio / Dashboard sem dados</td>
+            <td>Seeds (003-004-009) falharam</td>
+            <td>Logs do app — procure stack trace nas migrations. Geralmente é grant ou catalog inválido</td>
+          </tr>
+          <tr>
+            <td>401 em todos os endpoints</td>
+            <td>SSO força auth, browser sem cookie</td>
+            <td>Abra a URL do app na mesma sessão que está logado no workspace</td>
+          </tr>
+          <tr>
+            <td>App fica em "Starting" infinito</td>
+            <td>Container OOM (build pesado)</td>
+            <td>Logs do app. Se OOM, aumente memory na <span class="ui-path">Settings <span class="arrow">›</span> Resource size</span></td>
+          </tr>
+          <tr>
+            <td>Bundle UI antigo após deploy</td>
+            <td>Browser cache</td>
+            <td>Hard refresh: <span class="kbd">⌘</span>+<span class="kbd">Shift</span>+<span class="kbd">R</span> (Mac) ou <span class="kbd">Ctrl</span>+<span class="kbd">Shift</span>+<span class="kbd">R</span> (Win/Linux)</td>
+          </tr>
+          <tr>
+            <td>Coverage gate falhando em CI</td>
+            <td>Ajuste de testes pendente</td>
+            <td>Não afeta o app rodando — só o CI no GitHub. Equipe da Núclea ajusta</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="callout success" style="margin-top: 28px">
+        <span class="ctitle">Pronto</span>
+        Se chegou aqui com logs verdes, 22 tabelas no Catalog Explorer e o app acessível
+        via URL, o deploy está concluído. Estado migrado, app rodando independente do
+        workspace origem.
+      </div>
+    </section>
+
+    <footer>
+      <p>
+        <strong>Núclea Modeler</strong> · Deploy via UI · v0.2.1
+      </p>
+      <p>
+        Para detalhes técnicos da arquitetura e funcionalidades, abra <code>docs/deploy/handover.html</code>.
+        Outros recursos: <code>README.md</code> · <code>DEPLOY.md</code> (versão Markdown) ·
+        <code>HANDOVER.md</code> · <code>SECURITY.md</code> · <code>CHANGELOG.md</code>.
+      </p>
+    </footer>
+
+  </main>
+</div>
+</body>
+</html>
