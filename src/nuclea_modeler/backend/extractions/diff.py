@@ -15,15 +15,13 @@ from ..tickets.models import DiffEntity, TicketDiff
 from .models import ExtractionSnapshot
 
 
-def _quote_id(value: str) -> str:
+def _quote_id(value: str | None) -> str:
     """Quote a trusted ID (from a prior DB query) for inlining in an IN list.
 
     Use ONLY com valores originados server-side, nunca user input direto.
-    Necessário porque Statement Execution API não aceita array params.
+    None/vazio viram ``"''"`` (compat com chamadas que podem receber None).
     """
-    if not isinstance(value, str):
-        value = str(value)
-    return "'" + value.replace("'", "''") + "'"
+    return "'" + (value or "").replace("'", "''") + "'"
 
 
 def compute_diff_against_catalog(
