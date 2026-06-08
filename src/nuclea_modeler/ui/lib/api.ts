@@ -538,6 +538,31 @@ export const useDeleteEntityIndex = (
     ...opts?.mutation,
   });
 
+export interface IndexValidationWarning {
+  code:
+    | "PK_DUPLICATE"
+    | "PK_LEADING"
+    | "INDEX_SUBSET"
+    | "PARTITION_NULLABLE"
+    | "PARTITION_UNKNOWN_COLUMN";
+  severity: "info" | "warning";
+  message: string;
+  related_index_ids: string[];
+}
+
+export const useValidateEntityIndexesSuspense = (
+  entityId: string,
+  s?: Selector<IndexValidationWarning[]>,
+) =>
+  useSuspenseQuery({
+    queryKey: ["validateEntityIndexes", entityId],
+    queryFn: async () =>
+      (await api.get<IndexValidationWarning[]>(
+        `/entities/${encodeURIComponent(entityId)}/indexes/validate`,
+      )).data,
+    ...s,
+  });
+
 export const useGetEntityPartitioningSuspense = (
   entityId: string,
   s?: Selector<EntityPartitioningOut>,

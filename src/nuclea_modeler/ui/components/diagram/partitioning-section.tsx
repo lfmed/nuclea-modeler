@@ -76,6 +76,7 @@ function PartitioningContent({
     mutation: {
       onSuccess: () => {
         qc.invalidateQueries({ queryKey: ["getEntityPartitioning", entityId] });
+        qc.invalidateQueries({ queryKey: ["validateEntityIndexes", entityId] });
         qc.invalidateQueries({ queryKey: ["listTickets"] });
         toast.success("Particionamento atualizado (pendente no ticket)");
       },

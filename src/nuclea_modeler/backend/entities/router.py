@@ -28,6 +28,7 @@ from ..tickets.session import (
     get_or_create_session_ticket,
     stage_entity_change,
 )
+from .index_validation import IndexValidationWarning, validate_indexes
 from .indexes import (
     get_partitioning, list_indexes_for_entity,
     stage_index_add, stage_index_remove, stage_index_update,
@@ -1110,6 +1111,46 @@ def get_entity_partitioning(entity_id: str, sql: SqlDependency) -> EntityPartiti
         entity_id=entity_id,
         strategy="NONE",
         columns=[],
+    )
+
+
+@router.get(
+    "/{entity_id}/indexes/validate",
+    response_model=list[IndexValidationWarning],
+    operation_id="validateEntityIndexes",
+)
+def validate_entity_indexes(
+    entity_id: str, sql: SqlDependency,
+) -> list[IndexValidationWarning]:
+    """Roda validações semânticas: PK duplicada, índices redundantes,
+    particionamento sobre coluna inválida. Não bloqueia mutations — só
+    alimenta avisos na UI."""
+    s = get_settings()
+    # Attributes
+    attr_rows = delta.fetch_all_params(
+        sql,
+        f"""
+        SELECT technical_name, is_primary_key, is_nullable
+        FROM {s.fq_table('attributes')}
+        WHERE entity_id = :entity_id
+        ORDER BY COALESCE(ordinal_position, 999999), technical_name
+        """,
+        [delta.param("entity_id", entity_id)],
+    )
+    attributes = [
+        {
+            "technical_name": r[0],
+            "is_primary_key": bool(r[1]),
+            "is_nullable": bool(r[2]) if r[2] is not None else None,
+        }
+        for r in attr_rows
+    ]
+    # Índices + partição
+    indexes = [ix.model_dump() for ix in list_indexes_for_entity(sql, entity_id)]
+    part = get_partitioning(sql, entity_id)
+    partitioning = part.model_dump() if part else None
+    return validate_indexes(
+        attributes=attributes, indexes=indexes, partitioning=partitioning,
     )
 
 

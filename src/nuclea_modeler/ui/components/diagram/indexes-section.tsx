@@ -12,6 +12,7 @@ import {
   useListAttributesSuspense,
   useListEntityIndexesSuspense,
   useUpdateEntityIndex,
+  useValidateEntityIndexesSuspense,
 } from "@/lib/api";
 import selector from "@/lib/selector";
 import { getIndexTypesForTechnology } from "@/components/diagram/index-types-by-tech";
@@ -19,7 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ChevronDown, ChevronRight, Plus, Trash2, X } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronRight, Info, Plus, Trash2, X } from "lucide-react";
 
 interface IndexesSectionProps {
   entityId: string;
@@ -59,6 +60,7 @@ export function IndexesSection(props: IndexesSectionProps) {
 function IndexesContent({ entityId, technology }: IndexesSectionProps) {
   const { data: indexes } = useListEntityIndexesSuspense(entityId, selector());
   const { data: attributes } = useListAttributesSuspense(entityId, selector());
+  const { data: warnings } = useValidateEntityIndexesSuspense(entityId, selector());
   const qc = useQueryClient();
   const [editing, setEditing] = useState<EntityIndexOut | null>(null);
   const [creating, setCreating] = useState(false);
@@ -67,6 +69,7 @@ function IndexesContent({ entityId, technology }: IndexesSectionProps) {
     mutation: {
       onSuccess: (r) => {
         qc.invalidateQueries({ queryKey: ["listEntityIndexes", entityId] });
+        qc.invalidateQueries({ queryKey: ["validateEntityIndexes", entityId] });
         qc.invalidateQueries({ queryKey: ["listTickets"] });
         toast.success(`Índice removido (pendente no ticket ${r.ticket_id?.slice(-6)})`);
       },
@@ -98,6 +101,28 @@ function IndexesContent({ entityId, technology }: IndexesSectionProps) {
           existing={null}
           onClose={() => setCreating(false)}
         />
+      )}
+
+      {warnings.length > 0 && (
+        <ul className="space-y-1.5">
+          {warnings.map((w, i) => (
+            <li
+              key={i}
+              className={`flex items-start gap-2 rounded-md border px-2.5 py-1.5 text-xs ${
+                w.severity === "warning"
+                  ? "border-amber-500/40 bg-amber-500/5"
+                  : "border-sky-500/40 bg-sky-500/5"
+              }`}
+            >
+              {w.severity === "warning" ? (
+                <AlertTriangle className="h-3.5 w-3.5 text-amber-600 mt-0.5 shrink-0" />
+              ) : (
+                <Info className="h-3.5 w-3.5 text-sky-600 mt-0.5 shrink-0" />
+              )}
+              <span>{w.message}</span>
+            </li>
+          ))}
+        </ul>
       )}
 
       {indexes.length === 0 && !creating && (
@@ -226,6 +251,7 @@ function IndexForm({
     mutation: {
       onSuccess: (r) => {
         qc.invalidateQueries({ queryKey: ["listEntityIndexes", entityId] });
+        qc.invalidateQueries({ queryKey: ["validateEntityIndexes", entityId] });
         qc.invalidateQueries({ queryKey: ["listTickets"] });
         toast.success(`Índice criado (pendente no ticket ${r.pending_op})`);
         onClose();
@@ -240,6 +266,7 @@ function IndexForm({
     mutation: {
       onSuccess: () => {
         qc.invalidateQueries({ queryKey: ["listEntityIndexes", entityId] });
+        qc.invalidateQueries({ queryKey: ["validateEntityIndexes", entityId] });
         qc.invalidateQueries({ queryKey: ["listTickets"] });
         toast.success("Índice atualizado");
         onClose();
