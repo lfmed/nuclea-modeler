@@ -35,7 +35,10 @@ CREATE TABLE IF NOT EXISTS entity_indexes (
 )
 USING DELTA
 COMMENT 'Índices de tabela catalogados — visíveis no DER e gerados no DDL'
-TBLPROPERTIES (delta.enableChangeDataFeed = true);
+TBLPROPERTIES (
+    'delta.feature.allowColumnDefaults' = 'supported',
+    'delta.enableChangeDataFeed' = true
+);
 
 -- ---------------------------------------------------------------------------
 -- entity_partitioning — Estratégia de particionamento (0..1 por entity)
@@ -55,4 +58,7 @@ CREATE TABLE IF NOT EXISTS entity_partitioning (
 )
 USING DELTA
 COMMENT 'Particionamento físico/lógico da entity — usado em DDL generation'
-TBLPROPERTIES (delta.enableChangeDataFeed = true);
+TBLPROPERTIES (
+    'delta.feature.allowColumnDefaults' = 'supported',
+    'delta.enableChangeDataFeed' = true
+);

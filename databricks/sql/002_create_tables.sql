@@ -38,7 +38,10 @@ CREATE TABLE IF NOT EXISTS connections (
 )
 USING DELTA
 COMMENT 'Conexões ODBC/REST/DDL para os ambientes HINT, HEXT, PROD'
-TBLPROPERTIES (delta.enableChangeDataFeed = true);
+TBLPROPERTIES (
+    'delta.feature.allowColumnDefaults' = 'supported',
+    'delta.enableChangeDataFeed' = true
+);
 
 -- ---------------------------------------------------------------------------
 -- 2) systems — Sistemas de origem catalogados
@@ -58,7 +61,10 @@ CREATE TABLE IF NOT EXISTS systems (
 )
 USING DELTA
 COMMENT 'Sistemas de origem catalogados pela app'
-TBLPROPERTIES (delta.enableChangeDataFeed = true);
+TBLPROPERTIES (
+    'delta.feature.allowColumnDefaults' = 'supported',
+    'delta.enableChangeDataFeed' = true
+);
 
 -- ---------------------------------------------------------------------------
 -- 3) model_versions — Versões publicadas dos modelos
@@ -81,7 +87,10 @@ CREATE TABLE IF NOT EXISTS model_versions (
 )
 USING DELTA
 COMMENT 'Versões/snapshots imutáveis dos modelos de dados'
-TBLPROPERTIES (delta.enableChangeDataFeed = true);
+TBLPROPERTIES (
+    'delta.feature.allowColumnDefaults' = 'supported',
+    'delta.enableChangeDataFeed' = true
+);
 
 -- ---------------------------------------------------------------------------
 -- 4) entities — Tabelas/entidades catalogadas
@@ -110,7 +119,10 @@ CREATE TABLE IF NOT EXISTS entities (
 )
 USING DELTA
 COMMENT 'Entidades (tabelas, views) catalogadas — fonte única de verdade do modelo'
-TBLPROPERTIES (delta.enableChangeDataFeed = true);
+TBLPROPERTIES (
+    'delta.feature.allowColumnDefaults' = 'supported',
+    'delta.enableChangeDataFeed' = true
+);
 
 -- ---------------------------------------------------------------------------
 -- 5) attributes — Colunas/atributos catalogados
@@ -137,7 +149,10 @@ CREATE TABLE IF NOT EXISTS attributes (
 )
 USING DELTA
 COMMENT 'Atributos (colunas) catalogados'
-TBLPROPERTIES (delta.enableChangeDataFeed = true);
+TBLPROPERTIES (
+    'delta.feature.allowColumnDefaults' = 'supported',
+    'delta.enableChangeDataFeed' = true
+);
 
 -- ---------------------------------------------------------------------------
 -- 6) relationships — Relacionamentos entre entidades
@@ -163,7 +178,10 @@ CREATE TABLE IF NOT EXISTS relationships (
 )
 USING DELTA
 COMMENT 'Relacionamentos entre entidades'
-TBLPROPERTIES (delta.enableChangeDataFeed = true);
+TBLPROPERTIES (
+    'delta.feature.allowColumnDefaults' = 'supported',
+    'delta.enableChangeDataFeed' = true
+);
 
 -- ---------------------------------------------------------------------------
 -- 7) views_catalog — Metadados de views
@@ -180,7 +198,10 @@ CREATE TABLE IF NOT EXISTS views_catalog (
 )
 USING DELTA
 COMMENT 'Documentação extra para entidades do tipo VIEW'
-TBLPROPERTIES (delta.enableChangeDataFeed = true);
+TBLPROPERTIES (
+    'delta.feature.allowColumnDefaults' = 'supported',
+    'delta.enableChangeDataFeed' = true
+);
 
 -- ---------------------------------------------------------------------------
 -- 8) procedures_catalog — Stored procedures
@@ -203,7 +224,10 @@ CREATE TABLE IF NOT EXISTS procedures_catalog (
 )
 USING DELTA
 COMMENT 'Stored procedures catalogadas'
-TBLPROPERTIES (delta.enableChangeDataFeed = true);
+TBLPROPERTIES (
+    'delta.feature.allowColumnDefaults' = 'supported',
+    'delta.enableChangeDataFeed' = true
+);
 
 -- ---------------------------------------------------------------------------
 -- 9) triggers_catalog — Triggers
@@ -226,7 +250,10 @@ CREATE TABLE IF NOT EXISTS triggers_catalog (
 )
 USING DELTA
 COMMENT 'Triggers catalogados'
-TBLPROPERTIES (delta.enableChangeDataFeed = true);
+TBLPROPERTIES (
+    'delta.feature.allowColumnDefaults' = 'supported',
+    'delta.enableChangeDataFeed' = true
+);
 
 -- ---------------------------------------------------------------------------
 -- 10) flags — Definição de flags disponíveis (LGPD/uso/qualidade/custom)
@@ -249,7 +276,10 @@ CREATE TABLE IF NOT EXISTS flags (
 )
 USING DELTA
 COMMENT 'Definição catalogada das flags disponíveis no sistema'
-TBLPROPERTIES (delta.enableChangeDataFeed = true);
+TBLPROPERTIES (
+    'delta.feature.allowColumnDefaults' = 'supported',
+    'delta.enableChangeDataFeed' = true
+);
 
 -- ---------------------------------------------------------------------------
 -- 11) entity_flags — Aplicação de flags a entidades
@@ -266,7 +296,10 @@ CREATE TABLE IF NOT EXISTS entity_flags (
 )
 USING DELTA
 COMMENT 'Aplicação de flags às entidades (tabelas)'
-TBLPROPERTIES (delta.enableChangeDataFeed = true);
+TBLPROPERTIES (
+    'delta.feature.allowColumnDefaults' = 'supported',
+    'delta.enableChangeDataFeed' = true
+);
 
 -- ---------------------------------------------------------------------------
 -- 12) attribute_flags — Aplicação de flags a atributos
@@ -282,7 +315,10 @@ CREATE TABLE IF NOT EXISTS attribute_flags (
 )
 USING DELTA
 COMMENT 'Aplicação de flags aos atributos (colunas)'
-TBLPROPERTIES (delta.enableChangeDataFeed = true);
+TBLPROPERTIES (
+    'delta.feature.allowColumnDefaults' = 'supported',
+    'delta.enableChangeDataFeed' = true
+);
 
 -- ---------------------------------------------------------------------------
 -- 13) glossary_terms — Dicionário corporativo
@@ -306,7 +342,10 @@ CREATE TABLE IF NOT EXISTS glossary_terms (
 )
 USING DELTA
 COMMENT 'Glossário corporativo de termos de dados'
-TBLPROPERTIES (delta.enableChangeDataFeed = true);
+TBLPROPERTIES (
+    'delta.feature.allowColumnDefaults' = 'supported',
+    'delta.enableChangeDataFeed' = true
+);
 
 -- ---------------------------------------------------------------------------
 -- 14) glossary_mappings — Vínculos termo ↔ atributo
@@ -323,7 +362,10 @@ CREATE TABLE IF NOT EXISTS glossary_mappings (
 )
 USING DELTA
 COMMENT 'Vínculos N:N entre termos do dicionário e atributos'
-TBLPROPERTIES (delta.enableChangeDataFeed = true);
+TBLPROPERTIES (
+    'delta.feature.allowColumnDefaults' = 'supported',
+    'delta.enableChangeDataFeed' = true
+);
 
 -- ---------------------------------------------------------------------------
 -- 15) lineage_upstream — Linhagem de origem
@@ -344,7 +386,10 @@ CREATE TABLE IF NOT EXISTS lineage_upstream (
 )
 USING DELTA
 COMMENT 'Linhagem upstream (origem) das entidades'
-TBLPROPERTIES (delta.enableChangeDataFeed = true);
+TBLPROPERTIES (
+    'delta.feature.allowColumnDefaults' = 'supported',
+    'delta.enableChangeDataFeed' = true
+);
 
 -- ---------------------------------------------------------------------------
 -- 16) lineage_downstream — Linhagem de consumo
@@ -364,7 +409,10 @@ CREATE TABLE IF NOT EXISTS lineage_downstream (
 )
 USING DELTA
 COMMENT 'Linhagem downstream (consumidores) das entidades'
-TBLPROPERTIES (delta.enableChangeDataFeed = true);
+TBLPROPERTIES (
+    'delta.feature.allowColumnDefaults' = 'supported',
+    'delta.enableChangeDataFeed' = true
+);
 
 -- ---------------------------------------------------------------------------
 -- 17) sync_log — Log de sincronizações com Unity Catalog
@@ -387,7 +435,10 @@ CREATE TABLE IF NOT EXISTS sync_log (
 )
 USING DELTA
 COMMENT 'Histórico de execuções de sincronização com Unity Catalog'
-TBLPROPERTIES (delta.enableChangeDataFeed = true);
+TBLPROPERTIES (
+    'delta.feature.allowColumnDefaults' = 'supported',
+    'delta.enableChangeDataFeed' = true
+);
 
 -- ---------------------------------------------------------------------------
 -- 18) audit_log — Auditoria imutável geral
@@ -408,4 +459,8 @@ CREATE TABLE IF NOT EXISTS audit_log (
 )
 USING DELTA
 COMMENT 'Log imutável de auditoria de todas as operações relevantes'
-TBLPROPERTIES (delta.enableChangeDataFeed = false, delta.appendOnly = true);
+TBLPROPERTIES (
+    'delta.feature.allowColumnDefaults' = 'supported',
+    'delta.enableChangeDataFeed' = false,
+    'delta.appendOnly' = true
+);
