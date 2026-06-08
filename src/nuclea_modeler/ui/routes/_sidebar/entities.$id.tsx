@@ -168,7 +168,7 @@ function EntityDetail() {
       </Suspense>
 
       <Suspense fallback={<Skeleton className="h-40 w-full" />}>
-        <AttributesSection entityId={id} />
+        <AttributesSection entityId={id} technology={systemTechnology} />
       </Suspense>
     </div>
   );
@@ -291,7 +291,13 @@ function extractErrorMessage(e: unknown): string {
   return anyE?.response?.data?.detail || anyE?.message || "Erro ao aplicar flag";
 }
 
-function AttributesSection({ entityId }: { entityId: string }) {
+function AttributesSection({
+  entityId,
+  technology,
+}: {
+  entityId: string;
+  technology: string | null;
+}) {
   const { data: attrs } = useListAttributesSuspense(entityId, selector());
   const qc = useQueryClient();
   const [showForm, setShowForm] = useState(false);
@@ -363,7 +369,7 @@ function AttributesSection({ entityId }: { entityId: string }) {
             <div className="grid md:grid-cols-3 gap-3">
               <Input placeholder="Nome técnico*" value={techName} onChange={(e) => setTechName(e.target.value)} required />
               <Input placeholder="Nome lógico" value={logName} onChange={(e) => setLogName(e.target.value)} />
-              <TypePicker value={dataType} onChange={setDataType} technology={systemTechnology} />
+              <TypePicker value={dataType} onChange={setDataType} technology={technology} />
             </div>
             <div className="flex items-center gap-4 text-sm">
               <label className="flex items-center gap-2">

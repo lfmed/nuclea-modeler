@@ -3,7 +3,6 @@ import {
   composeType,
   getTypeFamiliesForTechnology,
   parseType,
-  type TypeFamily,
 } from "@/components/diagram/types-by-tech";
 
 /**

@@ -703,7 +703,6 @@ def list_attributes(
     # attributes do ticket OPEN do user. Sem isso o EditEntityDialog fica
     # vazio mesmo o user tendo adicionado colunas na criação.
     if not rows:
-        from ..tickets.session import find_open_session_ticket
         actor = _current_email(user_ws)
         if actor:
             # Procura entity virtual em qualquer sessão OPEN do user
