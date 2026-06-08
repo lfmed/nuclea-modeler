@@ -15,8 +15,10 @@ import {
   useListAttributeFlagsSuspense,
   useApplyAttributeFlag,
   useRemoveAttributeFlag,
+  useListSystemsSuspense,
 } from "@/lib/api";
 import selector from "@/lib/selector";
+import { TypePicker } from "@/components/diagram/type-picker";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -76,6 +78,9 @@ function EntityDetail() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { data: entity } = useGetEntitySuspense(id, selector());
+  const { data: systems } = useListSystemsSuspense(selector());
+  const systemTechnology =
+    systems.find((s) => s.system_id === entity.system_id)?.technology || null;
 
   const { mutate: del, isPending: deleting } = useDeleteEntity({
     mutation: {
@@ -358,7 +363,7 @@ function AttributesSection({ entityId }: { entityId: string }) {
             <div className="grid md:grid-cols-3 gap-3">
               <Input placeholder="Nome técnico*" value={techName} onChange={(e) => setTechName(e.target.value)} required />
               <Input placeholder="Nome lógico" value={logName} onChange={(e) => setLogName(e.target.value)} />
-              <Input placeholder="Tipo nativo (varchar(50), int...)" value={dataType} onChange={(e) => setDataType(e.target.value)} />
+              <TypePicker value={dataType} onChange={setDataType} technology={systemTechnology} />
             </div>
             <div className="flex items-center gap-4 text-sm">
               <label className="flex items-center gap-2">

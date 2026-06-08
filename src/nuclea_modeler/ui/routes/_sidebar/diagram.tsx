@@ -78,6 +78,7 @@ import { NewSystemWizard } from "@/components/apx/new-system-wizard";
 import { EntityNode } from "@/components/diagram/entity-node";
 import { applyDagreLayout, type LayoutDirection } from "@/components/diagram/layout";
 import { getTypesForTechnology } from "@/components/diagram/types-by-tech";
+import { TypePicker } from "@/components/diagram/type-picker";
 
 const nodeTypes: NodeTypes = { entity: EntityNode };
 
@@ -789,6 +790,7 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
         <EditEntityDialog
           entity={editingEntity}
           candidateEntities={view.entities}
+          systemTechnology={systemTechnology}
           onClose={() => setEditingEntity(null)}
           onSaved={() => {
             qc.invalidateQueries({ queryKey: ["getDiagram", systemId] });
@@ -1057,16 +1059,12 @@ function QuickAddEntityDialog({
                           />
                         </td>
                         <td className="p-1">
-                          <select
+                          <TypePicker
                             value={r.type}
-                            onChange={(e) => updateRow(r.uid, { type: e.target.value })}
-                            className="h-7 text-xs rounded border bg-background px-1.5 font-mono w-full"
-                          >
-                            <option value="">— tipo —</option>
-                            {typeOptions.map((t) => (
-                              <option key={t} value={t}>{t}</option>
-                            ))}
-                          </select>
+                            onChange={(next) => updateRow(r.uid, { type: next })}
+                            technology={systemTechnology}
+                            size="compact"
+                          />
                         </td>
                         <td className="p-1 text-center">
                           <input
@@ -1555,11 +1553,13 @@ function relationshipToEdge(r: DiagramRelationship): Edge {
 function EditEntityDialog({
   entity,
   candidateEntities,
+  systemTechnology,
   onClose,
   onSaved,
 }: {
   entity: DiagramEntity;
   candidateEntities: DiagramEntity[];
+  systemTechnology?: string | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -1688,6 +1688,7 @@ function EditEntityDialog({
             <AttributesEditor
               entityId={entity.entity_id}
               systemId={entity.system_id}
+              systemTechnology={systemTechnology}
               candidateEntities={candidateEntities}
               onChanged={() => qc.invalidateQueries({ queryKey: ["getDiagram"] })}
             />
@@ -1712,11 +1713,13 @@ function EditEntityDialog({
 function AttributesEditor({
   entityId,
   systemId,
+  systemTechnology,
   candidateEntities,
   onChanged,
 }: {
   entityId: string;
   systemId: string;
+  systemTechnology?: string | null;
   candidateEntities: DiagramEntity[];
   onChanged: () => void;
 }) {
@@ -1868,13 +1871,12 @@ function AttributesEditor({
               className="h-8 text-xs"
             />
           </div>
-          <div className="flex-1 min-w-[100px]">
+          <div className="flex-1 min-w-[180px]">
             <label className="text-[10px] uppercase tracking-wider text-muted-foreground block">Tipo</label>
-            <Input
+            <TypePicker
               value={newType}
-              onChange={(e) => setNewType(e.target.value)}
-              placeholder="STRING"
-              className="h-8 text-xs"
+              onChange={setNewType}
+              technology={systemTechnology}
             />
           </div>
           <label className="flex items-center gap-1 text-xs">
