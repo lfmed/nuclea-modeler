@@ -29,7 +29,10 @@ CREATE TABLE IF NOT EXISTS lakebase_sandboxes (
 )
 USING DELTA
 COMMENT 'Sandboxes Lakebase Postgres usados para validação de modelos (round-trip)'
-TBLPROPERTIES (delta.enableChangeDataFeed = true);
+TBLPROPERTIES (
+    'delta.feature.allowColumnDefaults' = 'supported',
+    'delta.enableChangeDataFeed' = true
+);
 
 -- ---------------------------------------------------------------------------
 -- 22) extractions — Histórico de execuções de engenharia reversa
