@@ -76,6 +76,59 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
         return response
 
 
+# ─── Raw ASGI connection logger (diagnostics, opt-in) ───────────────────────
+
+
+class RawAsgiLogMiddleware:
+    """Outermost *pure ASGI* logger — gated by `NUCLEA_RAW_ASGI_LOG`.
+
+    Logs the raw scope of every connection that reaches the ASGI app (before any
+    HTTP middleware/routing) plus the response status. Unlike the normal access
+    log, this surfaces `http_version` and `scheme`, which is the signal needed to
+    diagnose "App unavailable" while uvicorn is up: e.g. a health probe hitting
+    "/" and getting 404, or a proxy speaking HTTP/2 to an HTTP/1.1 server.
+
+    Note: requests that uvicorn rejects as malformed ("Invalid HTTP request
+    received") never reach ASGI, so they won't appear here — but every *valid*
+    request (including platform health checks) will, with its status.
+
+    Off by default (zero overhead). Enable by setting NUCLEA_RAW_ASGI_LOG=true
+    in the app env, then redeploy.
+    """
+
+    def __init__(self, app):
+        self.app = app
+        self._enabled = os.getenv("NUCLEA_RAW_ASGI_LOG", "").lower() in ("true", "1", "yes")
+        self._log = logging.getLogger("nuclea-modeler")
+
+    async def __call__(self, scope, receive, send):
+        if not self._enabled or scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+
+        client = scope.get("client")
+        client_str = f"{client[0]}:{client[1]}" if client else "?"
+        self._log.info(
+            "[raw-asgi] IN %s %s http=%s scheme=%s client=%s",
+            scope.get("method"), scope.get("path"),
+            scope.get("http_version"), scope.get("scheme"), client_str,
+        )
+
+        status: dict = {}
+
+        async def _send(message):
+            if message.get("type") == "http.response.start":
+                status["code"] = message.get("status")
+            await send(message)
+
+        try:
+            await self.app(scope, receive, _send)
+        finally:
+            self._log.info(
+                "[raw-asgi] OUT %s -> status=%s", scope.get("path"), status.get("code"),
+            )
+
+
 # ─── JSON log formatter ─────────────────────────────────────────────────────
 
 

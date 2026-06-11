@@ -37,7 +37,7 @@ import os
 from fastapi.middleware.cors import CORSMiddleware
 
 from .core.exceptions import install_exception_handlers
-from .core.logging import RequestIdMiddleware, configure_logging
+from .core.logging import RawAsgiLogMiddleware, RequestIdMiddleware, configure_logging
 from .core.metrics import MetricsMiddleware
 from .core.security import RateLimitMiddleware, SecurityHeadersMiddleware
 from .search.router import router as search_router
@@ -91,6 +91,12 @@ app.add_middleware(AuditMiddleware)
 app.add_middleware(RateLimitMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RequestIdMiddleware)
+
+# Raw ASGI logger — OUTERMOST (added last = runs first). Off unless
+# NUCLEA_RAW_ASGI_LOG=true. When on, logs every valid connection's raw scope
+# (http_version/scheme/client/path) + response status, before any other
+# middleware. Diagnostic for "App unavailable" while uvicorn is up.
+app.add_middleware(RawAsgiLogMiddleware)
 
 # CORS — only needed if the frontend ever runs on a different origin than the
 # API. Today the UI is served from the same FastAPI process, so same-origin

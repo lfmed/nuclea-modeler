@@ -1,0 +1,9 @@
+# O build do Vite (assets/, *.js, *.css, *.map) é gerado em dev/deploy e NÃO
+# deve ser versionado. MAS o stub index.html PRECISA ser versionado: sem ele,
+# deploys via git/bundle chegam com __dist__ vazio, a rota "/" retorna 404 e o
+# Databricks Apps marca o app como "App unavailable" (uvicorn sobe normal, mas
+# o health check na raiz falha). Vide app.yml (vite build é skip sem node_modules).
+assets/
+*.js
+*.css
+*.map
