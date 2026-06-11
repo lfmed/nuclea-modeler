@@ -13,8 +13,11 @@ command:
     ls -la src/nuclea_modeler/__dist__/ 2>/dev/null || true;
     echo '[NUCLEA] Running migrations (pre-uvicorn, single shot)...';
     PYTHONPATH=src python -m scripts.run_migrations || { echo '[NUCLEA] Migrations failed; abortando.'; exit 1; };
-    echo "[NUCLEA] Starting uvicorn on port ${DATABRICKS_APP_PORT:-8000}...";
-    exec uvicorn nuclea_modeler.backend.app:app --host 0.0.0.0 --port ${DATABRICKS_APP_PORT:-8000} --workers 2 --app-dir src --proxy-headers --forwarded-allow-ips '*'
+    PORT=${DATABRICKS_APP_PORT:-8000};
+    echo "[NUCLEA] ENV: PORT=$PORT CATALOG=${NUCLEA_CATALOG:-?} SCHEMA=${NUCLEA_SCHEMA:-?} WAREHOUSE=${NUCLEA_WAREHOUSE_ID:-?}";
+    ( sleep 12; echo "[NUCLEA] self-probe -> http://localhost:$PORT/"; python -c "import urllib.request; r=urllib.request.urlopen('http://localhost:$PORT/',timeout=5); print('[NUCLEA] self-probe OK: HTTP',r.status,'len',len(r.read()))" 2>&1 || echo "[NUCLEA] self-probe FALHOU: uvicorn nao respondeu localmente em $PORT" ) &
+    echo "[NUCLEA] Starting uvicorn on port $PORT (log-level ${UVICORN_LOG_LEVEL:-info})...";
+    exec uvicorn nuclea_modeler.backend.app:app --host 0.0.0.0 --port $PORT --workers 2 --app-dir src --proxy-headers --forwarded-allow-ips '*' --log-level ${UVICORN_LOG_LEVEL:-info}
 
 # ─── Recursos do app ────────────────────────────────────────────────────────
 # Esses blocos concedem permissões ao Service Principal do app via OAuth M2M.
