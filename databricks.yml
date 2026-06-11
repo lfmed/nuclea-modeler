@@ -25,6 +25,10 @@ sync:
     - requirements.txt
     - README.md
     - src/**
+    # databricks/sql/*.sql são lidos pelo migrations runner em runtime
+    # (find_migrations_dir). Sem isso, `bundle deploy` não envia os .sql e o
+    # schema nunca é criado ("directory not found; skipping").
+    - databricks/**
 
 resources:
   apps:

@@ -882,7 +882,7 @@ env:
           <div class="substep">Durante o deploy o container roda 3 etapas:</div>
           <ol>
             <li><b>vite build</b> — gera o bundle React em <code>src/nuclea_modeler/__dist__/</code></li>
-            <li><b>python -m scripts.run_migrations</b> — aplica as 12 migrations SQL em ordem (cria schema, tabelas, seeds)</li>
+            <li><b>python -m scripts.run_migrations</b> — aplica as 13 migrations SQL em ordem (cria schema, tabelas, seeds)</li>
             <li><b>uvicorn</b> — sobe o servidor FastAPI (2 workers, porta 8000)</li>
           </ol>
         </li>
@@ -901,7 +901,7 @@ env:
           <ul>
             <li><code>[NUCLEA] Building UI...</code></li>
             <li><code>[NUCLEA] Running migrations</code></li>
-            <li><code>summary: {'applied': 12, 'skipped': 0, ...}</code> — 12 migrations aplicadas no deploy limpo</li>
+            <li><code>summary: {'applied': 13, 'skipped': 0, ...}</code> — 13 migrations aplicadas no deploy limpo</li>
             <li><code>Application startup complete</code> — uvicorn pronto</li>
           </ul>
         </li>
