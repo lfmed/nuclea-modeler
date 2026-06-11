@@ -62,7 +62,6 @@ Aplicação full-stack (FastAPI + React, via [APX](https://github.com/databricks
 .
 ├── docs/
 │   ├── spec/                 # Especificação funcional autoritativa
-│   ├── prompts/              # Prompt Registry — histórico por fase
 │   └── adr/                  # Architecture Decision Records
 ├── src/
 │   └── nuclea_modeler/
@@ -208,8 +207,6 @@ Frontend consome via `useFeatures()` em `ui/lib/features.ts`.
 - 🚀 **Comece aqui:** [`docs/tutorial/getting-started.md`](docs/tutorial/getting-started.md) — primeiro dia em 20min
 - 🏗️ Arquitetura (Mermaid): [`docs/architecture/system.md`](docs/architecture/system.md)
 - 📋 Spec funcional: [`docs/spec/`](docs/spec/)
-- 🛠️ Plano de execução: [`docs/prompts/01-plano-militar.md`](docs/prompts/01-plano-militar.md)
-- 🗒️ Prompt registry: [`docs/prompts/`](docs/prompts/)
 - 🏛️ Decisões: [`docs/adr/`](docs/adr/)
 - 🎯 Roteiro de demo para arquiteto: [`docs/demo/jornada-arquiteto-de-dados.html`](docs/demo/jornada-arquiteto-de-dados.html)
 - 🔧 Receitas curl da API: [`docs/api/RECIPES.md`](docs/api/RECIPES.md)

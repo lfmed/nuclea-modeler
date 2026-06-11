@@ -70,3 +70,6 @@ logs/
 *.DM1
 *.dm1
 *.erx
+
+# Prompt Registry — histórico de prompts do autor, mantido só local
+docs/prompts/
