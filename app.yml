@@ -14,7 +14,7 @@ command:
     echo '[NUCLEA] Running migrations (pre-uvicorn, single shot)...';
     PYTHONPATH=src python -m scripts.run_migrations || { echo '[NUCLEA] Migrations failed; abortando.'; exit 1; };
     echo "[NUCLEA] Starting uvicorn on port ${DATABRICKS_APP_PORT:-8000}...";
-    exec uvicorn nuclea_modeler.backend.app:app --host 0.0.0.0 --port ${DATABRICKS_APP_PORT:-8000} --workers 2 --app-dir src
+    exec uvicorn nuclea_modeler.backend.app:app --host 0.0.0.0 --port ${DATABRICKS_APP_PORT:-8000} --workers 2 --app-dir src --proxy-headers --forwarded-allow-ips '*'
 
 # App resources — concede ao service principal do app o scope SQL no token OAuth.
 # Sem essa declaração o app SP cai em PAT-auth e não tem permissão sql.
