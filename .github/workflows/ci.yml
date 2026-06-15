@@ -79,9 +79,9 @@ jobs:
 
       - name: Upload coverage XML
         # Artifact único por job da matrix (precisa nome distinto para
-        # actions/upload-artifact@v4 não rejeitar colisão).
+        # actions/upload-artifact@v7 não rejeitar colisão).
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-xml-py${{ matrix.python }}
           path: coverage.xml
@@ -150,7 +150,7 @@ jobs:
 
       - name: TruffleHog (PR — diff against base)
         if: github.event_name == 'pull_request'
-        uses: trufflesecurity/trufflehog@v3.95.3
+        uses: trufflesecurity/trufflehog@v3.95.5
         with:
           path: ./
           base: ${{ github.event.pull_request.base.sha }}
@@ -159,7 +159,7 @@ jobs:
 
       - name: TruffleHog (push — full scan)
         if: github.event_name == 'push'
-        uses: trufflesecurity/trufflehog@v3.95.3
+        uses: trufflesecurity/trufflehog@v3.95.5
         with:
           path: ./
           extra_args: --only-verified
