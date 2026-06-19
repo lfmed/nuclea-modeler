@@ -27,6 +27,13 @@ Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 - **Extração de FK no DDL** — constraints inline (`col REFERENCES …`) e
   table-level (`CONSTRAINT … FOREIGN KEY … REFERENCES …`), incluindo FKs
   cross-schema.
+- **Log de falha de import estruturado** — o resultado e o detalhe da extração
+  passam a separar **problemas** (perda de dados: entity/atributo sem nome
+  ignorado, FK órfã, tipo desconhecido, erro de parse) de **avisos
+  informativos**, formatados em markdown no `summary_md`. O `error_summary`
+  persistido deixa de ser truncado em 500 chars (até 4000). Import de Embarcadero
+  com perda de dados agora marca status **PARTIAL** (antes sempre SUCCESS),
+  sinalizando que o log deve ser revisado.
 
 ### Security 🔒
 - **RBAC em sistemas** — `createSystem`/`updateSystem` exigem
