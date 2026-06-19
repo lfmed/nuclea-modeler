@@ -40,6 +40,14 @@ Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 - **UI: checklist de pré-requisitos** nos formulários de import (DDL e
   Embarcadero) — mostra o que falta (sistema-alvo, DDL/arquivo, dialeto) antes de
   liberar a importação.
+- **Segregação por schema + múltiplos diagramas (M6, fatia 1+2)** — schema vira
+  entidade de 1ª classe (tabela `schemas`) e cada schema pode ter vários
+  diagramas (tabelas `diagrams` + `diagram_entities`). Migration `014` é
+  **aditiva e não-destrutiva** (não toca em `entities` — relação derivada por
+  JOIN na chave natural `(system_id, schema_name)`; validada contra a warehouse:
+  zero perda de dados, idempotente). Backend CRUD: `/api/schemas` e
+  `/api/diagrams` (+ membership e layout), com RBAC nas mutações. Sidebar em
+  árvore e multi-diagrama no canvas vêm nas próximas fatias.
 
 ### Security 🔒
 - **RBAC em sistemas** — `createSystem`/`updateSystem` exigem
