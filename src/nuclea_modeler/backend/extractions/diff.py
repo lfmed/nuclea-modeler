@@ -6,13 +6,76 @@ em ~1200 linhas. Aqui só a função de diff; comportamento idêntico.
 """
 from __future__ import annotations
 
+import hashlib
 from typing import Any
 
 from ..core import delta
 from ..core._nuclea_config import get_settings
 from ..core.sql import Sql
 from ..tickets.models import DiffEntity, TicketDiff
-from .models import ExtractionSnapshot
+from .models import ExtractedRelationship, ExtractionSnapshot
+
+# Schema sentinela que marca uma DiffEntity como relacionamento sintético —
+# consumido por tickets.service._apply_relationship_change.
+RELATIONSHIP_SCHEMA = "__relationship__"
+
+
+def deterministic_relationship_id(
+    system_id: str,
+    parent_key: tuple[str, str],
+    child_key: tuple[str, str],
+    child_columns: list[str],
+) -> str:
+    """ID estável p/ um FK extraído — re-importar o mesmo FK dá o mesmo id
+    (apply é idempotente por relationship_id), evitando duplicatas."""
+    raw = "|".join([
+        system_id,
+        f"{parent_key[0]}.{parent_key[1]}",
+        f"{child_key[0]}.{child_key[1]}",
+        ",".join(sorted(child_columns)),
+    ])
+    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+    return f"rel-{digest}"
+
+
+def _build_relationship_entry(
+    system_id: str, rel: ExtractedRelationship, origin: str
+) -> DiffEntity:
+    """Constrói a DiffEntity sintética de um relacionamento extraído.
+
+    As entities source/target são referenciadas por NOME (resolvidas no apply,
+    após as entities serem materializadas)."""
+    parent_key = (rel.parent_schema, rel.parent_entity)
+    child_key = (rel.child_schema, rel.child_entity)
+    rid = deterministic_relationship_id(
+        system_id, parent_key, child_key, rel.child_columns
+    )
+    return DiffEntity(
+        op="add",
+        schema_name=RELATIONSHIP_SCHEMA,
+        technical_name=rid,
+        payload={
+            "system_id": system_id,
+            "rel_type": rel.rel_type,
+            "origin": origin,
+            "fk_update_rule": rel.fk_update_rule,
+            "fk_delete_rule": rel.fk_delete_rule,
+            "description": (
+                f"FK {rel.constraint_name}" if rel.constraint_name else None
+            ),
+            # Refs por nome — resolvidas no apply:
+            "source_ref": {
+                "schema_name": rel.parent_schema,
+                "technical_name": rel.parent_entity,
+                "attr_names": rel.parent_columns,
+            },
+            "target_ref": {
+                "schema_name": rel.child_schema,
+                "technical_name": rel.child_entity,
+                "attr_names": rel.child_columns,
+            },
+        },
+    )
 
 
 def _quote_id(value: str | None) -> str:
@@ -129,11 +192,25 @@ def compute_diff_against_catalog(
                 )
             )
 
+    # Relationships (FKs) extraídos — emitidos como entries sintéticas.
+    # São sempre "add" idempotente (mesmo FK → mesmo id → skip no apply).
+    origin = {
+        "EMBARCADERO": "EXTRACTED",
+        "DDL_FILE": "EXTRACTED",
+        "LAKEBASE": "EXTRACTED",
+        "UC": "EXTRACTED",
+    }.get(snapshot.source_kind, "EXTRACTED")
+    rel_count = 0
+    for rel in snapshot.relationships:
+        diff_entries.append(_build_relationship_entry(system_id, rel, origin))
+        rel_count += 1
+
     summary = {
         "found": len(snapshot.entities),
         "new": additions,
         "changed": changes,
         "removed": removals,
+        "relationships": rel_count,
     }
     diff = TicketDiff(
         entities=diff_entries,

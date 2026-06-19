@@ -96,6 +96,30 @@ class ExtractedEntity(BaseModel):
     indexes: list[ExtractedIndex] = Field(default_factory=list)
 
 
+class ExtractedRelationship(BaseModel):
+    """Um relacionamento (FK) extraído de uma fonte.
+
+    Convenção de direção (alinhada com a tabela ``relationships``):
+    - ``parent`` = tabela referenciada (lado PK / "um") → vira ``source_entity``.
+    - ``child``  = tabela que segura a FK (lado "muitos")  → vira ``target_entity``.
+
+    As colunas são guardadas por NOME (técnico). A resolução para
+    ``entity_id``/``attribute_id`` acontece no apply do ticket, depois que as
+    entities já foram materializadas.
+    """
+
+    parent_schema: str
+    parent_entity: str
+    parent_columns: list[str] = Field(default_factory=list)  # colunas referenciadas (PK)
+    child_schema: str
+    child_entity: str
+    child_columns: list[str] = Field(default_factory=list)  # colunas FK locais
+    rel_type: str = "1:N"
+    constraint_name: str | None = None
+    fk_update_rule: str | None = None
+    fk_delete_rule: str | None = None
+
+
 class ExtractionSnapshot(BaseModel):
     source_kind: SourceKind
     sandbox_id: str | None = None
@@ -104,6 +128,7 @@ class ExtractionSnapshot(BaseModel):
     captured_at: datetime
     schemas: list[str] = Field(default_factory=list)
     entities: list[ExtractedEntity] = Field(default_factory=list)
+    relationships: list[ExtractedRelationship] = Field(default_factory=list)
 
 
 class ExtractionListOut(BaseModel):

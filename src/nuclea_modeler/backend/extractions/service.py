@@ -28,11 +28,44 @@ from .models import (
     ExtractedEntity,
     ExtractedIndex,
     ExtractedIndexColumn,
+    ExtractedRelationship,
     ExtractionResult,
     ExtractionSnapshot,
 )
 
 log = logging.getLogger(__name__)
+
+
+def _ddl_reference_to_rel(
+    ref, child_schema: str, child_table: str, child_cols: list[str]
+) -> ExtractedRelationship | None:
+    """Converte um nó sqlglot exp.Reference (FK inline ou table-level) em
+    ExtractedRelationship. parent = tabela referenciada (PK); child = tabela
+    sendo definida (segura a FK). Defensivo: retorna None se não der pra
+    resolver a tabela referenciada."""
+    from sqlglot import expressions as exp
+
+    sch = ref.this
+    if isinstance(sch, exp.Schema):
+        rtbl = sch.this
+        parent_cols = [c.name for c in sch.expressions if hasattr(c, "name")]
+    elif isinstance(sch, exp.Table):
+        rtbl = sch
+        parent_cols = []
+    else:
+        return None
+    if rtbl is None or not getattr(rtbl, "name", ""):
+        return None
+    parent_schema = (rtbl.db if getattr(rtbl, "db", "") else None) or child_schema
+    return ExtractedRelationship(
+        parent_schema=parent_schema,
+        parent_entity=rtbl.name,
+        parent_columns=parent_cols,
+        child_schema=child_schema,
+        child_entity=child_table,
+        child_columns=child_cols,
+        rel_type="1:N",
+    )
 
 
 def _quote_id(value: str) -> str:
@@ -350,7 +383,7 @@ def run_lakebase_extraction(
 
         ended = datetime.utcnow()
         duration_ms = int((time.monotonic() - start_clock) * 1000)
-        has_changes = summary["new"] + summary["changed"] + summary["removed"] > 0
+        has_changes = summary["new"] + summary["changed"] + summary["removed"] + summary.get("relationships", 0) > 0
 
         ticket_id: str | None = None
         if has_changes and open_ticket_on_diff:
@@ -478,44 +511,66 @@ def run_ddl_import(
         )
 
     entities: list[ExtractedEntity] = []
+    relationships: list[ExtractedRelationship] = []
     errors: list[str] = []
     for stmt in parsed:
         if stmt is None:
             continue
         try:
             if isinstance(stmt, exp.Create) and stmt.kind and stmt.kind.upper() in ("TABLE", "VIEW"):
-                tbl = stmt.this
-                tbl_name = tbl.this.name if hasattr(tbl, "this") and hasattr(tbl.this, "name") else (tbl.name if hasattr(tbl, "name") else "")
-                schema_name = (tbl.this.args.get("db").name if hasattr(tbl, "this") and tbl.this.args.get("db") else None) or "public"
+                # stmt.this é um exp.Schema (Table + ColumnDefs + Constraints).
+                # ATENÇÃO: as colunas vivem em stmt.this.expressions — NÃO em
+                # stmt.expressions (que é sempre vazio). O código antigo lia o
+                # atributo errado e por isso não extraía coluna nenhuma do DDL.
+                schema_obj = stmt.this
+                table_obj = schema_obj.this if hasattr(schema_obj, "this") else schema_obj
+                tbl_name = table_obj.name if hasattr(table_obj, "name") else ""
+                schema_name = (
+                    table_obj.db if getattr(table_obj, "db", "") else None
+                ) or "public"
 
                 attributes: list[ExtractedAttribute] = []
                 pk_cols: set[str] = set()
-                # Look for inline PK constraints
-                if hasattr(stmt, "expressions"):
-                    for col_expr in stmt.expressions or []:
-                        if isinstance(col_expr, exp.ColumnDef):
-                            name = col_expr.this.name if col_expr.this else ""
-                            dtype = col_expr.args.get("kind")
-                            native = dtype.sql() if dtype else ""
-                            is_nullable = True
-                            for cons in (col_expr.args.get("constraints") or []):
-                                if isinstance(cons.args.get("kind"), exp.PrimaryKeyColumnConstraint):
-                                    pk_cols.add(name)
-                                if isinstance(cons.args.get("kind"), exp.NotNullColumnConstraint):
-                                    is_nullable = False
-                            attributes.append(
-                                ExtractedAttribute(
-                                    technical_name=name,
-                                    ordinal_position=len(attributes) + 1,
-                                    native_data_type=native,
-                                    is_nullable=is_nullable,
-                                    is_primary_key=False,  # set below from pk_cols
-                                )
-                            )
+                col_defs = schema_obj.expressions if hasattr(schema_obj, "expressions") else []
+                for col_expr in (col_defs or []):
+                    if not isinstance(col_expr, exp.ColumnDef):
+                        continue
+                    name = col_expr.this.name if col_expr.this else ""
+                    dtype = col_expr.args.get("kind")
+                    native = dtype.sql() if dtype else ""
+                    is_nullable = True
+                    for cons in (col_expr.args.get("constraints") or []):
+                        kind = cons.args.get("kind")
+                        if isinstance(kind, exp.PrimaryKeyColumnConstraint):
+                            pk_cols.add(name)
+                        if isinstance(kind, exp.NotNullColumnConstraint):
+                            is_nullable = False
+                        # FK inline: `col INT REFERENCES outra(col)`
+                        if isinstance(kind, exp.Reference):
+                            rel = _ddl_reference_to_rel(kind, schema_name, tbl_name, [name])
+                            if rel:
+                                relationships.append(rel)
+                    attributes.append(
+                        ExtractedAttribute(
+                            technical_name=name,
+                            ordinal_position=len(attributes) + 1,
+                            native_data_type=native,
+                            is_nullable=is_nullable,
+                            is_primary_key=False,  # set below from pk_cols
+                        )
+                    )
                 # Mark PKs
                 for attr in attributes:
                     if attr.technical_name in pk_cols:
                         attr.is_primary_key = True
+                # FK table-level: `CONSTRAINT ... FOREIGN KEY (...) REFERENCES ...`
+                for fk in schema_obj.find_all(exp.ForeignKey):
+                    local_cols = [c.name for c in fk.expressions if hasattr(c, "name")]
+                    ref = fk.args.get("reference")
+                    if ref is not None:
+                        rel = _ddl_reference_to_rel(ref, schema_name, tbl_name, local_cols)
+                        if rel:
+                            relationships.append(rel)
                 entities.append(
                     ExtractedEntity(
                         schema_name=schema_name,
@@ -534,11 +589,12 @@ def run_ddl_import(
         captured_at=datetime.utcnow(),
         schemas=sorted({e.schema_name for e in entities}),
         entities=entities,
+        relationships=relationships,
     )
     diff, summary = compute_diff_against_catalog(sql, system_id, snapshot)
     ended = datetime.utcnow()
     duration_ms = int((time.monotonic() - start_clock) * 1000)
-    has_changes = summary["new"] + summary["changed"] + summary["removed"] > 0
+    has_changes = summary["new"] + summary["changed"] + summary["removed"] + summary.get("relationships", 0) > 0
     ticket_id: str | None = None
     if has_changes and open_ticket_on_diff:
         ticket_id = open_ticket(
@@ -663,7 +719,7 @@ def run_embarcadero_import(
     diff, summary = compute_diff_against_catalog(sql, system_id, snapshot)
     ended = datetime.utcnow()
     duration_ms = int((time.monotonic() - start_clock) * 1000)
-    has_changes = summary["new"] + summary["changed"] + summary["removed"] > 0
+    has_changes = summary["new"] + summary["changed"] + summary["removed"] + summary.get("relationships", 0) > 0
 
     ticket_id: str | None = None
     if has_changes and open_ticket_on_diff:
@@ -913,7 +969,7 @@ def run_uc_extraction(
         diff, summary = compute_diff_against_catalog(sql, system_id, snapshot)
         ended = datetime.utcnow()
         duration_ms = int((time.monotonic() - start_clock) * 1000)
-        has_changes = summary["new"] + summary["changed"] + summary["removed"] > 0
+        has_changes = summary["new"] + summary["changed"] + summary["removed"] + summary.get("relationships", 0) > 0
 
         ticket_id: str | None = None
         if has_changes and open_ticket_on_diff:

@@ -21,6 +21,7 @@ from .models import (
     ExtractedEntity,
     ExtractedIndex,
     ExtractedIndexColumn,
+    ExtractedRelationship,
     ExtractionSnapshot,
 )
 
@@ -285,6 +286,10 @@ def parse_dm1(text: str, system_id: str) -> tuple[ExtractionSnapshot, list[str]]
 
     # Index entity name por EntityId pra resolver FKs
     entity_name_by_id: dict[str, str] = {}
+    # EntityId -> (schema, technical_name) pra resolver as duas pontas do FK
+    entity_key_by_id: dict[str, tuple[str, str]] = {}
+    # EntityId -> {AttributeId: attr_name} pra resolver colunas do FK (quando houver)
+    attr_name_by_id: dict[str, dict[str, str]] = {}
     unknown_types: set[int] = set()
     entities: list[ExtractedEntity] = []
 
@@ -302,6 +307,7 @@ def parse_dm1(text: str, system_id: str) -> tuple[ExtractionSnapshot, list[str]]
         # — ER/Studio usa por convenção quando não configurado.
         owner_id = e.get("OwnerId", "")
         schema = strings.get(owner_id, "").strip() or "dbo"
+        entity_key_by_id[eid] = (schema, physical)
 
         definition = strings.get(e.get("DefinitionId", ""), "").strip() or None
 
@@ -318,6 +324,7 @@ def parse_dm1(text: str, system_id: str) -> tuple[ExtractionSnapshot, list[str]]
                     f"attribute sem nome (EntityId={eid}, AttributeId={aid}) — ignorado"
                 )
                 continue
+            attr_name_by_id.setdefault(eid, {})[aid] = attr_name
             if attr_name in seen_attr_names:
                 continue
             seen_attr_names.add(attr_name)
@@ -358,23 +365,42 @@ def parse_dm1(text: str, system_id: str) -> tuple[ExtractionSnapshot, list[str]]
             )
         )
 
-    # Relationships: emitidas como warnings (parser ainda não persiste
-    # estruturalmente — alinhado com comportamento anterior do .erx).
+    # Relationships (FKs): agora extraídos estruturalmente e persistidos.
+    # Parent = lado referenciado (PK / "um") → source; Child = lado FK → target.
+    relationships: list[ExtractedRelationship] = []
     rel_count = 0
+    rel_orphans = 0
     for fk in fks_raw:
         parent_id = fk.get("ParentEntityId", "")
         child_id = fk.get("ChildEntityId", "")
-        parent_name = entity_name_by_id.get(parent_id, f"<{parent_id}>")
-        child_name = entity_name_by_id.get(child_id, f"<{child_id}>")
-        if parent_id and child_id:
-            rel_count += 1
-            warnings.append(f"relationship detected: {parent_name} → {child_name}")
+        if not (parent_id and child_id):
+            continue
+        parent_key = entity_key_by_id.get(parent_id)
+        child_key = entity_key_by_id.get(child_id)
+        if not parent_key or not child_key:
+            # FK aponta pra entity que não foi parseada — registra e segue.
+            rel_orphans += 1
+            warnings.append(
+                f"FK ignorada: entity não encontrada "
+                f"(ParentEntityId={parent_id}, ChildEntityId={child_id})"
+            )
+            continue
+        relationships.append(
+            ExtractedRelationship(
+                parent_schema=parent_key[0],
+                parent_entity=parent_key[1],
+                child_schema=child_key[0],
+                child_entity=child_key[1],
+                rel_type="1:N",
+                constraint_name=strings.get(fk.get("FKNameId", ""), "").strip() or None,
+            )
+        )
+        rel_count += 1
 
     if rel_count:
-        warnings.insert(
-            0,
-            f"{rel_count} relacionamento(s) detectado(s) — não persistidos nesta versão",
-        )
+        warnings.insert(0, f"{rel_count} relacionamento(s) extraído(s) e incluído(s) no diff")
+    if rel_orphans:
+        warnings.insert(1, f"{rel_orphans} FK(s) ignorada(s) por entity ausente")
 
     if unknown_types:
         warnings.append(
@@ -405,5 +431,6 @@ def parse_dm1(text: str, system_id: str) -> tuple[ExtractionSnapshot, list[str]]
         captured_at=datetime.utcnow(),
         schemas=sorted({e.schema_name for e in deduped.values()}),
         entities=list(deduped.values()),
+        relationships=relationships,
     )
     return snapshot, warnings
