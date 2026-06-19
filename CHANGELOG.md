@@ -40,6 +40,9 @@ Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 - **UI: checklist de pré-requisitos** nos formulários de import (DDL e
   Embarcadero) — mostra o que falta (sistema-alvo, DDL/arquivo, dialeto) antes de
   liberar a importação.
+- **UI: Navegador em árvore (M6, fatia 3)** — nova tela `/explorer` com árvore
+  Sistema → Schema → Diagramas/Tabelas, com lazy-load por nó e contagens.
+  Clicar numa tabela abre seus atributos; clicar num diagrama abre o DER.
 - **Segregação por schema + múltiplos diagramas (M6, fatia 1+2)** — schema vira
   entidade de 1ª classe (tabela `schemas`) e cada schema pode ter vários
   diagramas (tabelas `diagrams` + `diagram_entities`). Migration `014` é

@@ -14,6 +14,7 @@ import {
   FileCode,
   Link2,
   Network,
+  FolderTree,
   TestTube2,
   User,
   Inbox,
@@ -65,6 +66,12 @@ function Layout() {
     {
       label: "Modelagem",
       items: [
+        {
+          to: "/explorer",
+          label: "Navegador",
+          icon: <FolderTree size={16} />,
+          match: (p) => p.startsWith("/explorer"),
+        },
         {
           to: "/diagram",
           label: "Diagrama (DER)",
