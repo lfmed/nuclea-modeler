@@ -347,6 +347,13 @@ function DDLTab() {
               required
             />
           </Field>
+          <PrereqChecklist
+            items={[
+              { label: "Sistema-alvo selecionado", ok: !!systemId },
+              { label: "Dialeto/tecnologia escolhido", ok: !!dialect },
+              { label: "DDL preenchido", ok: !!ddlText.trim() },
+            ]}
+          />
           <div className="flex justify-end">
             <Button type="submit" disabled={isPending || !ddlText.trim() || !systemId}>
               {isPending ? (
@@ -367,6 +374,30 @@ function DDLTab() {
         {result && <ResultPanel result={result} />}
       </CardContent>
     </Card>
+  );
+}
+
+function PrereqChecklist({ items }: { items: { label: string; ok: boolean }[] }) {
+  const missing = items.filter((i) => !i.ok);
+  return (
+    <div className="rounded-md border bg-muted/30 p-3 text-sm">
+      <p className="font-medium mb-2">Pré-requisitos da importação</p>
+      <ul className="space-y-1">
+        {items.map((i) => (
+          <li key={i.label} className="flex items-center gap-2">
+            <span className={i.ok ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}>
+              {i.ok ? "✓" : "•"}
+            </span>
+            <span className={i.ok ? "" : "text-muted-foreground"}>{i.label}</span>
+          </li>
+        ))}
+      </ul>
+      {missing.length > 0 && (
+        <p className="text-xs text-amber-700 dark:text-amber-400 mt-2">
+          Faltando para liberar a importação: {missing.map((m) => m.label).join(", ")}.
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -471,6 +502,13 @@ function EmbarcaderoTab() {
               <p className="text-xs text-destructive mt-1">{fileError}</p>
             )}
           </Field>
+          <PrereqChecklist
+            items={[
+              { label: "Sistema-alvo selecionado", ok: !!systemId },
+              { label: "Arquivo .DM1 carregado", ok: !!dm1Text && !!fileName },
+              { label: "Arquivo dentro do limite (50 MB)", ok: !fileError },
+            ]}
+          />
           <div className="flex justify-end">
             <Button type="submit" disabled={isPending || !dm1Text || !systemId || !!fileError}>
               {isPending ? (

@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import {
   useGetTicketSuspense,
   useApproveTicket,
+  useApproveAndApplyTicket,
   useRejectTicket,
   useApplyTicket,
   useReopenTicket,
@@ -174,6 +175,29 @@ function TicketDetail() {
       },
     },
   });
+  const { mutate: approveApply, isPending: approveApplying } = useApproveAndApplyTicket({
+    mutation: {
+      onSuccess: (result) => {
+        qc.invalidateQueries({ queryKey: ["getTicket", id] });
+        qc.invalidateQueries({ queryKey: ["listTickets"] });
+        qc.invalidateQueries({ queryKey: ["listEntities"] });
+        if (result.errors && result.errors.length > 0) {
+          toast.warning("Aprovado, mas com avisos na aplicação", {
+            description: result.errors.slice(0, 2).join("; "),
+          });
+        } else {
+          toast.success("Aprovado e aplicado", {
+            description: `${result.applied_entities} entidades · ${result.applied_attributes} atributos`,
+          });
+        }
+      },
+      onError: (err) => {
+        toast.error("Falha ao aprovar e aplicar", {
+          description: err instanceof Error ? err.message : "Falha desconhecida",
+        });
+      },
+    },
+  });
   const { mutate: reopen, isPending: reopening } = useReopenTicket({
     mutation: {
       onSuccess: () => {
@@ -189,6 +213,9 @@ function TicketDetail() {
   const [showRejectInput, setShowRejectInput] = useState(false);
 
   const canApprove = me.can_approve_tickets && ticket.status === "OPEN";
+  // Quem pode aplicar (Architect/Admin) resolve OPEN numa ação só — evita o
+  // ticket ficar preso em APPROVED sem nunca refletir no catálogo.
+  const canApproveAndApply = me.can_apply_tickets && ticket.status === "OPEN";
   const canReject = me.can_approve_tickets && ["OPEN", "APPROVED"].includes(ticket.status);
   const canApply = me.can_apply_tickets && ticket.status === "APPROVED";
   const canReopen = me.can_apply_tickets && ticket.status === "APPLIED";
@@ -219,6 +246,17 @@ function TicketDetail() {
             >
               <CheckCircle2 className="mr-2 h-4 w-4" />
               {approving ? "Aprovando..." : "Aprovar"}
+            </Button>
+          )}
+          {canApproveAndApply && (
+            <Button
+              onClick={() => approveApply({ ticketId: id })}
+              disabled={approveApplying}
+              className="bg-emerald-700 hover:bg-emerald-800 text-white"
+              title="Aprova e materializa as mudanças no catálogo numa única ação"
+            >
+              <PlayCircle className="mr-2 h-4 w-4" />
+              {approveApplying ? "Aplicando..." : "Aprovar e aplicar"}
             </Button>
           )}
           {canApply && (

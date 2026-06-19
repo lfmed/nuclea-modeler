@@ -1,9 +1,16 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Suspense, useState } from "react";
-import { QueryErrorResetBoundary } from "@tanstack/react-query";
+import { QueryErrorResetBoundary, useQueryClient } from "@tanstack/react-query";
 import { ErrorBoundary } from "react-error-boundary";
+import { toast } from "sonner";
 
-import { useListTicketsSuspense, type TicketStatus } from "@/lib/api";
+import {
+  useListTicketsSuspense,
+  useMyRolesSuspense,
+  useBatchTicketAction,
+  type TicketStatus,
+  type BatchAction,
+} from "@/lib/api";
 import selector from "@/lib/selector";
 
 import { Badge } from "@/components/ui/badge";
@@ -81,10 +88,61 @@ function TicketsList() {
   const [filter, setFilter] = useState<TicketStatus | "ALL">("OPEN");
   const params = filter === "ALL" ? {} : { status: filter };
   const { data: tickets } = useListTicketsSuspense(params, selector());
+  const { data: me } = useMyRolesSuspense(selector());
+  const qc = useQueryClient();
+
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const canSelect = me.can_approve_tickets || me.can_apply_tickets;
+
+  const toggle = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const clearSelection = () => setSelected(new Set());
+
+  const { mutate: runBatch, isPending: batching } = useBatchTicketAction({
+    mutation: {
+      onSuccess: (result) => {
+        qc.invalidateQueries({ queryKey: ["listTickets"] });
+        qc.invalidateQueries({ queryKey: ["listEntities"] });
+        clearSelection();
+        const desc = `${result.succeeded} ok · ${result.failed} com falha`;
+        if (result.failed > 0) {
+          const firstErr = result.results.find((r) => !r.ok && r.error)?.error;
+          toast.warning(`Lote: ${desc}`, { description: firstErr ?? undefined });
+        } else {
+          toast.success(`Lote concluído: ${desc}`);
+        }
+      },
+      onError: (err) =>
+        toast.error("Falha na ação em lote", {
+          description: err instanceof Error ? err.message : "Falha desconhecida",
+        }),
+    },
+  });
+
+  const ids = Array.from(selected);
+  const doBatch = (action: BatchAction, reason?: string) =>
+    runBatch({ data: { ticket_ids: ids, action, reason } });
 
   return (
     <div className="space-y-4">
       <FilterTabs current={filter} onChange={setFilter} />
+
+      {canSelect && selected.size > 0 && (
+        <BatchBar
+          count={selected.size}
+          busy={batching}
+          canApprove={me.can_approve_tickets}
+          canApply={me.can_apply_tickets}
+          onClear={clearSelection}
+          onAction={doBatch}
+        />
+      )}
+
       {tickets.length === 0 ? (
         <EmptyState filter={filter} />
       ) : (
@@ -92,39 +150,120 @@ function TicketsList() {
           <CardContent className="p-0">
             <div className="divide-y">
               {tickets.map((t) => (
-                <Link
+                <div
                   key={t.ticket_id}
-                  to="/tickets/$id"
-                  params={{ id: t.ticket_id }}
-                  className="flex items-start gap-4 p-4 hover:bg-muted/40 transition-colors"
+                  className="flex items-start gap-3 p-4 hover:bg-muted/40 transition-colors"
                 >
-                  <StatusBadge status={t.status} />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-2 mb-1">
-                      <h3 className="font-medium truncate">{t.title}</h3>
-                      <span className="text-xs text-muted-foreground shrink-0">
-                        {new Date(t.created_at).toLocaleString("pt-BR")}
-                      </span>
-                    </div>
-                    <p className="text-sm text-muted-foreground mb-2">
-                      Sistema: <strong>{t.system_name || t.system_id}</strong>
-                      <span className="mx-2">·</span>
-                      Fonte: <code className="text-xs">{t.source_type}</code>
-                      <span className="mx-2">·</span>
-                      por <span>{t.created_by}</span>
-                    </p>
-                    <DiffCounts
-                      additions={t.additions_count}
-                      removals={t.removals_count}
-                      changes={t.changes_count}
+                  {canSelect && (
+                    <input
+                      type="checkbox"
+                      className="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-nuclea-primary"
+                      checked={selected.has(t.ticket_id)}
+                      onChange={() => toggle(t.ticket_id)}
+                      aria-label={`Selecionar ticket ${t.title}`}
                     />
-                  </div>
-                </Link>
+                  )}
+                  <Link
+                    to="/tickets/$id"
+                    params={{ id: t.ticket_id }}
+                    className="flex items-start gap-4 flex-1 min-w-0"
+                  >
+                    <StatusBadge status={t.status} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <h3 className="font-medium truncate">{t.title}</h3>
+                        <span className="text-xs text-muted-foreground shrink-0">
+                          {new Date(t.created_at).toLocaleString("pt-BR")}
+                        </span>
+                      </div>
+                      <p className="text-sm text-muted-foreground mb-2">
+                        Sistema: <strong>{t.system_name || t.system_id}</strong>
+                        <span className="mx-2">·</span>
+                        Fonte: <code className="text-xs">{t.source_type}</code>
+                        <span className="mx-2">·</span>
+                        por <span>{t.created_by}</span>
+                      </p>
+                      <DiffCounts
+                        additions={t.additions_count}
+                        removals={t.removals_count}
+                        changes={t.changes_count}
+                      />
+                    </div>
+                  </Link>
+                </div>
               ))}
             </div>
           </CardContent>
         </Card>
       )}
+    </div>
+  );
+}
+
+function BatchBar({
+  count,
+  busy,
+  canApprove,
+  canApply,
+  onClear,
+  onAction,
+}: {
+  count: number;
+  busy: boolean;
+  canApprove: boolean;
+  canApply: boolean;
+  onClear: () => void;
+  onAction: (action: BatchAction, reason?: string) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/30 p-3">
+      <span className="text-sm font-medium">{count} selecionado(s)</span>
+      <div className="flex-1" />
+      {canApply && (
+        <Button
+          size="sm"
+          disabled={busy}
+          className="bg-emerald-700 hover:bg-emerald-800 text-white"
+          onClick={() => onAction("approve_and_apply")}
+        >
+          <PlayCircle className="mr-2 h-4 w-4" />
+          Aprovar e aplicar
+        </Button>
+      )}
+      {canApprove && (
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busy}
+          onClick={() => onAction("approve")}
+        >
+          <CheckCircle2 className="mr-2 h-4 w-4" />
+          Aprovar
+        </Button>
+      )}
+      {canApply && (
+        <Button size="sm" variant="outline" disabled={busy} onClick={() => onAction("apply")}>
+          <PlayCircle className="mr-2 h-4 w-4" />
+          Aplicar
+        </Button>
+      )}
+      {canApprove && (
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busy}
+          onClick={() => {
+            const reason = window.prompt("Motivo da rejeição em lote:");
+            if (reason && reason.trim()) onAction("reject", reason.trim());
+          }}
+        >
+          <XCircle className="mr-2 h-4 w-4" />
+          Rejeitar
+        </Button>
+      )}
+      <Button size="sm" variant="ghost" disabled={busy} onClick={onClear}>
+        Limpar
+      </Button>
     </div>
   );
 }

@@ -795,6 +795,59 @@ export const useApplyTicket = (
     ...opts?.mutation,
   });
 
+// NOTA: hooks abaixo adicionados à mão (espelhando o padrão do orval) porque o
+// codegen (refresh_openapi) não roda no ambiente atual. Rodar refresh_openapi
+// numa máquina com pypi liberado canoniza estas definições.
+
+export const useApproveAndApplyTicket = (
+  opts?: Opts<TicketApplyResult, { ticketId: string; note?: string }>,
+) =>
+  useMutation({
+    mutationFn: async ({ ticketId, note }) =>
+      (
+        await api.post<TicketApplyResult>(
+          `/tickets/${encodeURIComponent(ticketId)}/approve-apply`,
+          { note },
+        )
+      ).data,
+    ...opts?.mutation,
+  });
+
+export type BatchAction = "approve" | "reject" | "apply" | "approve_and_apply";
+
+export interface BatchTicketIn {
+  ticket_ids: string[];
+  action: BatchAction;
+  note?: string | null;
+  reason?: string | null;
+}
+
+export interface BatchTicketItemResult {
+  ticket_id: string;
+  ok: boolean;
+  status?: TicketStatus | null;
+  applied_entities: number;
+  applied_attributes: number;
+  error?: string | null;
+}
+
+export interface BatchTicketResult {
+  action: BatchAction;
+  total: number;
+  succeeded: number;
+  failed: number;
+  results: BatchTicketItemResult[];
+}
+
+export const useBatchTicketAction = (
+  opts?: Opts<BatchTicketResult, { data: BatchTicketIn }>,
+) =>
+  useMutation({
+    mutationFn: async ({ data }) =>
+      (await api.post<BatchTicketResult>("/tickets/batch", data)).data,
+    ...opts?.mutation,
+  });
+
 // ─── Sync (Módulo 9) ──────────────────────────────────────────────────────────
 
 export type SyncMode = "INCREMENTAL" | "FULL";
