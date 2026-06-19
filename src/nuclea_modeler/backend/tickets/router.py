@@ -13,6 +13,9 @@ from ..core.sql import SqlDependency
 from ..rbac.router import _current_email
 from ..rbac.service import TICKET_APPLIERS, TICKET_APPROVERS, require_role
 from .models import (
+    BatchTicketIn,
+    BatchTicketItemResult,
+    BatchTicketResult,
     TicketApplyIn,
     TicketApplyResult,
     TicketApprove,
@@ -147,19 +150,8 @@ def create_ticket(
     return get_ticket(tid, sql)
 
 
-@router.post(
-    "/{ticket_id}/approve",
-    response_model=TicketOut,
-    operation_id="approveTicket",
-)
-def approve(
-    ticket_id: str,
-    payload: TicketApprove,
-    sql: SqlDependency,
-    user_ws: Dependencies.UserClient,
-) -> TicketOut:
-    actor = _current_email(user_ws)
-    require_role(sql, actor, *TICKET_APPROVERS)
+def _do_approve(sql, ticket_id: str, actor: str, note: str | None) -> TicketOut:
+    """Marca um ticket OPEN como APPROVED. Levanta 409 se não estiver OPEN."""
     s = get_settings()
     current = get_ticket(ticket_id, sql)
     if current.status != "OPEN":
@@ -174,10 +166,72 @@ def approve(
             "status": "APPROVED",
             "approved_at": now,
             "approved_by": actor,
-            "summary_md": (current.summary_md or "") + (f"\n\n_Approval note: {payload.note}_" if payload.note else ""),
+            "summary_md": (current.summary_md or "") + (f"\n\n_Approval note: {note}_" if note else ""),
         },
     )
     return get_ticket(ticket_id, sql)
+
+
+def _do_reject(sql, ticket_id: str, actor: str, reason: str) -> TicketOut:
+    """Marca um ticket OPEN/APPROVED como REJECTED. Levanta 409 caso contrário."""
+    current = get_ticket(ticket_id, sql)
+    if current.status not in ("OPEN", "APPROVED"):
+        raise HTTPException(409, f"cannot reject ticket in status {current.status}")
+    s = get_settings()
+    now = datetime.utcnow()
+    delta.update_by_id(
+        sql,
+        s.fq_table("reconciliation_tickets"),
+        "ticket_id",
+        ticket_id,
+        {
+            "status": "REJECTED",
+            "rejected_at": now,
+            "rejected_by": actor,
+            "rejection_reason": reason,
+        },
+    )
+    return get_ticket(ticket_id, sql)
+
+
+@router.post(
+    "/{ticket_id}/approve",
+    response_model=TicketOut,
+    operation_id="approveTicket",
+)
+def approve(
+    ticket_id: str,
+    payload: TicketApprove,
+    sql: SqlDependency,
+    user_ws: Dependencies.UserClient,
+) -> TicketOut:
+    actor = _current_email(user_ws)
+    require_role(sql, actor, *TICKET_APPROVERS)
+    return _do_approve(sql, ticket_id, actor, payload.note)
+
+
+@router.post(
+    "/{ticket_id}/approve-apply",
+    response_model=TicketApplyResult,
+    operation_id="approveAndApplyTicket",
+)
+def approve_and_apply(
+    ticket_id: str,
+    sql: SqlDependency,
+    user_ws: Dependencies.UserClient,
+    app_ws: Dependencies.Client,
+    payload: TicketApprove | None = None,
+) -> TicketApplyResult:
+    """Aprova e materializa o ticket numa única ação.
+
+    Resolve o atrito do fluxo manual: o usuário com papel de applier não precisa
+    aprovar e depois clicar "aplicar" — a mudança reflete no catálogo de imediato.
+    Exige TICKET_APPLIERS (que é subconjunto dos approvers).
+    """
+    actor = _current_email(user_ws)
+    require_role(sql, actor, *TICKET_APPLIERS)
+    _do_approve(sql, ticket_id, actor, payload.note if payload else None)
+    return apply_ticket(sql, ticket_id, actor, ws=app_ws)
 
 
 @router.post(
@@ -193,24 +247,71 @@ def reject(
 ) -> TicketOut:
     actor = _current_email(user_ws)
     require_role(sql, actor, *TICKET_APPROVERS)
-    current = get_ticket(ticket_id, sql)
-    if current.status not in ("OPEN", "APPROVED"):
-        raise HTTPException(409, f"cannot reject ticket in status {current.status}")
-    s = get_settings()
-    now = datetime.utcnow()
-    delta.update_by_id(
-        sql,
-        s.fq_table("reconciliation_tickets"),
-        "ticket_id",
-        ticket_id,
-        {
-            "status": "REJECTED",
-            "rejected_at": now,
-            "rejected_by": actor,
-            "rejection_reason": payload.reason,
-        },
+    return _do_reject(sql, ticket_id, actor, payload.reason)
+
+
+@router.post(
+    "/batch",
+    response_model=BatchTicketResult,
+    operation_id="batchTicketAction",
+)
+def batch_action(
+    payload: BatchTicketIn,
+    sql: SqlDependency,
+    user_ws: Dependencies.UserClient,
+    app_ws: Dependencies.Client,
+) -> BatchTicketResult:
+    """Aplica uma ação (approve / reject / apply / approve_and_apply) a vários
+    tickets. Não interrompe o lote em caso de erro num ticket — cada item traz
+    seu próprio ok/erro. Útil pra resolver muitas alterações manuais de uma vez.
+    """
+    actor = _current_email(user_ws)
+    if payload.action in ("apply", "approve_and_apply"):
+        require_role(sql, actor, *TICKET_APPLIERS)
+    else:  # approve / reject
+        require_role(sql, actor, *TICKET_APPROVERS)
+    if payload.action == "reject" and not (payload.reason and payload.reason.strip()):
+        raise HTTPException(422, "reason é obrigatório para reject em lote")
+
+    results: list[BatchTicketItemResult] = []
+    for tid in payload.ticket_ids:
+        try:
+            if payload.action == "approve":
+                t = _do_approve(sql, tid, actor, payload.note)
+                results.append(BatchTicketItemResult(ticket_id=tid, ok=True, status=t.status))
+            elif payload.action == "reject":
+                t = _do_reject(sql, tid, actor, cast(str, payload.reason))
+                results.append(BatchTicketItemResult(ticket_id=tid, ok=True, status=t.status))
+            elif payload.action == "apply":
+                r = apply_ticket(sql, tid, actor, ws=app_ws)
+                results.append(BatchTicketItemResult(
+                    ticket_id=tid, ok=not r.errors, status=r.status,
+                    applied_entities=r.applied_entities,
+                    applied_attributes=r.applied_attributes,
+                    error="; ".join(r.errors[:3]) if r.errors else None,
+                ))
+            else:  # approve_and_apply
+                _do_approve(sql, tid, actor, payload.note)
+                r = apply_ticket(sql, tid, actor, ws=app_ws)
+                results.append(BatchTicketItemResult(
+                    ticket_id=tid, ok=not r.errors, status=r.status,
+                    applied_entities=r.applied_entities,
+                    applied_attributes=r.applied_attributes,
+                    error="; ".join(r.errors[:3]) if r.errors else None,
+                ))
+        except HTTPException as exc:
+            results.append(BatchTicketItemResult(ticket_id=tid, ok=False, error=str(exc.detail)))
+        except Exception as exc:  # noqa: BLE001 — lote não pode abortar por 1 ticket
+            results.append(BatchTicketItemResult(ticket_id=tid, ok=False, error=str(exc)[:300]))
+
+    succeeded = sum(1 for r in results if r.ok)
+    return BatchTicketResult(
+        action=payload.action,
+        total=len(results),
+        succeeded=succeeded,
+        failed=len(results) - succeeded,
+        results=results,
     )
-    return get_ticket(ticket_id, sql)
 
 
 @router.post(
