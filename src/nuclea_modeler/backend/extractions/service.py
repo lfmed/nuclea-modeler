@@ -283,6 +283,45 @@ def extract_from_lakebase(
 
 
 
+# Marcadores de mensagens puramente informativas do parser (não são falha).
+# As strings vêm do nosso próprio código (embarcadero.py), então o match por
+# substring é estável e testável.
+_IMPORT_INFO_MARKERS = (
+    "relacionamento(s) extraíd",
+    "incluído(s) no diff",
+)
+
+
+def summarize_import_messages(messages: list[str] | None) -> dict[str, list[str]]:
+    """Separa mensagens do parser em 'problems' (perda de dados / erro) e
+    'infos' (avisos informativos). Função pura — usada para montar o log de
+    falha de import e decidir o status PARTIAL."""
+    problems: list[str] = []
+    infos: list[str] = []
+    for m in messages or []:
+        if any(mark in m for mark in _IMPORT_INFO_MARKERS):
+            infos.append(m)
+        else:
+            problems.append(m)
+    return {"problems": problems, "infos": infos}
+
+
+def format_import_log(problems: list[str], infos: list[str]) -> str:
+    """Monta um bloco markdown legível do log de import (problemas + avisos)."""
+    parts: list[str] = []
+    if problems:
+        parts.append(
+            f"❌ **Problemas ({len(problems)})**:\n"
+            + "\n".join(f"- {p}" for p in problems)
+        )
+    if infos:
+        parts.append(
+            f"ℹ️ **Avisos ({len(infos)})**:\n"
+            + "\n".join(f"- {i}" for i in infos)
+        )
+    return "\n\n".join(parts)
+
+
 def persist_extraction(
     sql: Sql,
     *,
@@ -609,6 +648,20 @@ def run_ddl_import(
             summary_md=f"Dialeto: {dialect}\n{len(entities)} CREATE statements parseados.\nErros de parse: {len(errors)}",
             created_by=actor,
         )
+    status = "SUCCESS" if not errors else "PARTIAL"
+    rel_note = (
+        f" {summary.get('relationships', 0)} relacionamento(s)."
+        if summary.get("relationships")
+        else ""
+    )
+    base_summary = (
+        f"Parseado {summary['found']} objetos. "
+        f"+{summary['new']} novos, ~{summary['changed']} alterados, "
+        f"-{summary['removed']} removidos.{rel_note}"
+    )
+    import_log = format_import_log(errors, [])
+    summary_md = base_summary + (f"\n\n{import_log}" if import_log else "")
+
     ext_id = persist_extraction(
         sql,
         source_kind="DDL_FILE",
@@ -618,7 +671,7 @@ def run_ddl_import(
         requested_kinds=["TABLE", "VIEW"],
         lakebase_sandbox_id=None,
         connection_id=None,
-        status="SUCCESS" if not errors else "PARTIAL",
+        status=status,
         started_at=started,
         ended_at=ended,
         objects_found=summary["found"],
@@ -627,22 +680,19 @@ def run_ddl_import(
         objects_removed=summary["removed"],
         snapshot=snapshot,
         diff_summary=summary,
-        error_summary="; ".join(errors)[:500] if errors else None,
+        error_summary=("\n".join(errors)[:4000]) if errors else None,
         ticket_id=ticket_id,
     )
     return ExtractionResult(
         extraction_id=ext_id,
-        status="SUCCESS" if not errors else "PARTIAL",
+        status=status,
         objects_found=summary["found"],
         objects_new=summary["new"],
         objects_changed=summary["changed"],
         objects_removed=summary["removed"],
         duration_ms=duration_ms,
         ticket_id=ticket_id,
-        summary_md=(
-            f"Parseado {summary['found']} objetos. "
-            f"+{summary['new']} novos, ~{summary['changed']} alterados, -{summary['removed']} removidos."
-        ),
+        summary_md=summary_md,
         errors=errors,
     )
 
@@ -749,6 +799,26 @@ def run_embarcadero_import(
             created_by=actor,
         )
 
+    # Classifica avisos do parser: 'problems' = perda de dados (entity/atributo
+    # sem nome ignorado, FK órfã, tipo desconhecido); 'infos' = informativos.
+    classified = summarize_import_messages(parse_warnings)
+    problems = classified["problems"]
+    infos = classified["infos"]
+    # PARTIAL quando houve perda de dados — o usuário precisa revisar o log.
+    status = "PARTIAL" if problems else "SUCCESS"
+    rel_note = (
+        f" {summary.get('relationships', 0)} relacionamento(s)."
+        if summary.get("relationships")
+        else ""
+    )
+    base_summary = (
+        f"Parseado {summary['found']} objetos do .DM1. "
+        f"+{summary['new']} novos, ~{summary['changed']} alterados, "
+        f"-{summary['removed']} removidos.{rel_note}"
+    )
+    import_log = format_import_log(problems, infos)
+    summary_md = base_summary + (f"\n\n{import_log}" if import_log else "")
+
     ext_id = persist_extraction(
         sql,
         source_kind="EMBARCADERO",
@@ -758,7 +828,7 @@ def run_embarcadero_import(
         requested_kinds=["TABLE"],
         lakebase_sandbox_id=None,
         connection_id=None,
-        status="SUCCESS",
+        status=status,
         started_at=started,
         ended_at=ended,
         objects_found=summary["found"],
@@ -767,24 +837,23 @@ def run_embarcadero_import(
         objects_removed=summary["removed"],
         snapshot=snapshot,
         diff_summary=summary,
-        error_summary="; ".join(parse_warnings)[:500] if parse_warnings else None,
+        # Log completo persistido (não mais truncado em 500): problemas primeiro.
+        error_summary=("\n".join(problems + infos)[:4000]) if parse_warnings else None,
         ticket_id=ticket_id,
     )
 
     return ExtractionResult(
         extraction_id=ext_id,
-        status="SUCCESS",
+        status=status,
         objects_found=summary["found"],
         objects_new=summary["new"],
         objects_changed=summary["changed"],
         objects_removed=summary["removed"],
         duration_ms=duration_ms,
         ticket_id=ticket_id,
-        summary_md=(
-            f"Parseado {summary['found']} objetos do .DM1. "
-            f"+{summary['new']} novos, ~{summary['changed']} alterados, -{summary['removed']} removidos."
-        ),
-        errors=parse_warnings,
+        summary_md=summary_md,
+        # 'errors' do resultado = só problemas reais (infos vão no summary_md).
+        errors=problems,
     )
 
 
