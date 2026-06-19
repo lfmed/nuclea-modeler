@@ -5,18 +5,44 @@ Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+### Fixed 🐛
+- **Import de DDL não extraía coluna nenhuma** — o parser lia `stmt.expressions`
+  (sempre vazio no sqlglot) em vez de `stmt.this.expressions`. CREATE TABLE via
+  DDL gerava entidades sem atributos no diagrama. Corrigido em
+  `extractions/service.py:run_ddl_import()`, com teste de regressão.
+- **Relacionamentos (FKs) perdidos no import** — Embarcadero (.DM1) e DDL agora
+  extraem FKs estruturalmente e as persistem na tabela `relationships` via
+  entries sintéticas `__relationship__` no diff, resolvidas por nome no apply do
+  ticket (depois das entities materializadas). Antes eram apenas warnings.
+- **Alteração manual "não refletia" após aprovação** — `approve` só mudava o
+  status; a materialização exigia um `apply` separado (restrito a Architect/Admin),
+  então um Steward que aprovava deixava o ticket preso e a mudança nunca chegava
+  ao catálogo. Novo `POST /tickets/{id}/approve-apply` aprova e materializa numa
+  única ação.
+
+### Added
+- **Aprovação/aplicação em lote de tickets** — `POST /tickets/batch`
+  (`approve` / `reject` / `apply` / `approve_and_apply`) processa N tickets sem
+  abortar o lote por erro de um item.
+- **Extração de FK no DDL** — constraints inline (`col REFERENCES …`) e
+  table-level (`CONSTRAINT … FOREIGN KEY … REFERENCES …`), incluindo FKs
+  cross-schema.
+
+### Security 🔒
+- **RBAC em sistemas** — `createSystem`/`updateSystem` exigem
+  DATA_ARCHITECT/DATA_STEWARD/ADMIN; `deleteSystem` exige DATA_ARCHITECT/ADMIN e
+  bloqueia exclusão de sistema que ainda tem entidades. Antes qualquer usuário
+  autenticado podia renomear/excluir sistemas via API.
+
 ### Changed
 - **Engenharia reversa do Embarcadero migrou de `.erx` (XML) para `.DM1` (CSV nativo)** —
   formato `.DM1` é o export padrão do ER/Studio na Núclea. Novo parser em
   `extractions/embarcadero.py:parse_dm1()` extrai entities, atributos (com
-  tipo derivado de `DatatypeId` + Length/Scale), PKs e FKs (FKs ainda emitidas
-  como warnings). UI: `accept=".dm1,.DM1"`, cap de upload 50 MB.
+  tipo derivado de `DatatypeId` + Length/Scale), PKs e FKs (agora persistidas,
+  ver Fixed). UI: `accept=".dm1,.DM1"`, cap de upload 50 MB.
 - Dependência `defusedxml` removida — sem parser XML em ingestion, vetor XXE
   elimina-se por construção. Tests de segurança XXE substituídos por tests
   de robustez do parser DM1.
-
-### Added
-- Histórico futuro entra aqui.
 
 ## [0.2.1] — 2026-05-28
 

@@ -19,6 +19,7 @@ from nuclea_modeler.backend.extractions import diff as esvc
 from nuclea_modeler.backend.extractions.models import (
     ExtractedAttribute,
     ExtractedEntity,
+    ExtractedRelationship,
     ExtractionSnapshot,
 )
 
@@ -82,7 +83,7 @@ def test_diff_empty_snapshot_and_empty_catalog(state):
     snap = _snapshot([])
     diff, summary = esvc.compute_diff_against_catalog(MagicMock(), "sys-1", snap)
 
-    assert summary == {"found": 0, "new": 0, "changed": 0, "removed": 0}
+    assert summary == {"found": 0, "new": 0, "changed": 0, "removed": 0, "relationships": 0}
     assert diff.entities == []
 
 
@@ -168,7 +169,7 @@ def test_diff_no_change_when_fields_identical(state):
     ])
     diff, summary = esvc.compute_diff_against_catalog(MagicMock(), "sys-1", snap)
 
-    assert summary == {"found": 1, "new": 0, "changed": 0, "removed": 0}
+    assert summary == {"found": 1, "new": 0, "changed": 0, "removed": 0, "relationships": 0}
     assert diff.entities == []
 
 
@@ -325,6 +326,49 @@ def test_diff_counters_match_diff_entities_length(state):
     assert diff.additions == summary["new"]
     assert diff.removals == summary["removed"]
     assert diff.changes == summary["changed"]
+
+
+# ─── Relationships (FKs) no diff ───────────────────────────────────────────
+
+
+def _rel(parent: str, child: str, *, child_cols=None, parent_cols=None) -> ExtractedRelationship:
+    return ExtractedRelationship(
+        parent_schema="public", parent_entity=parent, parent_columns=parent_cols or [],
+        child_schema="public", child_entity=child, child_columns=child_cols or [],
+    )
+
+
+def test_diff_emits_relationship_entries(state):
+    """snapshot.relationships viram DiffEntity sintéticas '__relationship__'."""
+    state["entity_rows"] = []
+    snap = _snapshot([
+        _entity("public", "cliente", attrs=[_attr("id", "bigint", pk=True)]),
+        _entity("public", "pedido", attrs=[_attr("cliente_id", "bigint")]),
+    ])
+    snap.relationships = [_rel("cliente", "pedido", child_cols=["cliente_id"], parent_cols=["id"])]
+
+    diff, summary = esvc.compute_diff_against_catalog(MagicMock(), "sys-1", snap)
+
+    assert summary["relationships"] == 1
+    rel_entries = [e for e in diff.entities if e.schema_name == esvc.RELATIONSHIP_SCHEMA]
+    assert len(rel_entries) == 1
+    entry = rel_entries[0]
+    assert entry.op == "add"
+    assert entry.technical_name.startswith("rel-")
+    # refs por nome no payload, pra resolução no apply
+    assert entry.payload["source_ref"]["technical_name"] == "cliente"
+    assert entry.payload["target_ref"]["technical_name"] == "pedido"
+    assert entry.payload["target_ref"]["attr_names"] == ["cliente_id"]
+
+
+def test_relationship_id_is_deterministic():
+    """Mesmo FK → mesmo id (apply idempotente, sem duplicar no re-import)."""
+    a = esvc.deterministic_relationship_id("sys-1", ("public", "cliente"), ("public", "pedido"), ["cliente_id"])
+    b = esvc.deterministic_relationship_id("sys-1", ("public", "cliente"), ("public", "pedido"), ["cliente_id"])
+    c = esvc.deterministic_relationship_id("sys-2", ("public", "cliente"), ("public", "pedido"), ["cliente_id"])
+    assert a == b
+    assert a != c  # system diferente → id diferente
+    assert a.startswith("rel-")
 
 
 # ─── _quote_id helper ──────────────────────────────────────────────────────
