@@ -34,6 +34,12 @@ Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
   persistido deixa de ser truncado em 500 chars (até 4000). Import de Embarcadero
   com perda de dados agora marca status **PARTIAL** (antes sempre SUCCESS),
   sinalizando que o log deve ser revisado.
+- **UI: botão "Aprovar e aplicar"** no detalhe do ticket (resolve OPEN numa ação
+  só, para quem tem papel de applier) e **seleção múltipla + ações em lote** na
+  lista de tickets (aprovar/aplicar/aprovar-e-aplicar/rejeitar N de uma vez).
+- **UI: checklist de pré-requisitos** nos formulários de import (DDL e
+  Embarcadero) — mostra o que falta (sistema-alvo, DDL/arquivo, dialeto) antes de
+  liberar a importação.
 
 ### Security 🔒
 - **RBAC em sistemas** — `createSystem`/`updateSystem` exigem
