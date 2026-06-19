@@ -2979,9 +2979,9 @@ export const useListDiagramsSuspense = (
     ...s?.query,
   });
 
-export const useGetDiagramSuspense = (id: string, s?: Selector<DiagramDetailOut>) =>
+export const useGetDiagramByIdSuspense = (id: string, s?: Selector<DiagramDetailOut>) =>
   useSuspenseQuery({
-    queryKey: ["getDiagram", id],
+    queryKey: ["getDiagramById", id],
     queryFn: () => api.get<DiagramDetailOut>(`/diagrams/${encodeURIComponent(id)}`),
     select: (r) => r.data,
     ...s?.query,
