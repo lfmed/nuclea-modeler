@@ -9,6 +9,12 @@ from ..core import Dependencies
 from ..core import delta
 from ..core._nuclea_config import get_settings
 from ..core.sql import SqlDependency
+from ..rbac.service import (
+    ROLE_ADMIN,
+    ROLE_DATA_ARCHITECT,
+    ROLE_DATA_STEWARD,
+    require_role,
+)
 from .models import SystemIn, SystemListOut, SystemOut
 from ..._metadata import api_prefix
 
@@ -79,6 +85,7 @@ def create_system(
 ) -> SystemOut:
     s = get_settings()
     actor = _actor(user_ws)
+    require_role(sql, actor, ROLE_DATA_ARCHITECT, ROLE_DATA_STEWARD, ROLE_ADMIN)
     sid = delta.new_id("sys-")
     now = datetime.utcnow()
     delta.insert(
@@ -109,6 +116,7 @@ def update_system(
 ) -> SystemOut:
     s = get_settings()
     actor = _actor(user_ws)
+    require_role(sql, actor, ROLE_DATA_ARCHITECT, ROLE_DATA_STEWARD, ROLE_ADMIN)
     delta.update_by_id(
         sql,
         s.fq_table("systems"),
@@ -130,7 +138,27 @@ def update_system(
 
 
 @router.delete("/{system_id}", operation_id="deleteSystem")
-def delete_system(system_id: str, sql: SqlDependency) -> dict:
+def delete_system(
+    system_id: str,
+    sql: SqlDependency,
+    user_ws: Dependencies.UserClient,
+) -> dict:
     s = get_settings()
+    actor = _actor(user_ws)
+    require_role(sql, actor, ROLE_DATA_ARCHITECT, ROLE_ADMIN)
+    # Bloqueia exclusão de sistema que ainda tem entidades — evita órfãos em
+    # attributes/relationships/indexes. O usuário deve esvaziar o sistema antes.
+    n = delta.fetch_one_params(
+        sql,
+        f"SELECT COUNT(*) FROM {s.fq_table('entities')} WHERE system_id = :sid",
+        [delta.param("sid", system_id)],
+    )
+    entity_count = int(n[0]) if n else 0
+    if entity_count > 0:
+        raise HTTPException(
+            409,
+            f"system '{system_id}' ainda tem {entity_count} entidade(s); "
+            f"remova-as antes de excluir o sistema",
+        )
     delta.delete_by_id(sql, s.fq_table("systems"), "system_id", system_id)
     return {"deleted": system_id}
