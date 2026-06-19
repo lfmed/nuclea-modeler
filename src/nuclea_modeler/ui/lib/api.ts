@@ -2822,3 +2822,207 @@ export const useValidateSource = (
       )).data,
     ...opts?.mutation,
   });
+
+// ─── Schemas & Diagramas (M6) ──────────────────────────────────────────────
+// Hooks adicionados à mão (espelhando o orval) — refresh_openapi canoniza
+// quando rodar numa máquina com pypi liberado.
+
+export interface SchemaIn {
+  system_id: string;
+  schema_name: string;
+  logical_name?: string | null;
+  domain?: string | null;
+  owner_team?: string | null;
+  description_md?: string | null;
+  is_active?: boolean;
+}
+
+export interface SchemaOut {
+  schema_id: string;
+  system_id: string;
+  schema_name: string;
+  logical_name?: string | null;
+  domain?: string | null;
+  owner_team?: string | null;
+  description_md?: string | null;
+  is_active: boolean;
+  created_at: string;
+  created_by: string;
+  updated_at: string;
+  updated_by: string;
+}
+
+export interface SchemaListOut {
+  schema_id: string;
+  system_id: string;
+  schema_name: string;
+  logical_name?: string | null;
+  domain?: string | null;
+  is_active: boolean;
+  entity_count: number;
+  diagram_count: number;
+}
+
+export interface DiagramIn {
+  system_id: string;
+  schema_id: string;
+  diagram_name: string;
+  description?: string | null;
+  is_default?: boolean;
+}
+
+export interface DiagramOut {
+  diagram_id: string;
+  system_id: string;
+  schema_id: string;
+  diagram_name: string;
+  description?: string | null;
+  is_default: boolean;
+  created_at: string;
+  created_by: string;
+  updated_at: string;
+  updated_by: string;
+  entity_count: number;
+}
+
+export interface DiagramListOut {
+  diagram_id: string;
+  system_id: string;
+  schema_id: string;
+  diagram_name: string;
+  is_default: boolean;
+  entity_count: number;
+}
+
+export interface DiagramMemberOut {
+  entity_id: string;
+  schema_name?: string | null;
+  technical_name?: string | null;
+  logical_name?: string | null;
+  pos_x?: number | null;
+  pos_y?: number | null;
+}
+
+export interface DiagramDetailOut extends DiagramOut {
+  members: DiagramMemberOut[];
+}
+
+export interface DiagramMemberIn {
+  entity_id: string;
+  pos_x?: number | null;
+  pos_y?: number | null;
+}
+
+export interface DiagramMembersIn {
+  members: DiagramMemberIn[];
+}
+
+export interface DiagramLayoutIn {
+  positions: DiagramMemberIn[];
+}
+
+export const useListSchemasSuspense = (
+  params: { systemId?: string } = {},
+  s?: Selector<SchemaListOut[]>,
+) =>
+  useSuspenseQuery({
+    queryKey: ["listSchemas", params],
+    queryFn: () =>
+      api.get<SchemaListOut[]>("/schemas", {
+        params: { system_id: params.systemId },
+      }),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useGetSchemaSuspense = (id: string, s?: Selector<SchemaOut>) =>
+  useSuspenseQuery({
+    queryKey: ["getSchema", id],
+    queryFn: () => api.get<SchemaOut>(`/schemas/${encodeURIComponent(id)}`),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useCreateSchema = (opts?: Opts<SchemaOut, { data: SchemaIn }>) =>
+  useMutation({
+    mutationFn: async ({ data }) => (await api.post<SchemaOut>("/schemas", data)).data,
+    ...opts?.mutation,
+  });
+
+export const useUpdateSchema = (
+  opts?: Opts<SchemaOut, { schemaId: string; data: SchemaIn }>,
+) =>
+  useMutation({
+    mutationFn: async ({ schemaId, data }) =>
+      (await api.put<SchemaOut>(`/schemas/${encodeURIComponent(schemaId)}`, data)).data,
+    ...opts?.mutation,
+  });
+
+export const useDeleteSchema = (opts?: Opts<{ deleted: string }, { schemaId: string }>) =>
+  useMutation({
+    mutationFn: async ({ schemaId }) =>
+      (await api.delete<{ deleted: string }>(`/schemas/${encodeURIComponent(schemaId)}`)).data,
+    ...opts?.mutation,
+  });
+
+export const useListDiagramsSuspense = (
+  params: { schemaId?: string; systemId?: string } = {},
+  s?: Selector<DiagramListOut[]>,
+) =>
+  useSuspenseQuery({
+    queryKey: ["listDiagrams", params],
+    queryFn: () =>
+      api.get<DiagramListOut[]>("/diagrams", {
+        params: { schema_id: params.schemaId, system_id: params.systemId },
+      }),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useGetDiagramSuspense = (id: string, s?: Selector<DiagramDetailOut>) =>
+  useSuspenseQuery({
+    queryKey: ["getDiagram", id],
+    queryFn: () => api.get<DiagramDetailOut>(`/diagrams/${encodeURIComponent(id)}`),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useCreateDiagram = (opts?: Opts<DiagramOut, { data: DiagramIn }>) =>
+  useMutation({
+    mutationFn: async ({ data }) => (await api.post<DiagramOut>("/diagrams", data)).data,
+    ...opts?.mutation,
+  });
+
+export const useUpdateDiagram = (
+  opts?: Opts<DiagramOut, { diagramId: string; data: DiagramIn }>,
+) =>
+  useMutation({
+    mutationFn: async ({ diagramId, data }) =>
+      (await api.put<DiagramOut>(`/diagrams/${encodeURIComponent(diagramId)}`, data)).data,
+    ...opts?.mutation,
+  });
+
+export const useDeleteDiagram = (opts?: Opts<{ deleted: string }, { diagramId: string }>) =>
+  useMutation({
+    mutationFn: async ({ diagramId }) =>
+      (await api.delete<{ deleted: string }>(`/diagrams/${encodeURIComponent(diagramId)}`)).data,
+    ...opts?.mutation,
+  });
+
+export const useSetDiagramMembers = (
+  opts?: Opts<DiagramDetailOut, { diagramId: string; data: DiagramMembersIn }>,
+) =>
+  useMutation({
+    mutationFn: async ({ diagramId, data }) =>
+      (await api.put<DiagramDetailOut>(`/diagrams/${encodeURIComponent(diagramId)}/members`, data)).data,
+    ...opts?.mutation,
+  });
+
+export const useSaveDiagramLayout = (
+  opts?: Opts<DiagramDetailOut, { diagramId: string; data: DiagramLayoutIn }>,
+) =>
+  useMutation({
+    mutationFn: async ({ diagramId, data }) =>
+      (await api.put<DiagramDetailOut>(`/diagrams/${encodeURIComponent(diagramId)}/layout`, data)).data,
+    ...opts?.mutation,
+  });
