@@ -90,7 +90,7 @@ def list_diagrams(
     ]
 
 
-@router.get("/{diagram_id}", response_model=DiagramDetailOut, operation_id="getDiagram")
+@router.get("/{diagram_id}", response_model=DiagramDetailOut, operation_id="getDiagramById")
 def get_diagram(diagram_id: str, sql: SqlDependency) -> DiagramDetailOut:
     s = get_settings()
     row = delta.fetch_one_params(
