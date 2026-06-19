@@ -133,6 +133,40 @@ class TicketApplyIn(BaseModel):
     reverse_sandbox_id: str | None = None
 
 
+BatchAction = Literal["approve", "reject", "apply", "approve_and_apply"]
+
+
+class BatchTicketIn(BaseModel):
+    """Ação em lote sobre vários tickets de uma vez.
+
+    `approve_and_apply` resolve o atrito do fluxo manual: aprova e materializa
+    numa tacada só (exige papel de applier). `approve`/`apply`/`reject` espelham
+    as ações unitárias mas aplicadas a N tickets.
+    """
+
+    ticket_ids: list[str] = Field(min_length=1)
+    action: BatchAction
+    note: str | None = None  # usado em approve / approve_and_apply
+    reason: str | None = None  # usado em reject (obrigatório p/ reject)
+
+
+class BatchTicketItemResult(BaseModel):
+    ticket_id: str
+    ok: bool
+    status: TicketStatus | None = None
+    applied_entities: int = 0
+    applied_attributes: int = 0
+    error: str | None = None
+
+
+class BatchTicketResult(BaseModel):
+    action: BatchAction
+    total: int
+    succeeded: int
+    failed: int
+    results: list[BatchTicketItemResult] = Field(default_factory=list)
+
+
 class SessionStateOut(BaseModel):
     """Estado da sessão editorial OPEN do user atual para um sistema.
 

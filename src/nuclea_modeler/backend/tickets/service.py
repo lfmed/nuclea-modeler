@@ -459,6 +459,41 @@ def _apply_reverse_entity(
 # definido em _relationship_in_to_payload (relationships/router.py).
 
 
+def _resolve_entity_ref(sql: Sql, system_id: str | None, ref: dict | None) -> tuple[str | None, list[str]]:
+    """Resolve uma ref por nome ({schema_name, technical_name, attr_names}) para
+    (entity_id, [attribute_id]). Usado por relacionamentos extraídos (import),
+    onde as FKs vêm por nome e as entities só ganham id no apply.
+
+    Retorna (None, []) se a entity não existir no catálogo (FK órfã)."""
+    if not ref:
+        return None, []
+    s = get_settings()
+    row = delta.fetch_one_params(
+        sql,
+        f"SELECT entity_id FROM {s.fq_table('entities')} "
+        f"WHERE system_id = :sid AND schema_name = :sch AND technical_name = :tech",
+        [
+            delta.param("sid", system_id),
+            delta.param("sch", ref.get("schema_name")),
+            delta.param("tech", ref.get("technical_name")),
+        ],
+    )
+    if not row:
+        return None, []
+    eid = row[0]
+    attr_ids: list[str] = []
+    for name in ref.get("attr_names") or []:
+        arow = delta.fetch_one_params(
+            sql,
+            f"SELECT attribute_id FROM {s.fq_table('attributes')} "
+            f"WHERE entity_id = :eid AND technical_name = :name",
+            [delta.param("eid", eid), delta.param("name", name)],
+        )
+        if arow:
+            attr_ids.append(arow[0])
+    return eid, attr_ids
+
+
 def _apply_relationship_change(
     sql: Sql,
     entry: dict,
@@ -471,6 +506,38 @@ def _apply_relationship_change(
         raise ValueError("relationship sem technical_name")
     s = get_settings()
     payload = entry.get("payload") or {}
+
+    # Relacionamentos extraídos (import) trazem source_ref/target_ref por nome
+    # em vez de entity_id. Resolve agora que as entities já foram materializadas.
+    if op in ("add", "change"):
+        if not payload.get("source_entity_id") and payload.get("source_ref"):
+            src_id, src_attrs = _resolve_entity_ref(
+                sql, payload.get("system_id"), payload.get("source_ref")
+            )
+            if src_id:
+                payload = {**payload, "source_entity_id": src_id}
+                if src_attrs and not payload.get("source_attr_ids"):
+                    payload["source_attr_ids"] = src_attrs
+        if not payload.get("target_entity_id") and payload.get("target_ref"):
+            tgt_id, tgt_attrs = _resolve_entity_ref(
+                sql, payload.get("system_id"), payload.get("target_ref")
+            )
+            if tgt_id:
+                payload = {**payload, "target_entity_id": tgt_id}
+                if tgt_attrs and not payload.get("target_attr_ids"):
+                    payload["target_attr_ids"] = tgt_attrs
+        # FK órfã: alguma ponta não existe no catálogo → não persiste (erro
+        # capturado pelo loop do apply_ticket e reportado no resultado).
+        if op == "add" and (
+            not payload.get("source_entity_id") or not payload.get("target_entity_id")
+        ):
+            src = payload.get("source_ref", {})
+            tgt = payload.get("target_ref", {})
+            raise ValueError(
+                "FK não resolvida — entity ausente no catálogo: "
+                f"{src.get('schema_name')}.{src.get('technical_name')} → "
+                f"{tgt.get('schema_name')}.{tgt.get('technical_name')}"
+            )
 
     if op == "remove":
         delta.run_params(
