@@ -2,6 +2,8 @@ from .core import create_app
 from .router import router as base_router
 from .connections.router import router as connections_router
 from .systems.router import router as systems_router
+from .schemas.router import router as schemas_router
+from .diagrams.router import router as diagrams_router
 from .entities.router import router as entities_router
 from .entities.indexes_router import router as entities_indexes_router
 from .glossary.router import attr_glossary_router, router as glossary_router
@@ -49,6 +51,8 @@ app = create_app(
     routers=[
         base_router,
         systems_router,
+        schemas_router,
+        diagrams_router,
         connections_router,
         entities_router,
         entities_indexes_router,
