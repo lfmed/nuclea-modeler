@@ -84,8 +84,9 @@ def test_parses_legitimate_dm1_payload():
     assert warns == [] or all("desconhec" not in w for w in warns)
 
 
-def test_relationships_emitted_as_warnings():
-    """ForeignKey vira warning informativo (não é persistido estruturalmente)."""
+def test_relationships_extracted_from_fk():
+    """ForeignKey é extraída estruturalmente para o snapshot (parent → source,
+    child → target) e persistida — não é mais só warning."""
     payload = (
         "Entity\n"
         "DiagramId,ModelId,EntityId,EntityNameId,TableNameId,OwnerId,DefinitionId\n"
@@ -101,9 +102,13 @@ def test_relationships_emitted_as_warnings():
         "DiagramId,ModelId,RelationshipId,ForeignKey_ID,ParentEntityId,ChildEntityId,Global_User_ID,Row_Time_Stamp\n"
         "1,1,1,1,10,11,0,0\n"
     )
-    _, warns = parse_dm1(payload, system_id="sys-test")
-    assert any("pedido → item_pedido" in w for w in warns)
-    assert any("1 relacionamento" in w for w in warns)
+    snap, warns = parse_dm1(payload, system_id="sys-test")
+    assert len(snap.relationships) == 1
+    rel = snap.relationships[0]
+    assert rel.parent_entity == "pedido"      # ParentEntityId=10
+    assert rel.child_entity == "item_pedido"  # ChildEntityId=11
+    assert rel.rel_type == "1:N"
+    assert any("relacionamento" in w for w in warns)
 
 
 def test_extracts_indexes_with_columns():
