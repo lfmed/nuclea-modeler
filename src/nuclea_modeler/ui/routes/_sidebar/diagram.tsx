@@ -28,6 +28,9 @@ import {
   useListSchemasSuspense,
   useListDiagramsSuspense,
   useGetDiagramById,
+  useCreateDiagram,
+  useSetDiagramMembers,
+  useSaveDiagramLayout,
   useGetSessionStatusSuspense,
   useDiscardSession,
   useListSystemsSuspense,
@@ -273,6 +276,53 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
       selectedDiagram ? new Set(selectedDiagram.members.map((m) => m.entity_id)) : null,
     [selectedDiagram],
   );
+  // Posições salvas por diagrama (têm prioridade sobre o layout do sistema).
+  const memberPos = useMemo(() => {
+    const m = new Map<string, { x: number; y: number }>();
+    if (selectedDiagram) {
+      for (const mm of selectedDiagram.members) {
+        if (mm.pos_x != null && mm.pos_y != null) {
+          m.set(mm.entity_id, { x: mm.pos_x, y: mm.pos_y });
+        }
+      }
+    }
+    return m;
+  }, [selectedDiagram]);
+
+  const { mutate: createDiagram, isPending: creatingDiagram } = useCreateDiagram({
+    mutation: {
+      onSuccess: () => qc.invalidateQueries({ queryKey: ["listDiagrams"] }),
+      onError: (e) =>
+        toast.error("Erro ao criar diagrama", {
+          description: e instanceof Error ? e.message : String(e),
+        }),
+    },
+  });
+  const { mutate: setDiagramMembers, isPending: savingMembers } = useSetDiagramMembers({
+    mutation: {
+      onSuccess: (d) => {
+        qc.invalidateQueries({ queryKey: ["getDiagramById", d.diagram_id] });
+        qc.invalidateQueries({ queryKey: ["listDiagrams"] });
+        toast.success("Tabelas do diagrama atualizadas");
+      },
+      onError: (e) =>
+        toast.error("Erro ao salvar tabelas", {
+          description: e instanceof Error ? e.message : String(e),
+        }),
+    },
+  });
+  const { mutate: saveDiagramLayout, isPending: savingDiagramLayout } = useSaveDiagramLayout({
+    mutation: {
+      onSuccess: (d) => {
+        qc.invalidateQueries({ queryKey: ["getDiagramById", d.diagram_id] });
+        toast.success("Layout do diagrama salvo");
+      },
+      onError: (e) =>
+        toast.error("Erro ao salvar layout", {
+          description: e instanceof Error ? e.message : String(e),
+        }),
+    },
+  });
 
   const { mutate: saveLayout, isPending: saving } = useSaveLayout({
     mutation: {
@@ -318,11 +368,14 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
     return filteredEntities.map((e) => ({
       id: e.entity_id,
       type: "entity",
-      position: view.layout[e.entity_id] ?? { x: 0, y: 0 },
+      position:
+        (diagramId ? memberPos.get(e.entity_id) : undefined) ??
+        view.layout[e.entity_id] ??
+        { x: 0, y: 0 },
       data: { entity: e, expanded } as any,
       draggable: true,
     }));
-  }, [filteredEntities, view.layout, expanded]);
+  }, [filteredEntities, view.layout, expanded, diagramId, memberPos]);
 
   const baseEdges = useMemo<Edge[]>(() => {
     return view.relationships
@@ -401,12 +454,51 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
   }, [edges, direction, expanded]);
 
   const saveCurrentLayout = useCallback(() => {
+    // Com um diagrama selecionado, salva as posições NELE; senão, no layout
+    // "default" do sistema (comportamento legado).
+    if (diagramId) {
+      saveDiagramLayout({
+        diagramId,
+        data: {
+          positions: nodes.map((n) => ({
+            entity_id: n.id,
+            pos_x: n.position.x,
+            pos_y: n.position.y,
+          })),
+        },
+      });
+      return;
+    }
     const positions: Record<string, { x: number; y: number }> = {};
     for (const n of nodes) {
       positions[n.id] = { x: n.position.x, y: n.position.y };
     }
     saveLayout({ systemId, data: { layout_name: "default", positions } });
-  }, [nodes, saveLayout, systemId]);
+  }, [nodes, saveLayout, saveDiagramLayout, systemId, diagramId]);
+
+  const onCreateDiagram = useCallback(() => {
+    if (!schemaId) return;
+    const name = window.prompt("Nome do novo diagrama:");
+    if (!name || !name.trim()) return;
+    createDiagram(
+      { data: { system_id: systemId, schema_id: schemaId, diagram_name: name.trim() } },
+      {
+        onSuccess: (created) => {
+          // novo diagrama começa com todas as tabelas do schema selecionado
+          const schemaEntities = view.entities.filter(
+            (e) => e.schema_name === selectedSchema?.schema_name,
+          );
+          setDiagramMembers({
+            diagramId: created.diagram_id,
+            data: { members: schemaEntities.map((e) => ({ entity_id: e.entity_id })) },
+          });
+          setDiagramId(created.diagram_id);
+        },
+      },
+    );
+  }, [schemaId, systemId, createDiagram, setDiagramMembers, view.entities, selectedSchema]);
+
+  const [showMembers, setShowMembers] = useState(false);
 
   const exportPng = useCallback(async () => {
     if (!canvasRef.current) return;
@@ -654,9 +746,39 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
               <LayoutGrid className="mr-2 h-4 w-4" />
               Auto-layout
             </Button>
-            <Button size="sm" onClick={saveCurrentLayout} disabled={saving}>
+            {schemaId && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onCreateDiagram}
+                disabled={creatingDiagram}
+                title="Criar um novo diagrama (recorte) neste schema"
+              >
+                + Novo diagrama
+              </Button>
+            )}
+            {diagramId && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowMembers(true)}
+                disabled={savingMembers}
+                title="Escolher quais tabelas aparecem neste diagrama"
+              >
+                Editar tabelas
+              </Button>
+            )}
+            <Button
+              size="sm"
+              onClick={saveCurrentLayout}
+              disabled={saving || savingDiagramLayout}
+            >
               <Save className="mr-2 h-4 w-4" />
-              {saving ? "Salvando..." : "Salvar layout"}
+              {saving || savingDiagramLayout
+                ? "Salvando..."
+                : diagramId
+                  ? "Salvar layout do diagrama"
+                  : "Salvar layout"}
             </Button>
             <Button variant="outline" size="sm" onClick={exportPng}>
               <Download className="mr-2 h-4 w-4" />
@@ -858,7 +980,105 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
           }}
         />
       )}
+      {showMembers && diagramId && selectedSchema && (
+        <MembersDialog
+          schemaName={selectedSchema.schema_name}
+          schemaEntities={view.entities.filter(
+            (e) => e.schema_name === selectedSchema.schema_name,
+          )}
+          initialIds={memberIds ?? new Set<string>()}
+          saving={savingMembers}
+          onClose={() => setShowMembers(false)}
+          onSave={(ids) =>
+            setDiagramMembers(
+              {
+                diagramId,
+                data: { members: Array.from(ids).map((id) => ({ entity_id: id })) },
+              },
+              { onSuccess: () => setShowMembers(false) },
+            )
+          }
+        />
+      )}
     </Card>
+    </div>
+  );
+}
+
+function MembersDialog({
+  schemaName,
+  schemaEntities,
+  initialIds,
+  saving,
+  onClose,
+  onSave,
+}: {
+  schemaName: string;
+  schemaEntities: DiagramEntity[];
+  initialIds: Set<string>;
+  saving: boolean;
+  onClose: () => void;
+  onSave: (ids: Set<string>) => void;
+}) {
+  const [picked, setPicked] = useState<Set<string>>(() => new Set(initialIds));
+  const toggle = (id: string) =>
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-background rounded-lg border shadow-xl max-w-lg w-full max-h-[80vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between p-4 border-b">
+          <h2 className="text-base font-semibold">
+            Tabelas do diagrama — schema <span className="font-mono">{schemaName}</span>
+          </h2>
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+        <div className="p-4 overflow-auto space-y-1">
+          {schemaEntities.length === 0 && (
+            <p className="text-sm text-muted-foreground">Schema sem tabelas.</p>
+          )}
+          {schemaEntities.map((e) => (
+            <label
+              key={e.entity_id}
+              className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted/50 cursor-pointer"
+            >
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-nuclea-primary"
+                checked={picked.has(e.entity_id)}
+                onChange={() => toggle(e.entity_id)}
+              />
+              <span className="font-mono">{e.technical_name}</span>
+              {e.logical_name && (
+                <span className="text-xs text-muted-foreground">· {e.logical_name}</span>
+              )}
+            </label>
+          ))}
+        </div>
+        <div className="flex items-center justify-between gap-2 p-4 border-t">
+          <span className="text-xs text-muted-foreground">{picked.size} selecionada(s)</span>
+          <div className="flex gap-2">
+            <Button variant="ghost" size="sm" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button size="sm" onClick={() => onSave(picked)} disabled={saving}>
+              {saving ? "Salvando..." : "Salvar tabelas"}
+            </Button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

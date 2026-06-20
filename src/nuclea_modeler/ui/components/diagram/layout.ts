@@ -16,10 +16,14 @@ export function applyDagreLayout(
   const g = new dagre.graphlib.Graph();
   g.setGraph({
     rankdir: direction,
-    nodesep: 60,
-    ranksep: 120,
-    marginx: 40,
-    marginy: 40,
+    // Mais folga melhora a legibilidade — nós expandidos (com colunas) são
+    // altos; nodesep maior evita sobreposição vertical e ranksep separa melhor
+    // os níveis. edgesep reduz cruzamento de arestas próximas.
+    nodesep: 90,
+    ranksep: 170,
+    edgesep: 30,
+    marginx: 48,
+    marginy: 48,
   });
   g.setDefaultEdgeLabel(() => ({}));
 
