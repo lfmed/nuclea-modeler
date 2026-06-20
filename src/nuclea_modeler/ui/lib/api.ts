@@ -2987,6 +2987,16 @@ export const useGetDiagramByIdSuspense = (id: string, s?: Selector<DiagramDetail
     ...s?.query,
   });
 
+// Variante não-suspense (fetch condicional) — usada no canvas, onde o diagrama
+// selecionado pode ser nulo (mostra todas as entities do schema).
+export const useGetDiagramById = (id: string | null | undefined) =>
+  useQuery({
+    queryKey: ["getDiagramById", id],
+    queryFn: () =>
+      api.get<DiagramDetailOut>(`/diagrams/${encodeURIComponent(id!)}`).then((r) => r.data),
+    enabled: !!id,
+  });
+
 export const useCreateDiagram = (opts?: Opts<DiagramOut, { data: DiagramIn }>) =>
   useMutation({
     mutationFn: async ({ data }) => (await api.post<DiagramOut>("/diagrams", data)).data,
