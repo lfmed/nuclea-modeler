@@ -40,6 +40,10 @@ Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 - **UI: checklist de pré-requisitos** nos formulários de import (DDL e
   Embarcadero) — mostra o que falta (sistema-alvo, DDL/arquivo, dialeto) antes de
   liberar a importação.
+- **UI: seletor de schema + diagrama no canvas (M6, fatia 4a)** — o DER ganha
+  dropdowns de schema e de diagrama; selecionar um schema restringe o canvas às
+  suas tabelas, e selecionar um diagrama mostra só a membership daquele recorte
+  (read-only nesta fatia). Re-aplica auto-layout ao trocar.
 - **UI: Navegador em árvore (M6, fatia 3)** — nova tela `/explorer` com árvore
   Sistema → Schema → Diagramas/Tabelas, com lazy-load por nó e contagens.
   Clicar numa tabela abre seus atributos; clicar num diagrama abre o DER.

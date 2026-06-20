@@ -25,6 +25,9 @@ import { toPng } from "html-to-image";
 import {
   useCreateRelationship,
   useGetDiagramSuspense,
+  useListSchemasSuspense,
+  useListDiagramsSuspense,
+  useGetDiagramById,
   useGetSessionStatusSuspense,
   useDiscardSession,
   useListSystemsSuspense,
@@ -250,6 +253,27 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
   const [domainFilter, setDomainFilter] = useState<string>("");
   const [direction, setDirection] = useState<LayoutDirection>("LR");
 
+  // M6 (fatia 4a): seletor de schema + diagrama. Schema restringe por
+  // schema_name; diagrama restringe à membership (read-only nesta fatia).
+  const { data: schemaList } = useListSchemasSuspense({ systemId }, selector());
+  const { data: diagramList } = useListDiagramsSuspense({ systemId }, selector());
+  const [schemaId, setSchemaId] = useState<string>("");
+  const [diagramId, setDiagramId] = useState<string>("");
+  const selectedSchema = useMemo(
+    () => schemaList.find((sc) => sc.schema_id === schemaId) || null,
+    [schemaList, schemaId],
+  );
+  const diagramsForSchema = useMemo(
+    () => diagramList.filter((d) => !schemaId || d.schema_id === schemaId),
+    [diagramList, schemaId],
+  );
+  const { data: selectedDiagram } = useGetDiagramById(diagramId || undefined);
+  const memberIds = useMemo(
+    () =>
+      selectedDiagram ? new Set(selectedDiagram.members.map((m) => m.entity_id)) : null,
+    [selectedDiagram],
+  );
+
   const { mutate: saveLayout, isPending: saving } = useSaveLayout({
     mutation: {
       onSuccess: (data) => {
@@ -272,6 +296,8 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
   const filteredEntities = useMemo(() => {
     const f = filter.toLowerCase();
     return view.entities.filter((e) => {
+      if (selectedSchema && e.schema_name !== selectedSchema.schema_name) return false;
+      if (diagramId && memberIds && !memberIds.has(e.entity_id)) return false;
       if (domainFilter && (e.domain || "") !== domainFilter) return false;
       if (!f) return true;
       return (
@@ -281,7 +307,7 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
         (e.domain || "").toLowerCase().includes(f)
       );
     });
-  }, [view.entities, filter, domainFilter]);
+  }, [view.entities, filter, domainFilter, selectedSchema, diagramId, memberIds]);
 
   const visibleIds = useMemo(
     () => new Set(filteredEntities.map((e) => e.entity_id)),
@@ -321,7 +347,7 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
     }
     setEdges(baseEdges);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [systemId, expanded, filter, domainFilter]);
+  }, [systemId, expanded, filter, domainFilter, schemaId, diagramId, memberIds]);
 
   // Re-sync data quando view.entities/relationships mudarem por refetch
   // (ex: invalidate após adicionar/remover atributo). Preserva posições atuais
@@ -674,6 +700,39 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
             <option value="">Todos os domínios</option>
             {domains.map((d) => (
               <option key={d} value={d}>{d}</option>
+            ))}
+          </select>
+          <select
+            value={schemaId}
+            onChange={(e) => {
+              setSchemaId(e.target.value);
+              setDiagramId("");
+            }}
+            className="rounded-md border bg-background px-3 py-2 text-sm"
+            title="Filtrar por schema"
+          >
+            <option value="">Todos os schemas</option>
+            {schemaList.map((sc) => (
+              <option key={sc.schema_id} value={sc.schema_id}>
+                {sc.schema_name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={diagramId}
+            onChange={(e) => setDiagramId(e.target.value)}
+            className="rounded-md border bg-background px-3 py-2 text-sm disabled:opacity-50"
+            title="Selecionar um diagrama (recorte do schema)"
+            disabled={diagramsForSchema.length === 0}
+          >
+            <option value="">
+              {schemaId ? "Todo o schema" : "Selecione um schema"}
+            </option>
+            {diagramsForSchema.map((d) => (
+              <option key={d.diagram_id} value={d.diagram_id}>
+                {d.diagram_name}
+                {d.is_default ? " (default)" : ""}
+              </option>
             ))}
           </select>
         </div>
