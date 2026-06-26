@@ -51,10 +51,9 @@ Thumbs.db
 # apx
 .apx/
 
-# UI build output — keep stub index.html, ignore Vite-generated assets
-src/nuclea_modeler/__dist__/assets/
-src/nuclea_modeler/__dist__/*.js
-src/nuclea_modeler/__dist__/*.css
+# UI build output — o bundle do Vite AGORA é versionado (workflow build-dist.yml)
+# para o deploy do cliente funcionar sem npm. databricks sync respeita o
+# .gitignore, então os assets NÃO podem ser ignorados. Só sourcemaps ficam fora.
 src/nuclea_modeler/__dist__/*.map
 .build/
 
