@@ -22,11 +22,19 @@ def state(monkeypatch):
     captured: dict = {
         "inserts": [],          # list of (table, row)
         "updates": [],          # list of (table, key, key_val, fields)
-        "fetch_one_returns": [],  # FIFO de retornos
+        "fetch_one_returns": [],  # FIFO de retornos (fetch_one_params)
+        "fetch_all_returns": [],  # FIFO de retornos (fetch_all_params); default []
+        "insert_raises_on": None,  # technical_name de atributo que deve falhar
         "new_id_counter": 0,
     }
 
     def fake_insert(sql, table, row):
+        if (
+            captured["insert_raises_on"]
+            and table.endswith("attributes")
+            and row.get("technical_name") == captured["insert_raises_on"]
+        ):
+            raise RuntimeError("transient warehouse error (simulado)")
         captured["inserts"].append((table, dict(row)))
 
     def fake_update_by_id(sql, table, key, key_val, fields):
@@ -40,6 +48,11 @@ def state(monkeypatch):
             return captured["fetch_one_returns"].pop(0)
         return None
 
+    def fake_fetch_all_params(sql, query, params=None):
+        if captured["fetch_all_returns"]:
+            return captured["fetch_all_returns"].pop(0)
+        return []
+
     def fake_new_id(prefix=""):
         captured["new_id_counter"] += 1
         return f"{prefix}fake{captured['new_id_counter']}"
@@ -51,6 +64,7 @@ def state(monkeypatch):
     monkeypatch.setattr(delta, "insert", fake_insert)
     monkeypatch.setattr(delta, "update_by_id", fake_update_by_id)
     monkeypatch.setattr(delta, "fetch_one_params", fake_fetch_one_params)
+    monkeypatch.setattr(delta, "fetch_all_params", fake_fetch_all_params)
     monkeypatch.setattr(delta, "new_id", fake_new_id)
     monkeypatch.setattr(delta, "param", fake_param)
     monkeypatch.setattr(delta, "run_params", fake_run_params)
@@ -221,7 +235,7 @@ def test_apply_add_inserts_entity_when_not_exists(state):
 
 
 def test_apply_add_is_idempotent_when_already_exists(state):
-    """op=add é skipado se entity já existe (mesma key)."""
+    """op=add não recria a entity se já existe (sem atributos a reconciliar)."""
     diff = {
         "entities": [
             {"op": "add", "schema_name": "public", "technical_name": "cliente"}
@@ -235,6 +249,69 @@ def test_apply_add_is_idempotent_when_already_exists(state):
     result = tsvc.apply_ticket(MagicMock(), "ticket-1", applied_by="u")
     assert result.applied_entities == 0
     assert not any(i[0] == "cat.sch.entities" for i in state["inserts"])
+
+
+def test_apply_add_reconciles_missing_attributes(state):
+    """Auto-cura: entity já existe mas faltam colunas (apply parcial anterior) →
+    o re-apply insere SÓ as que faltam, sem recriar a entity."""
+    diff = {
+        "entities": [
+            {
+                "op": "add", "schema_name": "public", "technical_name": "cliente",
+                "attributes": [
+                    {"technical_name": "id", "native_data_type": "bigint"},
+                    {"technical_name": "nome", "native_data_type": "varchar(200)"},
+                    {"technical_name": "email", "native_data_type": "varchar(200)"},
+                ],
+            }
+        ]
+    }
+    state["fetch_one_returns"] = [
+        (json.dumps(diff), "sys-1", "APPROVED"),
+        ("ent-existente",),  # entity já existe
+    ]
+    # já existe a coluna "id"; faltam "nome" e "email"
+    state["fetch_all_returns"] = [[("id",)]]
+
+    result = tsvc.apply_ticket(MagicMock(), "ticket-1", applied_by="u")
+
+    assert result.applied_entities == 0  # não recria a entity
+    assert result.applied_attributes == 2  # só nome + email
+    attr_inserts = [i for i in state["inserts"] if i[0] == "cat.sch.attributes"]
+    names = [i[1]["technical_name"] for i in attr_inserts]
+    assert names == ["nome", "email"]
+    assert "id" not in names  # idempotente: não duplica a existente
+
+
+def test_apply_add_attribute_failure_is_resilient(state):
+    """Uma falha transitória ao inserir um atributo não aborta os demais — o
+    erro fica registrado e a entity não fica órfã das outras colunas."""
+    diff = {
+        "entities": [
+            {
+                "op": "add", "schema_name": "public", "technical_name": "cliente",
+                "attributes": [
+                    {"technical_name": "id", "native_data_type": "bigint"},
+                    {"technical_name": "nome", "native_data_type": "varchar(200)"},
+                    {"technical_name": "email", "native_data_type": "varchar(200)"},
+                ],
+            }
+        ]
+    }
+    state["fetch_one_returns"] = [
+        (json.dumps(diff), "sys-1", "APPROVED"),
+        None,  # entity nova
+    ]
+    state["insert_raises_on"] = "nome"  # simula transiente só em "nome"
+
+    result = tsvc.apply_ticket(MagicMock(), "ticket-1", applied_by="u")
+
+    # entity criada + 2 atributos ok (id, email); "nome" falhou mas não abortou
+    assert result.applied_entities == 1
+    assert result.applied_attributes == 2
+    attr_inserts = [i[1]["technical_name"] for i in state["inserts"] if i[0] == "cat.sch.attributes"]
+    assert set(attr_inserts) == {"id", "email"}
+    assert any("nome" in e for e in result.errors)
 
 
 def test_apply_add_with_attributes_inserts_both(state):

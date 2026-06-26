@@ -6,6 +6,12 @@ Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 ## [Unreleased]
 
 ### Fixed 🐛
+- **Apply de ticket auto-curável (atributos)** — se um apply criava a entity mas
+  falhava nos atributos por erro transitório de warehouse, a entity ficava
+  **presa sem colunas** (o skip por idempotência impedia o conserto num re-apply).
+  Agora `_apply_op_add` reconcilia: quando a entity já existe, insere apenas os
+  atributos que faltam; e cada atributo é inserido de forma resiliente (uma falha
+  pontual não aborta os demais e é curada num re-apply via "Reabrir").
 - **Import de DDL não extraía coluna nenhuma** — o parser lia `stmt.expressions`
   (sempre vazio no sqlglot) em vez de `stmt.this.expressions`. CREATE TABLE via
   DDL gerava entidades sem atributos no diagrama. Corrigido em
