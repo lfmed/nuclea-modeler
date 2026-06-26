@@ -6,6 +6,11 @@ Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 ## [Unreleased]
 
 ### Fixed 🐛
+- **Import "sucesso" sem ticket agora é explicado** — quando uma extração não
+  reconhece objetos (`0 encontrados` — dialeto errado ou sem CREATE TABLE) ou
+  não detecta mudanças vs o catálogo (`+0 novos`), o painel de resultado mostra
+  um aviso âmbar explícito ("Nenhum objeto reconhecido…" / "Nenhuma mudança
+  detectada — nada a aprovar") em vez de um "sucesso" verde ambíguo.
 - **Apply de ticket auto-curável (atributos)** — se um apply criava a entity mas
   falhava nos atributos por erro transitório de warehouse, a entity ficava
   **presa sem colunas** (o skip por idempotência impedia o conserto num re-apply).

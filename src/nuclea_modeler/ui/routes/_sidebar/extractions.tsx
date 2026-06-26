@@ -533,21 +533,30 @@ function EmbarcaderoTab() {
 }
 
 function ResultPanel({ result }: { result: ExtractionResult }) {
-  const okColor = result.status === "SUCCESS"
-    ? "border-emerald-500/50 bg-emerald-500/5"
-    : result.status === "PARTIAL"
-      ? "border-amber-500/50 bg-amber-500/5"
-      : "border-destructive/50 bg-destructive/5";
+  // Avisos quando o import "deu certo" mas não há o que aprovar — senão o
+  // usuário vê "sucesso" e não entende por que não apareceu ticket.
+  const noObjects = result.objects_found === 0;
+  const noChanges =
+    !result.ticket_id &&
+    !noObjects &&
+    result.objects_new + result.objects_changed + result.objects_removed === 0;
+  // 0 objetos ou 0 mudanças não é "verde puro" — sinaliza atenção.
+  const okColor =
+    result.status === "FAILED"
+      ? "border-destructive/50 bg-destructive/5"
+      : result.status === "PARTIAL" || noObjects || noChanges
+        ? "border-amber-500/50 bg-amber-500/5"
+        : "border-emerald-500/50 bg-emerald-500/5";
   return (
     <div className={`mt-6 rounded-lg border p-4 ${okColor}`}>
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-2">
-          {result.status === "SUCCESS" ? (
-            <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-          ) : result.status === "FAILED" ? (
+          {result.status === "FAILED" ? (
             <XCircle className="h-5 w-5 text-destructive" />
-          ) : (
+          ) : noObjects || noChanges || result.status === "PARTIAL" ? (
             <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+          ) : (
+            <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
           )}
           <strong className="text-sm">{result.summary_md}</strong>
         </div>
@@ -560,6 +569,26 @@ function ResultPanel({ result }: { result: ExtractionResult }) {
           </Button>
         )}
       </div>
+
+      {(noObjects || noChanges) && (
+        <div className="mt-3 flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+          {noObjects ? (
+            <span>
+              <strong>Nenhum objeto reconhecido.</strong> Não foi possível extrair
+              tabelas/views — verifique se o <strong>dialeto</strong> selecionado bate
+              com a DDL e se o texto contém <code>CREATE TABLE</code>/<code>CREATE VIEW</code>.
+              Nenhum ticket foi gerado.
+            </span>
+          ) : (
+            <span>
+              <strong>Nenhuma mudança detectada</strong> em relação ao catálogo — as
+              estruturas já estão catalogadas. Por isso <strong>não há ticket para
+              aprovar</strong>.
+            </span>
+          )}
+        </div>
+      )}
       <div className="flex flex-wrap gap-3 mt-3 text-xs">
         <Counter icon={<Plus className="h-3 w-3" />} label="novos" value={result.objects_new} tone="positive" />
         <Counter icon={<RefreshCw className="h-3 w-3" />} label="alterados" value={result.objects_changed} tone="warning" />
