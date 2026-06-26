@@ -1,0 +1,60 @@
+name: Build prebuilt UI dist
+
+# Builda a UI (Vite) onde o npm É acessível (GitHub Actions) e commita o bundle
+# em src/nuclea_modeler/__dist__. Assim o deploy do cliente — que sincroniza o
+# git e NÃO tem acesso ao registry npm — serve a UI completa sem rodar
+# `vite build`. Roda em mudanças de UI no main + manualmente (workflow_dispatch).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/nuclea_modeler/ui/**"
+      - "package.json"
+      - "bun.lock"
+      - "bun.lockb"
+      - "vite.config.ts"
+      - "tsconfig.json"
+      - ".github/workflows/build-dist.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-dist-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-dist:
+    name: Build + commit __dist__
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.10"
+
+      - name: Install deps
+        run: bun install
+
+      - name: Build UI
+        run: bun run build
+
+      - name: Commit prebuilt __dist__ if changed
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          DIST="src/nuclea_modeler/__dist__"
+          git add -A "$DIST"
+          if git diff --cached --quiet; then
+            echo "Bundle inalterado — nada a commitar."
+            exit 0
+          fi
+          # [skip ci] evita re-disparar este e os demais workflows neste commit.
+          git commit -m "build(ui): prebuilt __dist__ [skip ci]"
+          git push
