@@ -1,8 +1,0 @@
-# O bundle do Vite (assets/*.js, *.css + index.html) AGORA é VERSIONADO —
-# buildado pelo workflow .github/workflows/build-dist.yml — para que o deploy do
-# cliente (que sincroniza o git e NÃO tem acesso ao registry npm) sirva a UI
-# completa sem rodar `vite build`. O `databricks sync` respeita este .gitignore,
-# então os assets precisam ficar FORA dele para serem sincronizados.
-#
-# Só sourcemaps continuam ignorados (grandes e desnecessários em produção).
-*.map

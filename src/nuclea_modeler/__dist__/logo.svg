@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120" role="img" aria-label="Núclea Modeler">
+  <defs>
+    <linearGradient id="nuclea-grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#6B1FB8" />
+      <stop offset="100%" stop-color="#832ED9" />
+    </linearGradient>
+  </defs>
+  <rect width="120" height="120" rx="22" fill="url(#nuclea-grad)" />
+  <text x="50%" y="56%" text-anchor="middle" dominant-baseline="middle"
+        font-family="Bahnschrift, 'DM Sans', system-ui, sans-serif"
+        font-weight="700" font-size="64" fill="#FFFFFF" letter-spacing="-2">n</text>
+  <circle cx="86" cy="40" r="9" fill="#DBED1F" />
+</svg>
