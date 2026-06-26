@@ -614,7 +614,14 @@ def _apply_relationship_change(
 def _apply_op_add(state: _ApplyState, ent_change: dict[str, Any]) -> None:
     """Materializa um entity novo + attributes + indexes (op='add').
 
-    Idempotente: se entity com mesma key já existe no catálogo, skip silencioso.
+    Idempotente E AUTO-CURÁVEL: se a entity já existe (ex: um apply anterior
+    criou a entity mas falhou nos atributos por erro transitório de warehouse),
+    NÃO pula — reconcilia, inserindo apenas os atributos que faltam. Cada
+    atributo é inserido de forma resiliente: uma falha pontual não aborta os
+    demais (fica registrada em ``errors`` e é curada num re-apply). Isso evita o
+    estado "entity materializada sem colunas" que antes ficava preso, já que o
+    skip por idempotência impedia o conserto.
+
     Preserva ``pre_allocated_entity_id`` quando presente (necessário pra FKs
     entre entities criadas na mesma sessão).
     """
@@ -634,72 +641,95 @@ def _apply_op_add(state: _ApplyState, ent_change: dict[str, Any]) -> None:
             delta.param("technical_name", technical_name),
         ],
     )
+
     if existing:
-        return
-
-    payload = ent_change.get("payload") or {}
-    eid = payload.get("pre_allocated_entity_id") or delta.new_id("ent-")
-    delta.insert(
-        state.sql,
-        s.fq_table("entities"),
-        {
-            "entity_id": eid,
-            "system_id": state.system_id,
-            "schema_name": schema_name,
-            "technical_name": technical_name,
-            "logical_name": payload.get("logical_name"),
-            "description_md": payload.get("description_md") or payload.get("native_comment"),
-            "domain": payload.get("domain"),
-            "entity_type": ent_change.get("entity_type", "TABLE"),
-            "native_comment": payload.get("native_comment"),
-            "row_count_approx": payload.get("row_count_approx"),
-            "tags": payload.get("tags", []),
-            "is_shared": bool(payload.get("is_shared", False)),
-            "last_extracted_at": state.now,
-            "created_at": state.now, "created_by": state.applied_by,
-            "updated_at": state.now, "updated_by": state.applied_by,
-        },
-    )
-    state.applied_entities += 1
-
-    # Insert indexes (reverse engineering) — origin=EXTRACTED diferencia
-    # da criação manual via UI.
-    for ix_payload in ent_change.get("indexes") or []:
-        try:
-            from ..entities.indexes import apply_index_add
-            apply_index_add(
-                state.sql, entity_id=eid,
-                payload={**ix_payload, "origin": "EXTRACTED"},
-                now=state.now, actor=state.applied_by,
-            )
-        except Exception as exc:
-            state.errors.append(
-                f"index {schema_name}.{technical_name}."
-                f"{ix_payload.get('index_name')}: {exc}"
-            )
-
-    # Insert attributes
-    for idx, attr in enumerate(ent_change.get("attributes") or []):
-        aid = attr.get("attribute_id") or delta.new_id("attr-")
+        # Entity já existe → reconcilia atributos faltantes (não recria a entity
+        # nem reaplica índices).
+        eid = existing[0]
+        new_entity = False
+    else:
+        payload = ent_change.get("payload") or {}
+        eid = payload.get("pre_allocated_entity_id") or delta.new_id("ent-")
         delta.insert(
             state.sql,
-            s.fq_table("attributes"),
+            s.fq_table("entities"),
             {
-                "attribute_id": aid,
                 "entity_id": eid,
-                "technical_name": attr.get("technical_name", ""),
-                "logical_name": attr.get("logical_name"),
-                "ordinal_position": attr.get("ordinal_position", idx + 1),
-                "native_data_type": attr.get("native_data_type"),
-                "is_nullable": attr.get("is_nullable"),
-                "default_value": attr.get("default_value"),
-                "is_primary_key": bool(attr.get("is_primary_key", False)),
-                "native_comment": attr.get("native_comment"),
+                "system_id": state.system_id,
+                "schema_name": schema_name,
+                "technical_name": technical_name,
+                "logical_name": payload.get("logical_name"),
+                "description_md": payload.get("description_md") or payload.get("native_comment"),
+                "domain": payload.get("domain"),
+                "entity_type": ent_change.get("entity_type", "TABLE"),
+                "native_comment": payload.get("native_comment"),
+                "row_count_approx": payload.get("row_count_approx"),
+                "tags": payload.get("tags", []),
+                "is_shared": bool(payload.get("is_shared", False)),
+                "last_extracted_at": state.now,
                 "created_at": state.now, "created_by": state.applied_by,
                 "updated_at": state.now, "updated_by": state.applied_by,
             },
         )
-        state.applied_attributes += 1
+        state.applied_entities += 1
+        new_entity = True
+
+        # Índices (eng. reversa) — só na criação; origin=EXTRACTED diferencia
+        # da criação manual via UI.
+        for ix_payload in ent_change.get("indexes") or []:
+            try:
+                from ..entities.indexes import apply_index_add
+                apply_index_add(
+                    state.sql, entity_id=eid,
+                    payload={**ix_payload, "origin": "EXTRACTED"},
+                    now=state.now, actor=state.applied_by,
+                )
+            except Exception as exc:
+                state.errors.append(
+                    f"index {schema_name}.{technical_name}."
+                    f"{ix_payload.get('index_name')}: {exc}"
+                )
+
+    # Atributos: insere só os que ainda não existem (reconcile/idempotência por
+    # technical_name). Cada insert é resiliente — uma falha não derruba o resto.
+    existing_attr_names: set[str] = set()
+    if not new_entity:
+        attr_rows = delta.fetch_all_params(
+            state.sql,
+            f"SELECT technical_name FROM {s.fq_table('attributes')} WHERE entity_id = :eid",
+            [delta.param("eid", eid)],
+        )
+        existing_attr_names = {r[0] for r in attr_rows}
+
+    for idx, attr in enumerate(ent_change.get("attributes") or []):
+        name = attr.get("technical_name", "")
+        if name in existing_attr_names:
+            continue
+        try:
+            aid = attr.get("attribute_id") or delta.new_id("attr-")
+            delta.insert(
+                state.sql,
+                s.fq_table("attributes"),
+                {
+                    "attribute_id": aid,
+                    "entity_id": eid,
+                    "technical_name": name,
+                    "logical_name": attr.get("logical_name"),
+                    "ordinal_position": attr.get("ordinal_position", idx + 1),
+                    "native_data_type": attr.get("native_data_type"),
+                    "is_nullable": attr.get("is_nullable"),
+                    "default_value": attr.get("default_value"),
+                    "is_primary_key": bool(attr.get("is_primary_key", False)),
+                    "native_comment": attr.get("native_comment"),
+                    "created_at": state.now, "created_by": state.applied_by,
+                    "updated_at": state.now, "updated_by": state.applied_by,
+                },
+            )
+            state.applied_attributes += 1
+        except Exception as exc:  # noqa: BLE001 — resiliente: cura no re-apply
+            state.errors.append(
+                f"attribute {schema_name}.{technical_name}.{name}: {exc}"
+            )
 
 
 def _apply_op_remove(state: _ApplyState, ent_change: dict[str, Any]) -> None:
