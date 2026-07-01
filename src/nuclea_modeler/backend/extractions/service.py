@@ -513,6 +513,33 @@ def run_lakebase_extraction(
         )
 
 
+def _ddl_literal_str(node: Any) -> str | None:
+    """Extrai o texto de um literal/comentário de um nó sqlglot.
+
+    Defensivo: cobre exp.Literal (`.this` é a string), strings cruas e nós
+    cujo `.name` guarda o valor já sem aspas. Retorna None quando não resolve —
+    captura de comentário NUNCA pode derrubar um import.
+    """
+    if node is None:
+        return None
+    try:
+        from sqlglot import expressions as exp
+
+        if isinstance(node, str):
+            return node.strip() or None
+        if isinstance(node, exp.Literal):
+            return (node.this or "").strip() or None
+        name = getattr(node, "name", None)
+        if name:
+            return str(name).strip() or None
+        inner = getattr(node, "this", None)
+        if inner is not None and inner is not node:
+            return _ddl_literal_str(inner)
+    except Exception:  # noqa: BLE001 — comentário é best-effort
+        return None
+    return None
+
+
 def run_ddl_import(
     sql: Sql,
     *,
@@ -552,6 +579,10 @@ def run_ddl_import(
     entities: list[ExtractedEntity] = []
     relationships: list[ExtractedRelationship] = []
     errors: list[str] = []
+    # Comentários de `COMMENT ON TABLE/COLUMN ... IS '...'` costumam vir DEPOIS
+    # do CREATE — guardamos e aplicamos no fim (chave = schema/tabela[/coluna]).
+    deferred_table_comments: dict[tuple[str, str], str] = {}
+    deferred_col_comments: dict[tuple[str, str, str], str] = {}
     for stmt in parsed:
         if stmt is None:
             continue
@@ -578,6 +609,7 @@ def run_ddl_import(
                     dtype = col_expr.args.get("kind")
                     native = dtype.sql() if dtype else ""
                     is_nullable = True
+                    col_comment: str | None = None
                     for cons in (col_expr.args.get("constraints") or []):
                         kind = cons.args.get("kind")
                         if isinstance(kind, exp.PrimaryKeyColumnConstraint):
@@ -589,6 +621,9 @@ def run_ddl_import(
                             rel = _ddl_reference_to_rel(kind, schema_name, tbl_name, [name])
                             if rel:
                                 relationships.append(rel)
+                        # Comentário inline: `col INT COMMENT 'texto'`
+                        if isinstance(kind, exp.CommentColumnConstraint):
+                            col_comment = _ddl_literal_str(kind.this)
                     attributes.append(
                         ExtractedAttribute(
                             technical_name=name,
@@ -596,6 +631,7 @@ def run_ddl_import(
                             native_data_type=native,
                             is_nullable=is_nullable,
                             is_primary_key=False,  # set below from pk_cols
+                            native_comment=col_comment,
                         )
                     )
                 # Mark PKs
@@ -610,17 +646,107 @@ def run_ddl_import(
                         rel = _ddl_reference_to_rel(ref, schema_name, tbl_name, local_cols)
                         if rel:
                             relationships.append(rel)
+                # Comentário de tabela: `... COMMENT 'texto'` / `COMMENT = '...'`
+                # aparece como exp.SchemaCommentProperty dentro de properties.
+                # Best-effort: um erro aqui não pode derrubar a extração da tabela.
+                tbl_comment: str | None = None
+                try:
+                    props = stmt.args.get("properties")
+                    for prop in (getattr(props, "expressions", None) or []):
+                        if isinstance(prop, exp.SchemaCommentProperty):
+                            tbl_comment = _ddl_literal_str(prop.this)
+                except Exception:  # noqa: BLE001
+                    tbl_comment = None
                 entities.append(
                     ExtractedEntity(
                         schema_name=schema_name,
                         technical_name=tbl_name,
                         entity_type="VIEW" if stmt.kind.upper() == "VIEW" else "TABLE",
-                        native_comment=None,
+                        native_comment=tbl_comment,
                         attributes=attributes,
                     )
                 )
+            elif isinstance(stmt, exp.Comment):
+                # `COMMENT ON TABLE t IS '...'` / `COMMENT ON COLUMN t.c IS '...'`
+                obj_kind = str(stmt.args.get("kind") or "").upper()
+                target = stmt.this
+                text = _ddl_literal_str(stmt.args.get("expression"))
+                if text and target is not None:
+                    if obj_kind == "COLUMN":
+                        col = target.name if hasattr(target, "name") else ""
+                        tbl = getattr(target, "table", "") or ""
+                        sch = getattr(target, "db", "") or "public"
+                        if col and tbl:
+                            deferred_col_comments[(sch, tbl, col)] = text
+                    else:  # TABLE (default)
+                        tbl = target.name if hasattr(target, "name") else ""
+                        sch = (getattr(target, "db", "") or None) or "public"
+                        if tbl:
+                            deferred_table_comments[(sch, tbl)] = text
         except Exception as exc:
             errors.append(f"parse stmt skipped: {exc}")
+
+    # Aplica os comentários de COMMENT ON coletados (autoritativos — sobrescrevem
+    # o que veio inline no CREATE, pois são declarações explícitas).
+    for e in entities:
+        tc = deferred_table_comments.get((e.schema_name, e.technical_name))
+        if tc:
+            e.native_comment = tc
+        for a in e.attributes:
+            cc = deferred_col_comments.get((e.schema_name, e.technical_name, a.technical_name))
+            if cc:
+                a.native_comment = cc
+
+    # Falha "silenciosa": o parse não reconheceu nenhum CREATE TABLE/VIEW.
+    # Marcamos FAILED com mensagem acionável em vez de devolver SUCCESS com 0
+    # objetos. CRÍTICO: precisa vir ANTES do diff — um snapshot vazio faria o
+    # compute_diff marcar TODAS as entidades do catálogo como removidas,
+    # gerando um ticket destrutivo.
+    if not entities:
+        ended = datetime.utcnow()
+        duration_ms = int((time.monotonic() - start_clock) * 1000)
+        msg = (
+            "Nenhum objeto (CREATE TABLE/VIEW) reconhecido no DDL. "
+            f"Confirme se o dialeto selecionado ({dialect}) corresponde ao arquivo."
+        )
+        if errors:
+            msg += f" {len(errors)} statement(s) ignorado(s) no parse."
+        empty_snapshot = ExtractionSnapshot(
+            source_kind="DDL_FILE",
+            system_id=system_id,
+            captured_at=datetime.utcnow(),
+            schemas=[],
+            entities=[],
+            relationships=[],
+        )
+        ended_at = ended
+        ext_id = persist_extraction(
+            sql,
+            source_kind="DDL_FILE",
+            system_id=system_id,
+            actor=actor,
+            requested_schemas=[],
+            requested_kinds=["TABLE", "VIEW"],
+            lakebase_sandbox_id=None,
+            connection_id=None,
+            status="FAILED",
+            started_at=started,
+            ended_at=ended_at,
+            objects_found=0, objects_new=0, objects_changed=0, objects_removed=0,
+            snapshot=empty_snapshot,
+            diff_summary=None,
+            error_summary=msg[:4000],
+            ticket_id=None,
+        )
+        return ExtractionResult(
+            extraction_id=ext_id,
+            status="FAILED",
+            objects_found=0, objects_new=0, objects_changed=0, objects_removed=0,
+            duration_ms=duration_ms,
+            ticket_id=None,
+            summary_md=msg,
+            errors=errors or [msg],
+        )
 
     snapshot = ExtractionSnapshot(
         source_kind="DDL_FILE",
