@@ -228,6 +228,7 @@ def run_sync(
                 # Existence check. Se não existe: materializa (CREATE) quando
                 # payload.materialize, senão marca SKIPPED (comportamento clássico).
                 created = False
+                create_sql: str | None = None
                 if not _target_table_exists(sql, target_table):
                     if not payload.materialize:
                         objects.append(
@@ -351,13 +352,22 @@ def run_sync(
                             "materializada (tabela Delta criada)" if created
                             else ("sincronizada (materialize)" if payload.materialize else None)
                         ),
+                        ddl=create_sql,
                     )
                 )
                 objects_synced += 1
                 if created:
                     objects_created += 1
             else:
-                # Dry-run: report what WOULD happen, no SQL executed
+                # Dry-run: report what WOULD happen, no SQL na tabela destino.
+                # Com materialize, geramos o DDL de CREATE TABLE (lê só os
+                # atributos no schema do app) para o usuário VER o que seria
+                # criado — sem tocar no Unity Catalog destino.
+                ddl_preview = (
+                    _build_create_table_sql(sql, target_table, entity_id)
+                    if payload.materialize
+                    else None
+                )
                 objects.append(
                     SyncObjectResult(
                         schema_name=schema_name,
@@ -369,6 +379,7 @@ def run_sync(
                             if payload.materialize
                             else "dry-run (no changes applied)"
                         ),
+                        ddl=ddl_preview,
                     )
                 )
                 objects_synced += 1

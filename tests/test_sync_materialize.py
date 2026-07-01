@@ -122,3 +122,24 @@ def test_run_sync_without_materialize_skips_missing(monkeypatch, patch_settings)
     assert result.objects_created == 0
     assert result.objects[0].status == "SKIPPED"
     assert not any("CREATE TABLE" in q for q in executed)
+
+
+def test_run_sync_dry_run_materialize_returns_ddl(monkeypatch, patch_settings):
+    """Preview (dry-run) com materialize devolve o DDL de CREATE TABLE, sem tocar
+    no Unity Catalog destino."""
+    monkeypatch.setattr(svc.delta, "fetch_all_params", _fake_fetch_factory())
+    # No dry-run nada é executado/persistido; guardas contra chamadas acidentais.
+    monkeypatch.setattr(svc.delta, "run", lambda sql, q: pytest.fail("dry-run não deve executar SQL"))
+    monkeypatch.setattr(svc.delta, "run_params", lambda sql, q, p=None: pytest.fail("dry-run não deve executar SQL"))
+
+    req = SyncRunRequest(
+        system_id="sys-1", target_catalog="cliente_cat",
+        materialize=True, dry_run=True,
+    )
+    result = svc.run_sync(object(), req, "tester@x.com")
+
+    assert result.dry_run is True
+    obj = result.objects[0]
+    assert obj.ddl is not None
+    assert "CREATE TABLE IF NOT EXISTS cliente_cat.vendas.pedido" in obj.ddl
+    assert "USING DELTA" in obj.ddl

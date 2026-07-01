@@ -881,6 +881,7 @@ export interface SyncObjectResult {
   target_table: string;
   status: SyncObjectStatus;
   message?: string | null;
+  ddl?: string | null;
 }
 
 export interface SyncRunResult {
