@@ -6,10 +6,13 @@ under `target_catalog.<mapped_schema>.<technical_name>` and emit:
   - COMMENT ON COLUMN (per attribute)
   - ALTER TABLE SET TAGS (domain / criticality / business_owner)
 
-The function never creates tables — when a target does not exist it is
-recorded as SKIPPED. Per-object exceptions are caught and recorded as
-ERROR, the rest of the run continues. Results are persisted to
-`sync_log` (unless `dry_run=True`).
+When `materialize=True` and the target does not exist, the table is CREATEd
+in the destination catalog (Delta, type-mapped via the M10 Spark generator)
+and the source entity is flagged as materialized (is_materialized /
+materialized_at / materialized_catalog). When `materialize=False` (default,
+classic M9) a missing target is recorded as SKIPPED. Per-object exceptions are
+caught and recorded as ERROR, the rest of the run continues. Results are
+persisted to `sync_log` (unless `dry_run=True`).
 """
 from __future__ import annotations
 
@@ -24,6 +27,7 @@ from fastapi import HTTPException
 from ..core import delta
 from ..core._nuclea_config import get_settings
 from ..core.sql import Sql
+from ..ddl.generators import map_type
 from .models import (
     SyncObjectResult,
     SyncRunRequest,
@@ -87,6 +91,58 @@ def _target_table_exists(sql: Sql, target_table: str) -> bool:
         return False
 
 
+def _build_create_table_sql(sql: Sql, target_table: str, entity_id: str) -> str | None:
+    """Monta um `CREATE TABLE IF NOT EXISTS ... USING DELTA` para materializar
+    a entidade no catálogo destino.
+
+    Reusa o type-mapping do gerador DDL Spark (M10) para manter os tipos o mais
+    próximo possível do modelo. Comentários e tags são aplicados logo depois pelo
+    bloco de sync (COMMENT ON / ALTER ... SET TAGS), então aqui só a estrutura.
+    Retorna None quando a entidade não tem colunas válidas (nada a materializar).
+    """
+    s = get_settings()
+    rows = delta.fetch_all_params(
+        sql,
+        f"""
+        SELECT technical_name, native_data_type, is_nullable
+        FROM {s.fq_table('attributes')}
+        WHERE entity_id = :entity_id
+        ORDER BY ordinal_position, technical_name
+        """,
+        [delta.param("entity_id", entity_id)],
+    )
+    cols: list[str] = []
+    for tech_name, native_dt, is_nullable in rows:
+        if not tech_name or not _IDENT_RE.match(tech_name):
+            continue
+        spark_type = map_type(native_dt, "SPARKSQL") or "STRING"
+        null_clause = "" if (is_nullable is None or is_nullable) else " NOT NULL"
+        cols.append(f"  {tech_name} {spark_type}{null_clause}")
+    if not cols:
+        return None
+    return (
+        f"CREATE TABLE IF NOT EXISTS {target_table} (\n"
+        + ",\n".join(cols)
+        + "\n) USING DELTA"
+    )
+
+
+def _mark_entity_materialized(sql: Sql, entity_id: str, target_catalog: str) -> None:
+    """Grava na entity que ela foi materializada no catálogo destino (pedido #9)."""
+    s = get_settings()
+    delta.run_params(
+        sql,
+        f"""
+        UPDATE {s.fq_table('entities')}
+        SET is_materialized = true,
+            materialized_at = current_timestamp(),
+            materialized_catalog = :cat
+        WHERE entity_id = :eid
+        """,
+        [delta.param("cat", target_catalog), delta.param("eid", entity_id)],
+    )
+
+
 def _classify_status(objects_total: int, objects_failed: int,
                      objects_synced: int) -> SyncStatus:
     if objects_total == 0:
@@ -131,6 +187,7 @@ def run_sync(
     errors: list[str] = []
     objects_synced = 0
     objects_failed = 0
+    objects_created = 0
 
     for r in ent_rows:
         (
@@ -168,18 +225,36 @@ def run_sync(
 
         try:
             if not payload.dry_run:
-                # Existence check — skip non-existent targets gracefully
+                # Existence check. Se não existe: materializa (CREATE) quando
+                # payload.materialize, senão marca SKIPPED (comportamento clássico).
+                created = False
                 if not _target_table_exists(sql, target_table):
-                    objects.append(
-                        SyncObjectResult(
-                            schema_name=schema_name,
-                            technical_name=technical_name,
-                            target_table=target_table,
-                            status="SKIPPED",
-                            message="target table not found in Unity Catalog",
+                    if not payload.materialize:
+                        objects.append(
+                            SyncObjectResult(
+                                schema_name=schema_name,
+                                technical_name=technical_name,
+                                target_table=target_table,
+                                status="SKIPPED",
+                                message="target table not found in Unity Catalog",
+                            )
                         )
-                    )
-                    continue
+                        continue
+                    create_sql = _build_create_table_sql(sql, target_table, entity_id)
+                    if create_sql is None:
+                        objects.append(
+                            SyncObjectResult(
+                                schema_name=schema_name,
+                                technical_name=technical_name,
+                                target_table=target_table,
+                                status="ERROR",
+                                message="entidade sem colunas — nada a materializar",
+                            )
+                        )
+                        objects_failed += 1
+                        continue
+                    delta.run(sql, create_sql)
+                    created = True
 
                 # 2a) Table COMMENT — parameterise the body so quotes never break us
                 tbl_comment = _trim(
@@ -258,16 +333,29 @@ def run_sync(
                             f"{schema_name}.{technical_name} (tags): {tag_exc}"
                         )
 
+                # Marca a entity como materializada (só no modo materialize).
+                if payload.materialize:
+                    try:
+                        _mark_entity_materialized(sql, entity_id, payload.target_catalog)
+                    except Exception as mk_exc:
+                        errors.append(
+                            f"{schema_name}.{technical_name} (flag materializado): {mk_exc}"
+                        )
                 objects.append(
                     SyncObjectResult(
                         schema_name=schema_name,
                         technical_name=technical_name,
                         target_table=target_table,
                         status="OK",
-                        message=None,
+                        message=(
+                            "materializada (tabela Delta criada)" if created
+                            else ("sincronizada (materialize)" if payload.materialize else None)
+                        ),
                     )
                 )
                 objects_synced += 1
+                if created:
+                    objects_created += 1
             else:
                 # Dry-run: report what WOULD happen, no SQL executed
                 objects.append(
@@ -276,7 +364,11 @@ def run_sync(
                         technical_name=technical_name,
                         target_table=target_table,
                         status="OK",
-                        message="dry-run (no changes applied)",
+                        message=(
+                            "dry-run: materializaria a tabela se não existir"
+                            if payload.materialize
+                            else "dry-run (no changes applied)"
+                        ),
                     )
                 )
                 objects_synced += 1
@@ -337,9 +429,11 @@ def run_sync(
         objects_total=objects_total,
         objects_synced=objects_synced,
         objects_failed=objects_failed,
+        objects_created=objects_created,
         duration_ms=duration_ms,
         target_catalog=payload.target_catalog,
         dry_run=payload.dry_run,
+        materialize=payload.materialize,
         errors=errors,
         objects=objects,
     )

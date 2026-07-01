@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import {
   ReactFlow,
   ReactFlowProvider,
+  useReactFlow,
   Background,
   Controls,
   MiniMap,
@@ -65,7 +66,9 @@ import {
   Download,
   Eye,
   EyeOff,
+  ImageDown,
   LayoutGrid,
+  Maximize2,
   Network,
   Plus,
   RefreshCw,
@@ -79,6 +82,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { EmptyState } from "@/components/apx/empty-state";
+import { AttachmentsPanel } from "@/components/attachments/attachments-panel";
 import { NewSystemWizard } from "@/components/apx/new-system-wizard";
 
 import { EntityNode } from "@/components/diagram/entity-node";
@@ -500,6 +504,30 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
 
   const [showMembers, setShowMembers] = useState(false);
 
+  const { fitView } = useReactFlow();
+
+  // Item 5: ao trocar a estrutura (schema/diagrama/filtro), reajusta o zoom
+  // para o diagrama caber sempre na tela. Keyado na assinatura dos IDS dos nós
+  // (não nas posições) para NÃO refazer o fit enquanto o usuário arrasta.
+  const nodeIdSig = useMemo(
+    () => nodes.map((n) => n.id).sort().join("|"),
+    [nodes],
+  );
+  useEffect(() => {
+    if (nodes.length === 0) return;
+    const t = window.setTimeout(
+      () => fitView({ padding: 0.15, minZoom: 0.1, maxZoom: 1.5, duration: 300 }),
+      60,
+    );
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nodeIdSig, fitView]);
+
+  const fitToScreen = useCallback(
+    () => fitView({ padding: 0.15, minZoom: 0.1, maxZoom: 1.5, duration: 300 }),
+    [fitView],
+  );
+
   const exportPng = useCallback(async () => {
     if (!canvasRef.current) return;
     const dataUrl = await toPng(canvasRef.current, { backgroundColor: "#ffffff" });
@@ -508,6 +536,31 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
     link.download = `nuclea-der-${view.system_name || systemId}.png`;
     link.click();
   }, [view.system_name, systemId]);
+
+  // Item 4: exportar como imagem UM objeto (a tabela selecionada no canvas).
+  const selectedNodeId = useMemo(
+    () => nodes.find((n) => n.selected)?.id ?? null,
+    [nodes],
+  );
+  const exportNodePng = useCallback(async () => {
+    if (!canvasRef.current || !selectedNodeId) {
+      toast.error("Selecione um objeto no diagrama para exportar");
+      return;
+    }
+    const el = canvasRef.current.querySelector(
+      `.react-flow__node[data-id="${CSS.escape(selectedNodeId)}"]`,
+    ) as HTMLElement | null;
+    if (!el) {
+      toast.error("Objeto selecionado não encontrado no canvas");
+      return;
+    }
+    const dataUrl = await toPng(el, { backgroundColor: "#ffffff", pixelRatio: 2 });
+    const ent = view.entities.find((e) => e.entity_id === selectedNodeId);
+    const link = document.createElement("a");
+    link.href = dataUrl;
+    link.download = `nuclea-obj-${ent?.technical_name || selectedNodeId}.png`;
+    link.click();
+  }, [selectedNodeId, view.entities]);
 
   const exportJson = useCallback(() => {
     const payload = {
@@ -780,9 +833,28 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
                   ? "Salvar layout do diagrama"
                   : "Salvar layout"}
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={fitToScreen}
+              title="Ajustar o zoom para o diagrama caber na tela"
+            >
+              <Maximize2 className="mr-2 h-4 w-4" />
+              Encaixar
+            </Button>
             <Button variant="outline" size="sm" onClick={exportPng}>
               <Download className="mr-2 h-4 w-4" />
               PNG
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={exportNodePng}
+              disabled={!selectedNodeId}
+              title="Exportar como PNG só o objeto selecionado no diagrama"
+            >
+              <ImageDown className="mr-2 h-4 w-4" />
+              PNG objeto
             </Button>
             <Button variant="outline" size="sm" onClick={exportJson}>
               <FileJson className="mr-2 h-4 w-4" />
@@ -1001,6 +1073,12 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
         />
       )}
     </Card>
+    <AttachmentsPanel
+      ownerKind={diagramId ? "diagram" : "system"}
+      ownerId={diagramId || systemId}
+      label="Anexos do modelo"
+      description="Documentos anexados a este modelo (diagrama ou sistema). Máx. 25 MB por arquivo."
+    />
     </div>
   );
 }

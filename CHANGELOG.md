@@ -6,6 +6,11 @@ Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 ## [Unreleased]
 
 ### Fixed 🐛
+- **Import DDL sem objetos falha explicitamente (#8)** — DDL sem nenhum
+  `CREATE TABLE/VIEW` reconhecido devolvia `SUCCESS` com 0 objetos (falha
+  silenciosa). Agora devolve `FAILED` com mensagem acionável ("confirme o
+  dialeto"), **antes** do diff — evitando que um snapshot vazio marcasse todo o
+  catálogo como removido (ticket destrutivo).
 - **Import "sucesso" sem ticket agora é explicado** — quando uma extração não
   reconhece objetos (`0 encontrados` — dialeto errado ou sem CREATE TABLE) ou
   não detecta mudanças vs o catálogo (`+0 novos`), o painel de resultado mostra
@@ -32,6 +37,23 @@ Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
   única ação.
 
 ### Added
+- **Materializar modelo em Delta (#9)** — o sync (M9) ganha a flag `materialize`:
+  quando a tabela destino não existe no catálogo escolhido pelo cliente, ela é
+  **criada** (Delta, tipos mapeados p/ Spark, com COMMENTs) e a entidade é
+  marcada como materializada (`is_materialized` / `materialized_at` /
+  `materialized_catalog` — migration 015). Sem a flag, tabela inexistente segue
+  `SKIPPED`. Exige grant `CREATE TABLE` ao SP no catálogo destino.
+- **Anexar documentos a tabelas e modelos (#7)** — upload/list/download/delete de
+  documentos (≤ 25 MB) numa entidade, diagrama ou sistema. Bytes num Volume
+  gerenciado do Unity Catalog (migration 016), metadados em Delta. UI:
+  `AttachmentsPanel` na tabela e no modelo. Exige `WRITE VOLUME` ao SP.
+- **DDL captura comentários (#2)** — `COMMENT` inline de coluna/tabela e
+  `COMMENT ON TABLE/COLUMN` no import DDL passam a ser gravados em
+  `native_comment` (antes eram descartados).
+- **Exportar objeto único do DER como imagem (#4)** — botão "PNG objeto" exporta
+  só a tabela selecionada no canvas (além do PNG do diagrama inteiro).
+- **Diagrama sempre visível (#5)** — `fitView` imperativo ao trocar
+  schema/diagrama/filtro + botão "Encaixar na tela".
 - **Aprovação/aplicação em lote de tickets** — `POST /tickets/batch`
   (`approve` / `reject` / `apply` / `approve_and_apply`) processa N tickets sem
   abortar o lote por erro de um item.
