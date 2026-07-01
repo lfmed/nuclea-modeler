@@ -35,6 +35,9 @@ class SyncObjectResult(BaseModel):
     target_table: str
     status: SyncObjectStatus
     message: str | None = None
+    # DDL de CREATE TABLE materializado/previsto (preenchido no preview quando
+    # materialize=True, e no apply quando a tabela foi criada). Null caso contrário.
+    ddl: str | None = None
 
 
 class SyncRunResult(BaseModel):

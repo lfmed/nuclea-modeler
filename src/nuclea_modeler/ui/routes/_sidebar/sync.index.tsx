@@ -392,6 +392,21 @@ function ResultPanel({
         </div>
       )}
 
+      {result.objects.some((o) => o.ddl) && (
+        <details className="rounded-md border bg-background" open>
+          <summary className="cursor-pointer px-3 py-2 text-xs font-medium">
+            DDL de criação ({result.objects.filter((o) => o.ddl).length} tabela(s))
+            {result.dry_run ? " — preview, nada aplicado" : ""}
+          </summary>
+          <pre className="max-h-72 overflow-auto border-t px-3 py-2 font-mono text-[11px] leading-relaxed whitespace-pre">
+            {result.objects
+              .filter((o) => o.ddl)
+              .map((o) => `-- ${o.target_table}\n${o.ddl};`)
+              .join("\n\n")}
+          </pre>
+        </details>
+      )}
+
       <ObjectsTable objects={result.objects} />
     </div>
   );
