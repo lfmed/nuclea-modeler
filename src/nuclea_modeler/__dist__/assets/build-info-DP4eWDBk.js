@@ -1,1 +1,0 @@
-const n="1.0003",t="2026-07-01T23:11:22.906Z";function r(){try{return new Date(t).toLocaleString("pt-BR")}catch{return t}}export{n as A,r as f};
