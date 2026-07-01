@@ -12,6 +12,33 @@ Full-stack Databricks App built with apx (React + Vite frontend, FastAPI backend
 - Avoid unnecessary restarts of the development servers
 - **Databricks SDK:** Use the apx MCP `docs` tool to search Databricks SDK documentation instead of guessing or hallucinating API signatures.
 
+## Documentação & manutenibilidade (INSTRUÇÃO PERMANENTE)
+
+Este app é entregue a um cliente e evoluído em sessões separadas, por humanos e
+por agentes de IA distintos. **Toda melhoria deve deixar o código muito bem
+documentado para quem mantém depois.** Cumprir em todo PR:
+
+- **Docstring de módulo** explicando propósito + fluxo; docstring em funções não-triviais.
+- **Comentar o "porquê"** (decisões, gotchas, ordem que importa) — não o "o quê" óbvio.
+  Ex.: "guard antes do diff para não marcar todo o catálogo como removido".
+- **Migrations** com cabeçalho explicando o que muda e por quê (padrão `databricks/sql/001–016`).
+- **Testes** como documentação viva do comportamento esperado (o CI é o loop de validação).
+- **Decisões arquiteturais** relevantes vão para este `CLAUDE.md` (para outros
+  agentes/humanos) e para a memória do agente quando aplicável.
+
+### Versionamento visível (contador de build)
+- `src/nuclea_modeler/ui/lib/build-info.ts` expõe `APP_VERSION` (exibido no rodapé
+  da sidebar junto da data/hora do build). **Incremente `APP_VERSION` a cada
+  melhoria entregue:** `1.0001 → 1.0002 → 1.0003…`. Serve para comparar o que está
+  deployado no cliente vs. a última versão.
+
+### Realidades deste repo que agentes precisam saber (corrigem o boilerplate acima)
+- **`ui/lib/api.ts` é ESCRITO À MÃO** — não há codegen no deploy (cliente sem npm/apx).
+  Rota nova no backend ⇒ escreva o hook à mão em `api.ts` (padrão `use<Op>` /
+  `use<Op>Suspense` / `selector()`). Ignore a linha do boilerplate que diz "auto-regenera".
+- **UI só chega ao cliente após merge no `main`**, que dispara `build-dist.yml`
+  (rebuild + commit de `src/nuclea_modeler/__dist__`, o bundle prebuilt servido em prod).
+
 ## Package Management
 - **Frontend:** Use `apx bun install` or `apx bun add <dependency>` for frontend package management.
 - **Python:** Always use `uv` (never `pip`)

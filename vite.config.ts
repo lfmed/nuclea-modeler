@@ -41,6 +41,10 @@ export default defineConfig({
   },
   define: {
     __APP_NAME__: JSON.stringify("Núclea Modeler"),
+    // Carimbo de tempo do build da UI. Avaliado no momento do `vite build`
+    // (roda em build-dist.yml no merge p/ main), então o rodapé mostra
+    // exatamente quando o bundle deployado foi gerado. Ver ui/lib/build-info.ts.
+    __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
   },
   build: {
     outDir: distDir,
