@@ -936,6 +936,82 @@ export const usePreviewSync = (opts?: Opts<SyncRunResult, { data: SyncRunRequest
     ...opts?.mutation,
   });
 
+// ─── Anexos (documentos em entidades/modelos) ─────────────────────────────────
+
+export type AttachmentOwnerKind = "entity" | "schema" | "diagram" | "system";
+
+export interface AttachmentListOut {
+  attachment_id: string;
+  owner_kind: AttachmentOwnerKind;
+  owner_id: string;
+  original_filename: string;
+  mime_type?: string | null;
+  file_size_bytes?: number | null;
+  description?: string | null;
+  created_at: string;
+  created_by: string;
+}
+
+export type AttachmentOut = AttachmentListOut;
+
+export const useListAttachments = (
+  ownerKind: string | null | undefined,
+  ownerId: string | null | undefined,
+) =>
+  useQuery({
+    queryKey: ["listAttachments", ownerKind, ownerId],
+    queryFn: () =>
+      api
+        .get<AttachmentListOut[]>("/attachments", {
+          params: { owner_kind: ownerKind, owner_id: ownerId },
+        })
+        .then((r) => r.data),
+    enabled: !!ownerKind && !!ownerId,
+  });
+
+// Upload via multipart. Content-Type é deixado undefined de propósito para o
+// axios/browser definirem o boundary a partir do FormData.
+export const useUploadAttachment = (opts?: Opts<AttachmentOut, { data: FormData }>) =>
+  useMutation({
+    mutationFn: async ({ data }) =>
+      (
+        await api.post<AttachmentOut>("/attachments", data, {
+          headers: { "Content-Type": undefined },
+        } as never)
+      ).data,
+    ...opts?.mutation,
+  });
+
+export const useDeleteAttachment = (
+  opts?: Opts<{ ok: boolean }, { attachmentId: string }>,
+) =>
+  useMutation({
+    mutationFn: async ({ attachmentId }) =>
+      (
+        await api.delete<{ ok: boolean }>(
+          `/attachments/${encodeURIComponent(attachmentId)}`,
+        )
+      ).data,
+    ...opts?.mutation,
+  });
+
+// Baixa os bytes e dispara o download no browser.
+export async function downloadAttachment(
+  attachmentId: string,
+  filename: string,
+): Promise<void> {
+  const resp = await api.get(
+    `/attachments/${encodeURIComponent(attachmentId)}/download`,
+    { responseType: "blob" },
+  );
+  const url = URL.createObjectURL(resp.data as Blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 // ─── Flags (Módulo 5) ────────────────────────────────────────────────────────
 
 export type FlagCategory = "LGPD" | "USE" | "QUALITY" | "CUSTOM";

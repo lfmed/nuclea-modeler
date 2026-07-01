@@ -21,6 +21,7 @@ import selector from "@/lib/selector";
 import { TypePicker } from "@/components/diagram/type-picker";
 import { IndexesSection } from "@/components/diagram/indexes-section";
 import { PartitioningSection } from "@/components/diagram/partitioning-section";
+import { AttachmentsPanel } from "@/components/attachments/attachments-panel";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -175,6 +176,8 @@ function EntityDetail() {
 
       <IndexesSection entityId={id} technology={systemTechnology} />
       <PartitioningSection entityId={id} technology={systemTechnology} />
+
+      <AttachmentsPanel ownerKind="entity" ownerId={id} label="Anexos da tabela" />
     </div>
   );
 }

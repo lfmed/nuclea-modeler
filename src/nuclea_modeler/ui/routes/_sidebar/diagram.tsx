@@ -82,6 +82,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { EmptyState } from "@/components/apx/empty-state";
+import { AttachmentsPanel } from "@/components/attachments/attachments-panel";
 import { NewSystemWizard } from "@/components/apx/new-system-wizard";
 
 import { EntityNode } from "@/components/diagram/entity-node";
@@ -1072,6 +1073,12 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
         />
       )}
     </Card>
+    <AttachmentsPanel
+      ownerKind={diagramId ? "diagram" : "system"}
+      ownerId={diagramId || systemId}
+      label="Anexos do modelo"
+      description="Documentos anexados a este modelo (diagrama ou sistema). Máx. 25 MB por arquivo."
+    />
     </div>
   );
 }
