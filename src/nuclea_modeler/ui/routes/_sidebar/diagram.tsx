@@ -934,7 +934,7 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
       <CardContent>
         <div
           ref={canvasRef}
-          className="h-[640px] w-full rounded-md border bg-background"
+          className="h-[calc(100vh-16rem)] min-h-[520px] w-full rounded-md border bg-background"
         >
           <ReactFlow
             nodes={nodes}

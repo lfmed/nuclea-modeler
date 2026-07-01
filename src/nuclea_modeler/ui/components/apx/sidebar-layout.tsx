@@ -1,4 +1,4 @@
-import { Link, Outlet } from "@tanstack/react-router";
+import { Link, Outlet, useLocation } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import {
   Sidebar,
@@ -22,6 +22,12 @@ interface SidebarLayoutProps {
 }
 
 function SidebarLayout({ children }: SidebarLayoutProps) {
+  // Telas de canvas (DER e Canvas Exploratório) usam a largura toda da tela —
+  // o cap max-w-7xl centralizado desperdiça espaço nas laterais nelas. As demais
+  // páginas (formulários, listas, texto) seguem limitadas para legibilidade.
+  const { pathname } = useLocation();
+  const fullBleed =
+    pathname.startsWith("/diagram") || pathname.startsWith("/comparador");
   return (
     <SidebarProvider>
       <Sidebar>
@@ -71,9 +77,13 @@ function SidebarLayout({ children }: SidebarLayoutProps) {
         <main
           id="main-content"
           role="main"
-          className="flex flex-1 justify-center overflow-auto"
+          className={`flex flex-1 overflow-auto ${fullBleed ? "" : "justify-center"}`}
         >
-          <div className="flex flex-1 flex-col gap-4 p-6 max-w-7xl">
+          <div
+            className={`flex flex-1 flex-col gap-4 p-6 ${
+              fullBleed ? "w-full" : "max-w-7xl"
+            }`}
+          >
             <Outlet />
           </div>
         </main>
