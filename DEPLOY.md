@@ -72,11 +72,29 @@ O SP precisa pelo menos:
 GRANT USAGE ON CATALOG <CATALOG_NAME> TO `<SP_APPLICATION_ID>`;
 GRANT CREATE SCHEMA ON CATALOG <CATALOG_NAME> TO `<SP_APPLICATION_ID>`;
 
--- No schema (após primeira run que cria) — opcional, pode esperar
+-- No schema (após primeira run que cria). Necessário p/ **anexos**: as
+-- migrations criam um Volume gerenciado `attachments` no próprio schema do app
+-- e o app escreve/lê arquivos nele. ALL PRIVILEGES cobre CREATE/WRITE VOLUME.
 GRANT ALL PRIVILEGES ON SCHEMA <CATALOG_NAME>.nuclea_modeler TO `<SP_APPLICATION_ID>`;
 ```
 
 O `<SP_APPLICATION_ID>` é o UUID que `databricks apps create` retornou.
+
+### Grants extras por funcionalidade
+
+| Funcionalidade | Grant necessário | Quando |
+|---|---|---|
+| **Anexos** (documentos em tabelas/modelos) | `ALL PRIVILEGES ON SCHEMA` do app (acima) — cobre `CREATE VOLUME` + `WRITE VOLUME` | ao usar anexos |
+| **Materializar modelo em Delta** (sync com "Materializar") | `USE CATALOG` + `USE SCHEMA` + `CREATE TABLE` + `MODIFY` no **catálogo/schema destino** que o cliente escolher (pode ser diferente do catálogo do app) | ao materializar |
+
+```sql
+-- Só se for usar "Materializar em Delta" para um catálogo destino <ALVO>:
+GRANT USE CATALOG ON CATALOG <ALVO> TO `<SP_APPLICATION_ID>`;
+GRANT USE SCHEMA, CREATE TABLE, MODIFY ON SCHEMA <ALVO>.<SCHEMA_DESTINO> TO `<SP_APPLICATION_ID>`;
+```
+
+Sem esses grants a materialização retorna `ERROR`/`SKIPPED` por objeto (não
+derruba o app), e o upload de anexo retorna `502` com a mensagem do Volume.
 
 ## 6. Deploy
 
