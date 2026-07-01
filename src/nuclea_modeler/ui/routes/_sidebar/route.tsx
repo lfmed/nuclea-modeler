@@ -93,7 +93,7 @@ function Layout() {
         },
         {
           to: "/comparador",
-          label: "Comparador",
+          label: "Canvas Exploratório",
           icon: <Columns2 size={16} />,
           match: (p) => p.startsWith("/comparador"),
         },
