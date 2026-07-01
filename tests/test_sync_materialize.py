@@ -143,3 +143,28 @@ def test_run_sync_dry_run_materialize_returns_ddl(monkeypatch, patch_settings):
     assert obj.ddl is not None
     assert "CREATE TABLE IF NOT EXISTS cliente_cat.vendas.pedido" in obj.ddl
     assert "USING DELTA" in obj.ddl
+
+
+def test_run_sync_dry_run_no_columns_fails(monkeypatch, patch_settings):
+    """Dry-run materialize de entidade SEM colunas → ERROR (não dá pra criar),
+    nunca aparece como sucesso."""
+    def fetch(sql, query, params):
+        if "FROM cat.sch.entities" in query:
+            return [("ent-1", "vendas", "vazia", "Vazia", None, None, None, None, None)]
+        return []  # sem atributos
+
+    monkeypatch.setattr(svc.delta, "fetch_all_params", fetch)
+    monkeypatch.setattr(svc.delta, "run", lambda sql, q: pytest.fail("dry-run não executa SQL"))
+    monkeypatch.setattr(svc.delta, "run_params", lambda sql, q, p=None: pytest.fail("dry-run não executa SQL"))
+
+    req = SyncRunRequest(
+        system_id="sys-1", target_catalog="cliente_cat",
+        materialize=True, dry_run=True,
+    )
+    result = svc.run_sync(object(), req, "tester@x.com")
+
+    assert result.objects[0].status == "ERROR"
+    assert result.objects[0].ddl is None
+    assert result.objects_failed == 1
+    assert result.objects_synced == 0
+    assert result.status == "FAILED"

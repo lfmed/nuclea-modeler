@@ -363,26 +363,45 @@ def run_sync(
                 # Com materialize, geramos o DDL de CREATE TABLE (lê só os
                 # atributos no schema do app) para o usuário VER o que seria
                 # criado — sem tocar no Unity Catalog destino.
-                ddl_preview = (
-                    _build_create_table_sql(sql, target_table, entity_id)
-                    if payload.materialize
-                    else None
-                )
-                objects.append(
-                    SyncObjectResult(
-                        schema_name=schema_name,
-                        technical_name=technical_name,
-                        target_table=target_table,
-                        status="OK",
-                        message=(
-                            "dry-run: materializaria a tabela se não existir"
-                            if payload.materialize
-                            else "dry-run (no changes applied)"
-                        ),
-                        ddl=ddl_preview,
+                if payload.materialize:
+                    ddl_preview = _build_create_table_sql(sql, target_table, entity_id)
+                    # Sem colunas → não há DDL válido; a materialização seria
+                    # IMPOSSÍVEL de executar. O preview precisa FALHAR (ERROR),
+                    # não aparecer como sucesso. Espelha o caminho de apply.
+                    if ddl_preview is None:
+                        objects.append(
+                            SyncObjectResult(
+                                schema_name=schema_name,
+                                technical_name=technical_name,
+                                target_table=target_table,
+                                status="ERROR",
+                                message="entidade sem colunas — não é possível materializar (nada a criar)",
+                            )
+                        )
+                        objects_failed += 1
+                        continue
+                    objects.append(
+                        SyncObjectResult(
+                            schema_name=schema_name,
+                            technical_name=technical_name,
+                            target_table=target_table,
+                            status="OK",
+                            message="dry-run: materializaria a tabela se não existir",
+                            ddl=ddl_preview,
+                        )
                     )
-                )
-                objects_synced += 1
+                    objects_synced += 1
+                else:
+                    objects.append(
+                        SyncObjectResult(
+                            schema_name=schema_name,
+                            technical_name=technical_name,
+                            target_table=target_table,
+                            status="OK",
+                            message="dry-run (no changes applied)",
+                        )
+                    )
+                    objects_synced += 1
         except Exception as exc:  # per-object failure: keep going
             msg = f"{schema_name}.{technical_name}: {exc}"
             errors.append(msg)
