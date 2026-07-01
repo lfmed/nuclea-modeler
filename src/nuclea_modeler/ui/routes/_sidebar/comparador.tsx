@@ -106,10 +106,10 @@ function ComparadorPage() {
     <div className="space-y-6">
       <div>
         <div className="mb-2 flex items-center gap-3">
-          <h1 className="text-3xl font-bold tracking-tight">Comparador</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Canvas Exploratório</h1>
           <Badge variant="outline" className="font-mono">
             <Columns2 className="mr-1 h-3 w-3" />
-            canvas exploratório
+            comparar objetos
           </Badge>
         </div>
         <p className="max-w-3xl text-muted-foreground">

@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import Navbar from "@/components/apx/navbar";
+import { APP_VERSION } from "@/lib/build-info";
 import {
   ArrowRight,
   Database,
@@ -41,16 +41,17 @@ import {
 } from "@/lib/api";
 import selector from "@/lib/selector";
 
-export const Route = createFileRoute("/")({
+// Renderizada DENTRO do layout _sidebar (arquivo em routes/_sidebar/index.tsx),
+// então a tela inicial já traz o menu lateral. O header/navegação vêm do
+// SidebarLayout — por isso não há Navbar próprio aqui.
+export const Route = createFileRoute("/_sidebar/")({
   component: () => <Index />,
 });
 
 function Index() {
   return (
-    <div className="relative min-h-screen w-full overflow-x-hidden flex flex-col bg-background">
-      <Navbar />
-
-      <main id="main-content" role="main" className="flex-1">
+    <div className="relative w-full overflow-x-hidden flex flex-col">
+      <div className="flex-1">
         <Hero />
         <section className="mx-auto w-full max-w-6xl px-6 md:px-10 -mt-10 md:-mt-14 relative z-10">
           <KpiRow />
@@ -62,7 +63,7 @@ function Index() {
           <CapabilitiesGrid />
         </section>
         <Footer />
-      </main>
+      </div>
     </div>
   );
 }
@@ -469,7 +470,7 @@ function Footer() {
             <span className="size-2 rounded-full bg-nuclea-primary" />
             <span className="font-semibold">Núclea Modeler</span>
             <Badge variant="outline" className="ml-2 text-[10px]">
-              v0.1.0
+              v{APP_VERSION}
             </Badge>
           </div>
           <p className="text-xs text-muted-foreground max-w-md">
