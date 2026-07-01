@@ -860,6 +860,7 @@ export interface SyncRunRequest {
   target_schema_map?: Record<string, string> | null;
   mode?: SyncMode;
   dry_run?: boolean;
+  materialize?: boolean;
 }
 
 export interface SyncObjectResult {
@@ -876,9 +877,11 @@ export interface SyncRunResult {
   objects_total: number;
   objects_synced: number;
   objects_failed: number;
+  objects_created: number;
   duration_ms: number;
   target_catalog: string;
   dry_run: boolean;
+  materialize: boolean;
   errors: string[];
   objects: SyncObjectResult[];
 }

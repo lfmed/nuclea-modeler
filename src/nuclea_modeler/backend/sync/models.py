@@ -21,6 +21,10 @@ class SyncRunRequest(BaseModel):
     target_schema_map: dict[str, str] | None = None
     mode: SyncMode = "INCREMENTAL"
     dry_run: bool = False
+    # Quando true, cria a tabela Delta no catálogo destino se ela ainda não
+    # existir (materialização). Quando false (default), tabelas inexistentes são
+    # apenas marcadas como SKIPPED — comportamento clássico do M9 (só COMMENT/TAGS).
+    materialize: bool = False
 
 
 class SyncObjectResult(BaseModel):
@@ -41,9 +45,12 @@ class SyncRunResult(BaseModel):
     objects_total: int
     objects_synced: int
     objects_failed: int
+    # Quantas tabelas foram efetivamente criadas (materializadas) nesta run.
+    objects_created: int = 0
     duration_ms: int
     target_catalog: str
     dry_run: bool
+    materialize: bool = False
     errors: list[str] = Field(default_factory=list)
     objects: list[SyncObjectResult] = Field(default_factory=list)
 

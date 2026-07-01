@@ -86,8 +86,9 @@ function Header() {
       <p className="text-muted-foreground max-w-3xl">
         Espelhamento do modelo curado para o Unity Catalog. Descrições viram
         <strong> COMMENTs</strong> e atributos como domínio, criticidade e business owner
-        viram <strong>TAGs</strong>. Tipos nativos do UC nunca são sobrescritos. Faça um
-        <em> dry-run</em> antes de aplicar.
+        viram <strong>TAGs</strong>. Tipos nativos do UC nunca são sobrescritos. Com
+        <strong> Materializar em Delta</strong>, tabelas que ainda não existem são
+        criadas no catálogo destino. Faça um <em>dry-run</em> antes de aplicar.
       </p>
     </div>
   );
@@ -101,6 +102,7 @@ function SyncContent() {
   const [systemId, setSystemId] = useState<string>(systems[0]?.system_id ?? "");
   const [targetCatalog, setTargetCatalog] = useState<string>(DEFAULT_TARGET_CATALOG);
   const [mode, setMode] = useState<SyncMode>("INCREMENTAL");
+  const [materialize, setMaterialize] = useState<boolean>(false);
   const [lastResult, setLastResult] = useState<SyncRunResult | null>(null);
   const [lastKind, setLastKind] = useState<"preview" | "run" | null>(null);
 
@@ -131,6 +133,7 @@ function SyncContent() {
     target_catalog: targetCatalog.trim(),
     mode,
     dry_run: false,
+    materialize,
   };
 
   return (
@@ -205,6 +208,33 @@ function SyncContent() {
               No momento, ambos os modos percorrem todas as entidades do sistema.
               Incremental será otimizado em fases futuras.
             </p>
+          </div>
+
+          <div>
+            <label
+              className={`flex items-start gap-3 rounded-md border p-3 cursor-pointer ${
+                materialize
+                  ? "border-nuclea-primary bg-nuclea-primary/5"
+                  : "border-input hover:bg-muted/40"
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={materialize}
+                onChange={(e) => setMaterialize(e.target.checked)}
+                disabled={isBusy}
+                className="mt-0.5"
+              />
+              <span className="text-sm">
+                <span className="font-medium">Materializar em Delta</span>
+                <span className="block text-xs text-muted-foreground">
+                  Cria a tabela Delta no catálogo destino quando ela ainda não
+                  existe (tipos mapeados p/ Spark, com COMMENTs) e marca a
+                  entidade como materializada. Sem isso, tabelas inexistentes
+                  ficam apenas como <em>SKIPPED</em>.
+                </span>
+              </span>
+            </label>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 pt-2">
@@ -339,7 +369,12 @@ function ResultPanel({
           )}
         </div>
         <div className="text-xs text-muted-foreground">
-          {result.objects_synced}/{result.objects_total} objetos · {result.duration_ms}ms
+          {result.objects_synced}/{result.objects_total} objetos
+          {result.materialize && result.objects_created > 0 && (
+            <> · {result.objects_created} materializada(s)</>
+          )}
+          {" · "}
+          {result.duration_ms}ms
         </div>
       </div>
 
