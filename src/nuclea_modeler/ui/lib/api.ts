@@ -315,6 +315,18 @@ export const useListAttributesSuspense = (entityId: string, s?: Selector<Attribu
     ...s?.query,
   });
 
+// Variante não-suspense — usada no Comparador, onde cada cartão carrega os
+// atributos da sua entidade independentemente (N cartões, fetch condicional).
+export const useEntityAttributes = (entityId: string | null | undefined) =>
+  useQuery({
+    queryKey: ["listAttributes", entityId],
+    queryFn: () =>
+      api
+        .get<AttributeOut[]>(`/entities/${encodeURIComponent(entityId!)}/attributes`)
+        .then((r) => r.data),
+    enabled: !!entityId,
+  });
+
 // ─── Mutations ────────────────────────────────────────────────────────────────
 
 type Opts<TData, TVars> = {
@@ -1466,6 +1478,16 @@ export const useGetVersionSuspense = (id: string, s?: Selector<VersionOut>) =>
     queryFn: () => api.get<VersionOut>(`/versions/${encodeURIComponent(id)}`),
     select: (r) => r.data,
     ...s?.query,
+  });
+
+// Variante não-suspense — Comparador carrega o snapshot de uma versão para
+// extrair os campos de uma entidade naquela versão (fetch condicional por cartão).
+export const useVersion = (id: string | null | undefined) =>
+  useQuery({
+    queryKey: ["getVersion", id],
+    queryFn: () =>
+      api.get<VersionOut>(`/versions/${encodeURIComponent(id!)}`).then((r) => r.data),
+    enabled: !!id,
   });
 
 export const useVersionDiffSuspense = (

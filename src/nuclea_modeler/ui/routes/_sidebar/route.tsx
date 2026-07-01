@@ -23,6 +23,7 @@ import {
   Code2,
   Activity,
   Gauge,
+  Columns2,
 } from "lucide-react";
 import {
   SidebarGroup,
@@ -89,6 +90,12 @@ function Layout() {
           label: "Relacionamentos",
           icon: <Link2 size={16} />,
           match: (p) => p.startsWith("/relationships"),
+        },
+        {
+          to: "/comparador",
+          label: "Comparador",
+          icon: <Columns2 size={16} />,
+          match: (p) => p.startsWith("/comparador"),
         },
       ],
     },
