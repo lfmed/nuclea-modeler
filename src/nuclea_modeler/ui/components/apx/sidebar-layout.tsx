@@ -11,6 +11,7 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 import SidebarUserFooter from "@/components/apx/sidebar-user-footer";
+import { APP_VERSION, formatBuildTime } from "@/lib/build-info";
 import { ModeToggle } from "@/components/apx/mode-toggle";
 import Logo from "@/components/apx/logo";
 import { HelpCircle } from "lucide-react";
@@ -32,6 +33,17 @@ function SidebarLayout({ children }: SidebarLayoutProps) {
         <SidebarContent>{children}</SidebarContent>
         <SidebarFooter>
           <SidebarUserFooter />
+          {/* Versão + data/hora do build — visibilidade do que está deployado
+              no cliente vs. a última versão. Incrementar APP_VERSION a cada
+              melhoria (ver ui/lib/build-info.ts). */}
+          <div
+            className="px-2 pb-1 text-[10px] leading-tight text-muted-foreground group-data-[collapsible=icon]:hidden"
+            title={`Build: ${formatBuildTime()}`}
+          >
+            <span className="font-mono">v{APP_VERSION}</span>
+            <span className="mx-1">·</span>
+            <span>build {formatBuildTime()}</span>
+          </div>
         </SidebarFooter>
         <SidebarRail />
       </Sidebar>
