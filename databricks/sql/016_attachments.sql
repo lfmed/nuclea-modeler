@@ -4,16 +4,18 @@
 -- pedido do cliente #7. Os BYTES ficam num Volume gerenciado do Unity Catalog;
 -- aqui guardamos apenas os METADADOS + o caminho no Volume.
 --
--- Requer que o SP do app tenha permissão de escrita no Volume. O Volume é
--- gerenciado (sem LOCATION) — vive dentro do próprio schema do app.
+-- O Volume gerenciado NÃO é criado aqui de propósito: criar Volume exige um
+-- grant específico (CREATE VOLUME) que o SP pode não ter, e uma falha aqui
+-- abortaria o boot do app inteiro (o runner faz exit 1). Em vez disso, o Volume
+-- é criado sob demanda no primeiro upload de anexo (attachments/service.py:
+-- _ensure_volume), degradando graciosamente se faltar permissão — assim a
+-- ausência do grant desabilita só os anexos, não o app. Esta migration cria
+-- apenas a tabela de metadados (precisa só de privilégio no schema, que o app
+-- já tem por criar todas as suas tabelas).
 -- ============================================================================
 
 USE CATALOG ${CATALOG};
 USE SCHEMA ${SCHEMA};
-
--- Volume gerenciado onde os arquivos são gravados (/Volumes/<cat>/<schema>/attachments/...)
-CREATE VOLUME IF NOT EXISTS attachments
-    COMMENT 'Documentos anexados a entidades e modelos (Núclea Modeler)';
 
 CREATE TABLE IF NOT EXISTS attachments (
     attachment_id     STRING NOT NULL COMMENT 'PK (att-<uuid>)',

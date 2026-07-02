@@ -91,6 +91,7 @@ def test_save_attachment_rejects_oversized(monkeypatch):
 def test_save_attachment_happy_path(monkeypatch):
     monkeypatch.setattr(svc, "get_settings", lambda: _FakeSettings())
     monkeypatch.setattr(svc.delta, "new_id", lambda p: f"{p}xyz")
+    monkeypatch.setattr(svc, "_volume_ready", False)  # reset cache entre testes
     inserted = {}
     monkeypatch.setattr(svc.delta, "insert", lambda sql, table, row: inserted.update(row))
 
@@ -101,8 +102,13 @@ def test_save_attachment_happy_path(monkeypatch):
         def upload(self, path, contents, overwrite=False):
             self.uploaded = (path, overwrite)
 
+    class _Volumes:
+        def create(self, **kwargs):
+            return None  # Volume criado com sucesso (mock)
+
     class _WS:
         files = _Files()
+        volumes = _Volumes()
 
     ws = _WS()
     out = svc.save_attachment(
