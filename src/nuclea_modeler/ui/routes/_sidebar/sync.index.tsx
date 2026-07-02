@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Suspense, useState } from "react";
+import { Fragment, Suspense, useState } from "react";
 import { QueryErrorResetBoundary, useQueryClient } from "@tanstack/react-query";
 import { ErrorBoundary } from "react-error-boundary";
 
@@ -9,6 +9,8 @@ import {
   useMyRolesSuspense,
   usePreviewSync,
   useRunSync,
+  useUCCatalogs,
+  useUCSchemas,
   type SyncMode,
   type SyncObjectResult,
   type SyncRunResult,
@@ -40,6 +42,15 @@ export const Route = createFileRoute("/_sidebar/sync/")({
 });
 
 const DEFAULT_TARGET_CATALOG = "stable_classic_pg4xe1_catalog";
+// Lembra o último catálogo/schema usados no sync (pré-preenche na próxima vez).
+const SYNC_PREFS_KEY = "nuclea.sync.lastTarget";
+function loadSyncPrefs(): { catalog?: string; schema?: string } {
+  try {
+    return JSON.parse(localStorage.getItem(SYNC_PREFS_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
 
 function SyncPage() {
   return (
@@ -99,18 +110,36 @@ function SyncContent() {
   const { data: me } = useMyRolesSuspense(selector());
   const qc = useQueryClient();
 
+  const prefs = loadSyncPrefs();
+  const { data: catalogs } = useUCCatalogs();
   const [systemId, setSystemId] = useState<string>(systems[0]?.system_id ?? "");
-  const [targetCatalog, setTargetCatalog] = useState<string>(DEFAULT_TARGET_CATALOG);
+  const [targetCatalog, setTargetCatalog] = useState<string>(
+    prefs.catalog || DEFAULT_TARGET_CATALOG,
+  );
+  const [targetSchema, setTargetSchema] = useState<string>(prefs.schema || "");
   const [mode, setMode] = useState<SyncMode>("INCREMENTAL");
   const [materialize, setMaterialize] = useState<boolean>(false);
   const [lastResult, setLastResult] = useState<SyncRunResult | null>(null);
   const [lastKind, setLastKind] = useState<"preview" | "run" | null>(null);
+
+  // Schemas do catálogo destino selecionado (dropdown).
+  const { data: schemas } = useUCSchemas(targetCatalog);
+
+  // Guarda catálogo/schema escolhidos para pré-preencher no próximo sync.
+  const savePrefs = (catalog: string, schema: string) => {
+    try {
+      localStorage.setItem(SYNC_PREFS_KEY, JSON.stringify({ catalog, schema }));
+    } catch {
+      /* best-effort */
+    }
+  };
 
   const preview = usePreviewSync({
     mutation: {
       onSuccess: (data) => {
         setLastResult(data);
         setLastKind("preview");
+        savePrefs(targetCatalog.trim(), targetSchema.trim());
       },
     },
   });
@@ -119,6 +148,7 @@ function SyncContent() {
       onSuccess: (data) => {
         setLastResult(data);
         setLastKind("run");
+        savePrefs(targetCatalog.trim(), targetSchema.trim());
         qc.invalidateQueries({ queryKey: ["listSyncRuns"] });
       },
     },
@@ -131,6 +161,7 @@ function SyncContent() {
   const payload = {
     system_id: systemId,
     target_catalog: targetCatalog.trim(),
+    target_schema: targetSchema.trim() || null,
     mode,
     dry_run: false,
     materialize,
@@ -170,12 +201,59 @@ function SyncContent() {
             </div>
             <div>
               <label className="text-sm font-medium mb-1 block">Catálogo destino</label>
-              <Input
-                value={targetCatalog}
-                onChange={(e) => setTargetCatalog(e.target.value)}
-                placeholder={DEFAULT_TARGET_CATALOG}
-                disabled={isBusy}
-              />
+              {catalogs && catalogs.length > 0 ? (
+                <select
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+                  value={targetCatalog}
+                  onChange={(e) => {
+                    setTargetCatalog(e.target.value);
+                    setTargetSchema(""); // schema depende do catálogo
+                  }}
+                  disabled={isBusy}
+                >
+                  {targetCatalog &&
+                    !catalogs.some((c) => c.name === targetCatalog) && (
+                      <option value={targetCatalog}>{targetCatalog}</option>
+                    )}
+                  {catalogs.map((c) => (
+                    <option key={c.name} value={c.name}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                // Fallback: SP não conseguiu listar catálogos → texto livre.
+                <Input
+                  value={targetCatalog}
+                  onChange={(e) => setTargetCatalog(e.target.value)}
+                  placeholder={DEFAULT_TARGET_CATALOG}
+                  disabled={isBusy}
+                />
+              )}
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-1 block">Schema destino</label>
+              <select
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm disabled:opacity-50"
+                value={targetSchema}
+                onChange={(e) => setTargetSchema(e.target.value)}
+                disabled={isBusy || !targetCatalog}
+                title="Schema do Databricks onde o modelo será replicado"
+              >
+                <option value="">— manter schema de origem —</option>
+                {targetSchema &&
+                  !(schemas ?? []).some((s) => s.name === targetSchema) && (
+                    <option value={targetSchema}>{targetSchema}</option>
+                  )}
+                {(schemas ?? []).map((s) => (
+                  <option key={s.name} value={s.name}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground mt-1">
+                Vazio = cada tabela vai para o schema de mesmo nome da origem.
+              </p>
             </div>
           </div>
 
@@ -392,21 +470,6 @@ function ResultPanel({
         </div>
       )}
 
-      {result.objects.some((o) => o.ddl) && (
-        <details className="rounded-md border bg-background" open>
-          <summary className="cursor-pointer px-3 py-2 text-xs font-medium">
-            DDL de criação ({result.objects.filter((o) => o.ddl).length} tabela(s))
-            {result.dry_run ? " — preview, nada aplicado" : ""}
-          </summary>
-          <pre className="max-h-72 overflow-auto border-t px-3 py-2 font-mono text-[11px] leading-relaxed whitespace-pre">
-            {result.objects
-              .filter((o) => o.ddl)
-              .map((o) => `-- ${o.target_table}\n${o.ddl};`)
-              .join("\n\n")}
-          </pre>
-        </details>
-      )}
-
       <ObjectsTable objects={result.objects} />
     </div>
   );
@@ -433,20 +496,36 @@ function ObjectsTable({ objects }: { objects: SyncObjectResult[] }) {
         </thead>
         <tbody className="divide-y">
           {objects.map((o, i) => (
-            <tr key={i}>
-              <td className="px-3 py-2">
-                <ObjectStatusBadge status={o.status} />
-              </td>
-              <td className="px-3 py-2 font-mono">
-                {o.schema_name}.{o.technical_name}
-              </td>
-              <td className="px-3 py-2 font-mono text-muted-foreground">
-                {o.target_table}
-              </td>
-              <td className="px-3 py-2 text-muted-foreground">
-                {o.message ?? "—"}
-              </td>
-            </tr>
+            <Fragment key={i}>
+              <tr>
+                <td className="px-3 py-2">
+                  <ObjectStatusBadge status={o.status} />
+                </td>
+                <td className="px-3 py-2 font-mono">
+                  {o.schema_name}.{o.technical_name}
+                </td>
+                <td className="px-3 py-2 font-mono text-muted-foreground">
+                  {o.target_table}
+                </td>
+                <td className="px-3 py-2 text-muted-foreground">
+                  {o.message ?? "—"}
+                </td>
+              </tr>
+              {o.ddl && (
+                <tr>
+                  <td colSpan={4} className="px-3 pb-2">
+                    <details className="rounded-md border bg-muted/20">
+                      <summary className="cursor-pointer px-2 py-1 text-[11px] font-medium">
+                        DDL de criação
+                      </summary>
+                      <pre className="max-h-60 overflow-auto border-t px-2 py-2 font-mono text-[11px] leading-relaxed whitespace-pre">
+                        {o.ddl};
+                      </pre>
+                    </details>
+                  </td>
+                </tr>
+              )}
+            </Fragment>
           ))}
         </tbody>
       </table>
