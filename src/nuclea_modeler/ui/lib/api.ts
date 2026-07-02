@@ -870,6 +870,7 @@ export interface SyncRunRequest {
   system_id: string;
   target_catalog: string;
   target_schema_map?: Record<string, string> | null;
+  target_schema?: string | null;
   mode?: SyncMode;
   dry_run?: boolean;
   materialize?: boolean;
@@ -1907,6 +1908,24 @@ export const useListUCSchemasSuspense = (
       ),
     select: (r) => r.data,
     ...s?.query,
+  });
+
+// Variantes não-suspense — usadas nos dropdowns do Sync (catálogo/schema destino),
+// para não suspender o formulário inteiro e degradar bem se o SP não puder listar.
+export const useUCCatalogs = () =>
+  useQuery({
+    queryKey: ["listUCCatalogs"],
+    queryFn: () => api.get<UCCatalogOut[]>("/uc/catalogs").then((r) => r.data),
+  });
+
+export const useUCSchemas = (catalog: string | null | undefined) =>
+  useQuery({
+    queryKey: ["listUCSchemas", catalog],
+    queryFn: () =>
+      api
+        .get<UCSchemaOut[]>(`/uc/catalogs/${encodeURIComponent(catalog!)}/schemas`)
+        .then((r) => r.data),
+    enabled: !!catalog,
   });
 
 export const useListUCTablesSuspense = (

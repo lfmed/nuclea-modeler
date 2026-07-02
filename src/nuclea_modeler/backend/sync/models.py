@@ -19,6 +19,10 @@ class SyncRunRequest(BaseModel):
     # Optional mapping {source_schema_name: target_schema_name}.
     # When absent, schema names are mapped to themselves.
     target_schema_map: dict[str, str] | None = None
+    # Schema destino único (escolhido no dropdown). Quando definido, TODAS as
+    # entidades são replicadas para target_catalog.target_schema. Quando ausente,
+    # cai no target_schema_map / nome do schema de origem (comportamento clássico).
+    target_schema: str | None = None
     mode: SyncMode = "INCREMENTAL"
     dry_run: bool = False
     # Quando true, cria a tabela Delta no catálogo destino se ela ainda não

@@ -168,6 +168,10 @@ def run_sync(
     # Validate the catalog name once — it goes into every DDL we emit.
     _require_ident(payload.target_catalog, "target_catalog")
     schema_map: dict[str, str] = dict(payload.target_schema_map or {})
+    # Schema destino único (dropdown), se escolhido — sobrepõe o mapa/origem.
+    forced_schema = (payload.target_schema or "").strip() or None
+    if forced_schema:
+        _require_ident(forced_schema, "target_schema")
 
     # 1) Pull entities for the system
     ent_rows = delta.fetch_all_params(
@@ -202,7 +206,7 @@ def run_sync(
             business_owner,
         ) = r
 
-        target_schema = schema_map.get(schema_name, schema_name)
+        target_schema = forced_schema or schema_map.get(schema_name, schema_name)
         # Validate identifiers from the catalog before composing DDL. Entities
         # whose names violate the grammar are surfaced as ERROR.
         try:
