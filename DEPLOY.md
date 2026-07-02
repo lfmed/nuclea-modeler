@@ -93,8 +93,19 @@ GRANT USE CATALOG ON CATALOG <ALVO> TO `<SP_APPLICATION_ID>`;
 GRANT USE SCHEMA, CREATE TABLE, MODIFY ON SCHEMA <ALVO>.<SCHEMA_DESTINO> TO `<SP_APPLICATION_ID>`;
 ```
 
-Sem esses grants a materialização retorna `ERROR`/`SKIPPED` por objeto (não
-derruba o app), e o upload de anexo retorna `502` com a mensagem do Volume.
+**O app SOBE mesmo sem esses grants** — eles só habilitam os recursos:
+- Anexos: o Volume é criado sob demanda no 1º upload; sem `CREATE VOLUME` o upload
+  retorna `502` com a orientação do grant, mas o resto do app funciona normal.
+  (A migration `016` cria só a tabela de metadados — nunca o Volume — então o
+  boot/migrations nunca dependem desse grant.)
+- Materialização: sem os grants no catálogo destino, o sync retorna `ERROR`/`SKIPPED`
+  por objeto, sem derrubar o app.
+
+> **Atualização de uma instância já existente:** as migrations novas (`015`
+> aditiva `ALTER ... ADD COLUMNS` em `entities`; `016` `CREATE TABLE IF NOT EXISTS`)
+> são **aditivas e não destrutivas** — não alteram nem apagam dados existentes, e
+> as migrations `001–014` não mudaram (sem re-run). Deploy é seguro sobre dados
+> em produção.
 
 ## 6. Deploy
 

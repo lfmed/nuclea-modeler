@@ -53,6 +53,44 @@ def _volume_base() -> str:
     return f"/Volumes/{s.catalog}/{s.schema_}/attachments"
 
 
+# Cache de "Volume já garantido" por processo — evita tentar criar a cada upload.
+_volume_ready = False
+
+
+def _ensure_volume(ws: WorkspaceClient) -> None:
+    """Cria o Volume gerenciado de anexos sob demanda (idempotente).
+
+    Deliberadamente FORA das migrations: criar Volume exige grant CREATE VOLUME
+    que o SP pode não ter; fazê-lo no boot derrubaria o app inteiro. Aqui, a
+    falta de permissão vira um erro só do recurso de anexos (HTTP 502 com
+    orientação), sem afetar o resto do app.
+    """
+    global _volume_ready
+    if _volume_ready:
+        return
+    s = get_settings()
+    try:
+        from databricks.sdk.service.catalog import VolumeType
+
+        ws.volumes.create(
+            catalog_name=s.catalog,
+            schema_name=s.schema_,
+            name="attachments",
+            volume_type=VolumeType.MANAGED,
+        )
+        _volume_ready = True
+    except Exception as exc:  # noqa: BLE001
+        msg = str(exc).lower()
+        if "already exists" in msg or "exists" in msg:
+            _volume_ready = True
+            return
+        raise HTTPException(
+            502,
+            "Volume de anexos indisponível — peça ao admin: "
+            f"GRANT CREATE VOLUME ON SCHEMA {s.catalog}.{s.schema_} ao SP do app. ({exc})",
+        ) from exc
+
+
 def _row_to_out(r: list) -> AttachmentOut:
     return AttachmentOut(
         attachment_id=r[0],
@@ -92,6 +130,8 @@ def save_attachment(
     safe_name = _sanitize_filename(filename)
     volume_path = f"{_volume_base()}/{owner_kind}/{owner_id}/{attachment_id}__{safe_name}"
 
+    # Garante o Volume (sob demanda — ver _ensure_volume) antes de gravar.
+    _ensure_volume(ws)
     # Grava os bytes no Volume (app SP precisa de WRITE VOLUME).
     try:
         ws.files.upload(volume_path, io.BytesIO(data), overwrite=True)
