@@ -23,6 +23,22 @@ const api = axios.create({
   headers: { "Content-Type": "application/json" },
 });
 
+// Interceptor de erro: o FastAPI devolve `{ "detail": "..." }` nos erros
+// (HTTPException). Por padrão o axios só expõe "Request failed with status code
+// NNN" em `error.message`, escondendo a mensagem útil. Aqui promovemos o `detail`
+// para `error.message`, para que os toasts / ErrorBoundary mostrem a orientação
+// real ao usuário (ex.: "peça ao admin: GRANT CREATE VOLUME ...").
+api.interceptors.response.use(
+  (r) => r,
+  (error) => {
+    const detail = error?.response?.data?.detail;
+    if (detail) {
+      error.message = typeof detail === "string" ? detail : JSON.stringify(detail);
+    }
+    return Promise.reject(error);
+  },
+);
+
 type Selector<T> = {
   query?: Pick<
     UseSuspenseQueryOptions<AxiosResponse<T>, Error, T>,
