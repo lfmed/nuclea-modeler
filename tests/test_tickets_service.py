@@ -44,6 +44,10 @@ def state(monkeypatch):
         captured.setdefault("runs", []).append((query, list(params or [])))
 
     def fake_fetch_one_params(sql, query, params=None):
+        # _ensure_schema (apply) faz `SELECT schema_id FROM schemas ...` — devolve
+        # "já existe" SEM consumir a FIFO, pra não desalinhar os checks de entity.
+        if "schema_id FROM" in query:
+            return ["sch-existing"]
         if captured["fetch_one_returns"]:
             return captured["fetch_one_returns"].pop(0)
         return None

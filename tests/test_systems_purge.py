@@ -32,12 +32,13 @@ def test_purge_order_and_coverage(monkeypatch):
     # entities é o ÚLTIMO delete (pais depois dos filhos)
     assert executed[-1] == "DELETE FROM c.s.entities WHERE system_id = :sid"
 
-    def idx(fragment: str) -> int:
-        return next(i for i, sql in enumerate(executed) if fragment in sql)
+    def idx(target_fragment: str) -> int:
+        # casa no ALVO do DELETE (não em subqueries que citam a mesma tabela)
+        return next(i for i, sql in enumerate(executed) if sql.startswith(target_fragment))
 
     # attribute_flags → antes de attributes → antes de entities
-    assert idx("c.s.attribute_flags") < idx("FROM c.s.attributes")
-    assert idx("FROM c.s.attributes") < idx("c.s.entities WHERE")
+    assert idx("DELETE FROM c.s.attribute_flags WHERE") < idx("DELETE FROM c.s.attributes WHERE")
+    assert idx("DELETE FROM c.s.attributes WHERE") < idx("DELETE FROM c.s.entities WHERE")
 
     # cobertura das tabelas de modelo (histórico NÃO entra aqui)
     joined = "\n".join(executed)
