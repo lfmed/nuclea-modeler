@@ -10,8 +10,9 @@ import {
   useListDiagramsSuspense,
   useListEntitiesSuspense,
   useMyRolesSuspense,
-  useClearSystem,
-  useDeleteSystem,
+  useArchiveSystem,
+  useRestoreSystem,
+  useArchivedSystems,
 } from "@/lib/api";
 import selector from "@/lib/selector";
 
@@ -26,8 +27,8 @@ import {
   Network,
   Table2,
   AlertCircle,
-  Eraser,
-  Trash2,
+  Archive,
+  ArchiveRestore,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_sidebar/explorer")({
@@ -99,15 +100,78 @@ function Caret({ open }: { open: boolean }) {
 
 function SystemsLevel() {
   const { data: systems } = useListSystemsSuspense(selector());
-  if (systems.length === 0) {
-    return <p className="p-3 text-sm text-muted-foreground">Nenhum sistema cadastrado.</p>;
-  }
   return (
-    <ul>
-      {systems.map((sys) => (
-        <SystemNode key={sys.system_id} systemId={sys.system_id} name={sys.system_name} />
-      ))}
-    </ul>
+    <>
+      {systems.length === 0 ? (
+        <p className="p-3 text-sm text-muted-foreground">Nenhum sistema cadastrado.</p>
+      ) : (
+        <ul>
+          {systems.map((sys) => (
+            <SystemNode key={sys.system_id} systemId={sys.system_id} name={sys.system_name} />
+          ))}
+        </ul>
+      )}
+      <ArchivedSystemsSection />
+    </>
+  );
+}
+
+function ArchivedSystemsSection() {
+  const { data: me } = useMyRolesSuspense(selector());
+  const canManage = me.can_apply_tickets || me.is_admin;
+  const [open, setOpen] = useState(false);
+  const qc = useQueryClient();
+  const { data: archived = [] } = useArchivedSystems();
+  const restore = useRestoreSystem({
+    mutation: {
+      onSuccess: () => {
+        toast.success("Sistema restaurado.");
+        qc.invalidateQueries({ queryKey: ["listSystems"] });
+        qc.invalidateQueries({ queryKey: ["listArchivedSystems"] });
+        qc.invalidateQueries({ queryKey: ["listEntities"] });
+        qc.invalidateQueries({ queryKey: ["listSchemas"] });
+      },
+      onError: (e) => toast.error("Falha ao restaurar", { description: e.message }),
+    },
+  });
+  if (!canManage || archived.length === 0) return null;
+  return (
+    <div className="mt-3 border-t pt-2">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted/50"
+      >
+        <Caret open={open} />
+        <Archive className="h-3.5 w-3.5" />
+        Sistemas arquivados ({archived.length})
+      </button>
+      {open && (
+        <ul className="ml-6 border-l pl-2">
+          {archived.map((sys) => (
+            <li
+              key={sys.system_id}
+              className="flex items-center justify-between gap-2 px-2 py-1.5 text-sm"
+            >
+              <span className="flex min-w-0 items-center gap-2 text-muted-foreground">
+                <Database className="h-4 w-4 shrink-0" />
+                <span className="truncate">{sys.system_name}</span>
+              </span>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 shrink-0"
+                disabled={restore.isPending}
+                onClick={() => restore.mutate({ systemId: sys.system_id })}
+                title="Restaurar este sistema"
+              >
+                <ArchiveRestore className="mr-1 h-3.5 w-3.5" />
+                Restaurar
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -120,32 +184,21 @@ function SystemNode({ systemId, name }: { systemId: string; name: string }) {
 
   const invalidateAll = () => {
     qc.invalidateQueries({ queryKey: ["listSystems"] });
+    qc.invalidateQueries({ queryKey: ["listArchivedSystems"] });
     qc.invalidateQueries({ queryKey: ["listSchemas"] });
     qc.invalidateQueries({ queryKey: ["listEntities"] });
   };
-  const clear = useClearSystem({
+  const archive = useArchiveSystem({
     mutation: {
-      onSuccess: (d) => {
+      onSuccess: () => {
         toast.success(
-          `Modelo de "${name}" limpo — ${d.entities_removed} entidade(s). Snapshot salvo em Versões.`,
+          `"${name}" arquivado. Nada foi perdido — restaure em "Sistemas arquivados".`,
         );
         invalidateAll();
       },
-      onError: (e) => toast.error("Falha ao limpar", { description: e.message }),
+      onError: (e) => toast.error("Falha ao arquivar", { description: e.message }),
     },
   });
-  const del = useDeleteSystem({
-    mutation: {
-      onSuccess: (d) => {
-        toast.success(
-          `Sistema "${name}" excluído — ${d.entities_removed} entidade(s). Snapshot salvo em Versões.`,
-        );
-        invalidateAll();
-      },
-      onError: (e) => toast.error("Falha ao excluir", { description: e.message }),
-    },
-  });
-  const busy = clear.isPending || del.isPending;
 
   return (
     <li>
@@ -159,42 +212,23 @@ function SystemNode({ systemId, name }: { systemId: string; name: string }) {
           <span className="font-medium">{name}</span>
         </button>
         {canManage && (
-          <>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-7 w-7"
-              disabled={busy}
-              title="Limpar o modelo (mantém o sistema; um snapshot é salvo em Versões)"
-              onClick={() => {
-                if (
-                  confirm(
-                    `Limpar TODO o modelo de "${name}"? Tabelas, relacionamentos e diagramas serão removidos. Um snapshot é salvo em Versões (restaurável).`,
-                  )
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-7 w-7"
+            disabled={archive.isPending}
+            title="Arquivar o sistema (reversível — nada é apagado; restaurável depois)"
+            onClick={() => {
+              if (
+                confirm(
+                  `Arquivar o sistema "${name}"? Ele sai das listas e do navegador, mas NADA é apagado — você pode restaurar a qualquer momento em "Sistemas arquivados".`,
                 )
-                  clear.mutate({ systemId });
-              }}
-            >
-              <Eraser className="h-3.5 w-3.5" />
-            </Button>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-7 w-7 text-destructive"
-              disabled={busy}
-              title="Excluir o sistema e seu modelo (um snapshot é salvo em Versões)"
-              onClick={() => {
-                if (
-                  confirm(
-                    `Excluir o sistema "${name}" e todo o seu modelo? Um snapshot é salvo em Versões (histórico), mas o sistema sai da lista.`,
-                  )
-                )
-                  del.mutate({ systemId });
-              }}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
-          </>
+              )
+                archive.mutate({ systemId });
+            }}
+          >
+            <Archive className="h-3.5 w-3.5" />
+          </Button>
         )}
       </div>
       {open && (

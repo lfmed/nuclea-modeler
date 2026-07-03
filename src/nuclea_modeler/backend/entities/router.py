@@ -341,6 +341,12 @@ def list_entities(
     if domain:
         where.append("e.domain = :domain")
         params.append(delta.param("domain", domain))
+    # Esconde entidades de sistemas arquivados (soft-deleted). Subquery (não JOIN)
+    # para funcionar também no COUNT do paginado, que não junta `systems`.
+    where.append(
+        f"e.system_id NOT IN "
+        f"(SELECT system_id FROM {s.fq_table('systems')} WHERE archived_at IS NOT NULL)"
+    )
     where_clause = ("WHERE " + " AND ".join(where)) if where else ""
 
     rows = delta.fetch_all_params(
@@ -403,6 +409,12 @@ def list_entities_paginated(
     if domain:
         where.append("e.domain = :domain")
         params.append(delta.param("domain", domain))
+    # Esconde entidades de sistemas arquivados (soft-deleted). Subquery (não JOIN)
+    # para funcionar também no COUNT do paginado, que não junta `systems`.
+    where.append(
+        f"e.system_id NOT IN "
+        f"(SELECT system_id FROM {s.fq_table('systems')} WHERE archived_at IS NOT NULL)"
+    )
     where_clause = ("WHERE " + " AND ".join(where)) if where else ""
 
     total_row = delta.fetch_one_params(
