@@ -16,6 +16,8 @@ from ..rbac.service import (
     require_role,
 )
 from .models import SystemIn, SystemListOut, SystemOut
+from .service import count_entities, purge_system_model
+from ..versions.service import publish_version
 from ..._metadata import api_prefix
 
 router = APIRouter(prefix=f"{api_prefix}/systems", tags=["systems"])
@@ -137,28 +139,71 @@ def update_system(
     return get_system(system_id, sql)
 
 
+def _require_system(sql, system_id: str) -> None:
+    s = get_settings()
+    row = delta.fetch_one_params(
+        sql,
+        f"SELECT system_id FROM {s.fq_table('systems')} WHERE system_id = :sid",
+        [delta.param("sid", system_id)],
+    )
+    if not row:
+        raise HTTPException(404, f"system '{system_id}' não encontrado")
+
+
+def _snapshot_before_purge(sql, system_id: str, actor: str, reason: str) -> int:
+    """Publica um snapshot de versão (histórico) se houver entities; retorna o count.
+
+    É o que garante "reter histórico": o modelo fica arquivado em `model_versions`
+    e pode ser restaurado depois via Versões (M8), mesmo após o purge.
+    """
+    n = count_entities(sql, system_id)
+    if n > 0:
+        publish_version(
+            sql,
+            system_id=system_id,
+            title=f"Arquivo automático — antes de {reason}",
+            changelog=f"Snapshot automático antes de {reason} ({n} entidades).",
+            make_active=False,
+            actor=actor,
+        )
+    return n
+
+
+@router.post("/{system_id}/clear", operation_id="clearSystem")
+def clear_system(
+    system_id: str,
+    sql: SqlDependency,
+    user_ws: Dependencies.UserClient,
+) -> dict:
+    """Limpa o MODELO do sistema (entities/attributes/relationships/schemas/
+    diagramas/code objects) mantendo o registro do sistema. Publica um snapshot
+    de versão antes (histórico). Restrito a Data Architect / Admin."""
+    actor = _actor(user_ws)
+    require_role(sql, actor, ROLE_DATA_ARCHITECT, ROLE_ADMIN)
+    _require_system(sql, system_id)
+    n = _snapshot_before_purge(sql, system_id, actor, "limpar o modelo")
+    purge_system_model(sql, system_id)
+    return {"cleared": system_id, "entities_removed": n}
+
+
 @router.delete("/{system_id}", operation_id="deleteSystem")
 def delete_system(
     system_id: str,
     sql: SqlDependency,
     user_ws: Dependencies.UserClient,
 ) -> dict:
+    """Exclui o sistema e todo o seu modelo, retendo histórico.
+
+    Publica um snapshot de versão (histórico, recuperável em Versões), faz o
+    purge do modelo (cascade) e então remove o registro do sistema. O histórico
+    (model_versions, tickets, sync_log, extractions, audit_log) é preservado.
+    Restrito a Data Architect / Admin.
+    """
     s = get_settings()
     actor = _actor(user_ws)
     require_role(sql, actor, ROLE_DATA_ARCHITECT, ROLE_ADMIN)
-    # Bloqueia exclusão de sistema que ainda tem entidades — evita órfãos em
-    # attributes/relationships/indexes. O usuário deve esvaziar o sistema antes.
-    n = delta.fetch_one_params(
-        sql,
-        f"SELECT COUNT(*) FROM {s.fq_table('entities')} WHERE system_id = :sid",
-        [delta.param("sid", system_id)],
-    )
-    entity_count = int(n[0]) if n else 0
-    if entity_count > 0:
-        raise HTTPException(
-            409,
-            f"system '{system_id}' ainda tem {entity_count} entidade(s); "
-            f"remova-as antes de excluir o sistema",
-        )
+    _require_system(sql, system_id)
+    n = _snapshot_before_purge(sql, system_id, actor, "excluir o sistema")
+    purge_system_model(sql, system_id)
     delta.delete_by_id(sql, s.fq_table("systems"), "system_id", system_id)
-    return {"deleted": system_id}
+    return {"deleted": system_id, "entities_removed": n}

@@ -1,13 +1,17 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Suspense, useState } from "react";
-import { QueryErrorResetBoundary } from "@tanstack/react-query";
+import { QueryErrorResetBoundary, useQueryClient } from "@tanstack/react-query";
 import { ErrorBoundary } from "react-error-boundary";
+import { toast } from "sonner";
 
 import {
   useListSystemsSuspense,
   useListSchemasSuspense,
   useListDiagramsSuspense,
   useListEntitiesSuspense,
+  useMyRolesSuspense,
+  useClearSystem,
+  useDeleteSystem,
 } from "@/lib/api";
 import selector from "@/lib/selector";
 
@@ -22,6 +26,8 @@ import {
   Network,
   Table2,
   AlertCircle,
+  Eraser,
+  Trash2,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_sidebar/explorer")({
@@ -107,16 +113,90 @@ function SystemsLevel() {
 
 function SystemNode({ systemId, name }: { systemId: string; name: string }) {
   const [open, setOpen] = useState(false);
+  const qc = useQueryClient();
+  const { data: me } = useMyRolesSuspense(selector());
+  // Limpar/excluir são destrutivos → só para quem aplica tickets (Architect/Admin).
+  const canManage = me.can_apply_tickets || me.is_admin;
+
+  const invalidateAll = () => {
+    qc.invalidateQueries({ queryKey: ["listSystems"] });
+    qc.invalidateQueries({ queryKey: ["listSchemas"] });
+    qc.invalidateQueries({ queryKey: ["listEntities"] });
+  };
+  const clear = useClearSystem({
+    mutation: {
+      onSuccess: (d) => {
+        toast.success(
+          `Modelo de "${name}" limpo — ${d.entities_removed} entidade(s). Snapshot salvo em Versões.`,
+        );
+        invalidateAll();
+      },
+      onError: (e) => toast.error("Falha ao limpar", { description: e.message }),
+    },
+  });
+  const del = useDeleteSystem({
+    mutation: {
+      onSuccess: (d) => {
+        toast.success(
+          `Sistema "${name}" excluído — ${d.entities_removed} entidade(s). Snapshot salvo em Versões.`,
+        );
+        invalidateAll();
+      },
+      onError: (e) => toast.error("Falha ao excluir", { description: e.message }),
+    },
+  });
+  const busy = clear.isPending || del.isPending;
+
   return (
     <li>
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted/50"
-      >
-        <Caret open={open} />
-        <Database className="h-4 w-4 shrink-0 text-nuclea-primary" />
-        <span className="font-medium">{name}</span>
-      </button>
+      <div className="flex items-center gap-1 rounded px-2 py-1.5 hover:bg-muted/50">
+        <button
+          onClick={() => setOpen((o) => !o)}
+          className="flex flex-1 items-center gap-2 text-left text-sm"
+        >
+          <Caret open={open} />
+          <Database className="h-4 w-4 shrink-0 text-nuclea-primary" />
+          <span className="font-medium">{name}</span>
+        </button>
+        {canManage && (
+          <>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7"
+              disabled={busy}
+              title="Limpar o modelo (mantém o sistema; um snapshot é salvo em Versões)"
+              onClick={() => {
+                if (
+                  confirm(
+                    `Limpar TODO o modelo de "${name}"? Tabelas, relacionamentos e diagramas serão removidos. Um snapshot é salvo em Versões (restaurável).`,
+                  )
+                )
+                  clear.mutate({ systemId });
+              }}
+            >
+              <Eraser className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7 text-destructive"
+              disabled={busy}
+              title="Excluir o sistema e seu modelo (um snapshot é salvo em Versões)"
+              onClick={() => {
+                if (
+                  confirm(
+                    `Excluir o sistema "${name}" e todo o seu modelo? Um snapshot é salvo em Versões (histórico), mas o sistema sai da lista.`,
+                  )
+                )
+                  del.mutate({ systemId });
+              }}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </>
+        )}
+      </div>
       {open && (
         <div className="ml-6 border-l pl-2">
           <TreeBoundary>
