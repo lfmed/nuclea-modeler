@@ -7,7 +7,9 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 TicketStatus = Literal["OPEN", "APPROVED", "APPLIED", "REJECTED"]
-TicketSource = Literal["REVERSE_ENG", "DDL_IMPORT", "LAKEBASE_ROUNDTRIP", "MANUAL"]
+TicketSource = Literal[
+    "REVERSE_ENG", "DDL_IMPORT", "LAKEBASE_ROUNDTRIP", "MANUAL", "SYSTEM_DELETE"
+]
 
 
 class DiffEntity(BaseModel):

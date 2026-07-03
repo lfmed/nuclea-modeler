@@ -18,6 +18,8 @@ from ..rbac.service import (
 from .models import SystemIn, SystemListOut, SystemOut
 from .service import count_entities, purge_system_model
 from ..versions.service import publish_version
+from ..tickets.service import open_ticket
+from ..tickets.models import TicketDiff
 from ..._metadata import api_prefix
 
 router = APIRouter(prefix=f"{api_prefix}/systems", tags=["systems"])
@@ -249,3 +251,50 @@ def restore_system(
         [delta.param("actor", actor), delta.param("sid", system_id)],
     )
     return {"restored": system_id}
+
+
+@router.post("/{system_id}/request-deletion", operation_id="requestSystemDeletion")
+def request_system_deletion(
+    system_id: str,
+    sql: SqlDependency,
+    user_ws: Dependencies.UserClient,
+) -> dict:
+    """Solicita a EXCLUSÃO DEFINITIVA de um sistema ARQUIVADO — via ticket.
+
+    Não apaga nada aqui: abre um ticket `SYSTEM_DELETE` (OPEN) que precisa ser
+    aprovado e aplicado em Tickets. Só então o modelo é purgado e o sistema
+    removido (histórico em model_versions/audit preservado). Gate de aprovação
+    para a única operação verdadeiramente destrutiva. Architect / Admin.
+    """
+    s = get_settings()
+    actor = _actor(user_ws)
+    require_role(sql, actor, ROLE_DATA_ARCHITECT, ROLE_ADMIN)
+    row = delta.fetch_one_params(
+        sql,
+        f"SELECT system_name, archived_at FROM {s.fq_table('systems')} "
+        f"WHERE system_id = :sid",
+        [delta.param("sid", system_id)],
+    )
+    if not row:
+        raise HTTPException(404, f"system '{system_id}' não encontrado")
+    name, archived_at = row[0], row[1]
+    if archived_at is None:
+        raise HTTPException(
+            409,
+            "só sistemas ARQUIVADOS podem ser excluídos definitivamente; "
+            "arquive o sistema antes de solicitar a exclusão",
+        )
+    tid = open_ticket(
+        sql,
+        title=f"Exclusão definitiva do sistema '{name}'",
+        system_id=system_id,
+        source_type="SYSTEM_DELETE",
+        diff=TicketDiff(),
+        summary_md=(
+            f"Solicitação de **exclusão definitiva** do sistema arquivado "
+            f"'{name}'. Ao aprovar e aplicar, o modelo é purgado e o sistema é "
+            f"removido. O histórico (versões, auditoria) é preservado."
+        ),
+        created_by=actor,
+    )
+    return {"ticket_id": tid, "system_id": system_id}
