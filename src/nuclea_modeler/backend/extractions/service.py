@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from datetime import datetime
 from typing import Any
@@ -540,6 +541,26 @@ def _ddl_literal_str(node: Any) -> str | None:
     return None
 
 
+def _ddl_search_path_schema(stmt, dialect) -> str | None:
+    """Extrai o schema de um `SET search_path TO <schema>` (Postgres).
+
+    O sqlglot ora devolve exp.Set (`SET search_path = streaming`), ora exp.Command
+    (`SET search_path TO a, b` — sintaxe não suportada cai em Command), então
+    detectamos via regex no SQL renderizado — robusto para os dois casos. Pega o
+    PRIMEIRO schema da lista. Retorna None se não for um SET de search_path.
+    """
+    try:
+        txt = stmt.sql(dialect=dialect)
+    except Exception:  # noqa: BLE001
+        return None
+    m = re.search(
+        r"search_path\s*(?:=|to)\s*[\"']?([A-Za-z_][A-Za-z0-9_$]*)",
+        txt,
+        re.IGNORECASE,
+    )
+    return m.group(1) if m else None
+
+
 def run_ddl_import(
     sql: Sql,
     *,
@@ -583,8 +604,18 @@ def run_ddl_import(
     # do CREATE — guardamos e aplicamos no fim (chave = schema/tabela[/coluna]).
     deferred_table_comments: dict[tuple[str, str], str] = {}
     deferred_col_comments: dict[tuple[str, str, str], str] = {}
+    # Schema default para tabelas NÃO-qualificadas. Honra `SET search_path TO x`
+    # (dumps Postgres): sem isso, tudo caía em "public" mesmo quando o DDL declara
+    # `CREATE SCHEMA streaming; SET search_path TO streaming;`. Rastreado em ordem.
+    current_schema_default = "public"
     for stmt in parsed:
         if stmt is None:
+            continue
+        # SET search_path muda o schema default das próximas tabelas.
+        if isinstance(stmt, (exp.Set, exp.Command)):
+            sp = _ddl_search_path_schema(stmt, sg_dialect)
+            if sp:
+                current_schema_default = sp
             continue
         try:
             if isinstance(stmt, exp.Create) and stmt.kind and stmt.kind.upper() in ("TABLE", "VIEW"):
@@ -597,7 +628,7 @@ def run_ddl_import(
                 tbl_name = table_obj.name if hasattr(table_obj, "name") else ""
                 schema_name = (
                     table_obj.db if getattr(table_obj, "db", "") else None
-                ) or "public"
+                ) or current_schema_default
 
                 attributes: list[ExtractedAttribute] = []
                 pk_cols: set[str] = set()

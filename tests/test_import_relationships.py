@@ -139,3 +139,25 @@ def test_ddl_no_fk_no_relationships(capture_snapshot):
     ddl = "CREATE TABLE t (id INT PRIMARY KEY, x VARCHAR(10));"
     snap = _run(capture_snapshot, ddl)
     assert snap.relationships == []
+
+
+# ─── SET search_path (schema de tabelas não-qualificadas) ───────────────────
+
+
+def test_ddl_honors_search_path_schema(capture_snapshot):
+    """Dump Postgres com `SET search_path TO streaming` → tabelas e FKs no
+    schema 'streaming', não em 'public' (regressão do import do cliente)."""
+    ddl = """
+    CREATE SCHEMA streaming;
+    SET search_path TO streaming;
+    CREATE TABLE conteudo (id INT PRIMARY KEY);
+    CREATE TABLE serie (
+      id_conteudo INT,
+      CONSTRAINT fk_c FOREIGN KEY (id_conteudo) REFERENCES conteudo (id)
+    );
+    """
+    snap = _run(capture_snapshot, ddl)
+    assert {e.schema_name for e in snap.entities} == {"streaming"}
+    rel = snap.relationships[0]
+    assert rel.parent_schema == "streaming"
+    assert rel.child_schema == "streaming"
