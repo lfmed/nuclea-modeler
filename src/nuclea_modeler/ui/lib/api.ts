@@ -273,6 +273,34 @@ export const useCreateSystem = (
     ...opts?.mutation,
   });
 
+// Limpa o MODELO do sistema (mantém o registro); publica snapshot antes (histórico).
+export const useClearSystem = (
+  opts?: Opts<{ cleared: string; entities_removed: number }, { systemId: string }>,
+) =>
+  useMutation({
+    mutationFn: async ({ systemId }) =>
+      (
+        await api.post<{ cleared: string; entities_removed: number }>(
+          `/systems/${encodeURIComponent(systemId)}/clear`,
+        )
+      ).data,
+    ...opts?.mutation,
+  });
+
+// Exclui o sistema + modelo (retém histórico via snapshot de versão).
+export const useDeleteSystem = (
+  opts?: Opts<{ deleted: string; entities_removed: number }, { systemId: string }>,
+) =>
+  useMutation({
+    mutationFn: async ({ systemId }) =>
+      (
+        await api.delete<{ deleted: string; entities_removed: number }>(
+          `/systems/${encodeURIComponent(systemId)}`,
+        )
+      ).data,
+    ...opts?.mutation,
+  });
+
 export const useListConnectionsSuspense = (s?: Selector<ConnectionListOut[]>) =>
   useSuspenseQuery({
     queryKey: ["listConnections"],

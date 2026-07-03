@@ -611,6 +611,40 @@ def _apply_relationship_change(
 # ─── Sub-handlers de apply_ticket (extraídos do bloco gigante) ──────────────
 
 
+def _ensure_schema(sql: Sql, system_id: str, schema_name: str, actor: str, now: datetime) -> None:
+    """Garante a linha de schema de 1ª classe (tabela `schemas`) para
+    (system_id, schema_name).
+
+    Assim modelos importados (DDL/Embarcadero) aparecem no navegador M6 e no
+    dropdown de schema do DER sem ajuste manual — o `listSchemas` lê da tabela
+    `schemas`, então sem essa linha o schema não aparece. Idempotente: no-op se
+    já existir. Best-effort: o chamador deve tolerar falha (não abortar o apply).
+    """
+    if not schema_name:
+        return
+    s = get_settings()
+    existing = delta.fetch_one_params(
+        sql,
+        f"SELECT schema_id FROM {s.fq_table('schemas')} "
+        f"WHERE system_id = :sid AND schema_name = :sch",
+        [delta.param("sid", system_id), delta.param("sch", schema_name)],
+    )
+    if existing:
+        return
+    delta.insert(
+        sql,
+        s.fq_table("schemas"),
+        {
+            "schema_id": delta.new_id("sch-"),
+            "system_id": system_id,
+            "schema_name": schema_name,
+            "is_active": True,
+            "created_at": now, "created_by": actor,
+            "updated_at": now, "updated_by": actor,
+        },
+    )
+
+
 def _apply_op_add(state: _ApplyState, ent_change: dict[str, Any]) -> None:
     """Materializa um entity novo + attributes + indexes (op='add').
 
@@ -628,6 +662,12 @@ def _apply_op_add(state: _ApplyState, ent_change: dict[str, Any]) -> None:
     s = get_settings()
     schema_name = ent_change.get("schema_name", "")
     technical_name = ent_change.get("technical_name", "")
+
+    # Registra o schema de 1ª classe (navegador M6) — best-effort, não aborta o apply.
+    try:
+        _ensure_schema(state.sql, state.system_id, schema_name, state.applied_by, state.now)
+    except Exception as exc:  # noqa: BLE001
+        state.errors.append(f"ensure schema {schema_name}: {exc}")
 
     existing = delta.fetch_one_params(
         state.sql,
