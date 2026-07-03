@@ -287,18 +287,41 @@ export const useClearSystem = (
     ...opts?.mutation,
   });
 
-// Exclui o sistema + modelo (retém histórico via snapshot de versão).
-export const useDeleteSystem = (
-  opts?: Opts<{ deleted: string; entities_removed: number }, { systemId: string }>,
+// Arquiva (soft-delete) o sistema — REVERSÍVEL: nada é apagado, o sistema some
+// das listas mas pode ser restaurado. Substitui a exclusão destrutiva.
+export const useArchiveSystem = (
+  opts?: Opts<{ archived: string }, { systemId: string }>,
 ) =>
   useMutation({
     mutationFn: async ({ systemId }) =>
       (
-        await api.delete<{ deleted: string; entities_removed: number }>(
+        await api.delete<{ archived: string }>(
           `/systems/${encodeURIComponent(systemId)}`,
         )
       ).data,
     ...opts?.mutation,
+  });
+
+// Restaura um sistema arquivado.
+export const useRestoreSystem = (
+  opts?: Opts<{ restored: string }, { systemId: string }>,
+) =>
+  useMutation({
+    mutationFn: async ({ systemId }) =>
+      (
+        await api.post<{ restored: string }>(
+          `/systems/${encodeURIComponent(systemId)}/restore`,
+        )
+      ).data,
+    ...opts?.mutation,
+  });
+
+// Lista de sistemas arquivados (para restaurar). Não-suspense.
+export const useArchivedSystems = () =>
+  useQuery({
+    queryKey: ["listArchivedSystems"],
+    queryFn: () =>
+      api.get<SystemListOut[]>("/systems/archived").then((r) => r.data),
   });
 
 export const useListConnectionsSuspense = (s?: Selector<ConnectionListOut[]>) =>

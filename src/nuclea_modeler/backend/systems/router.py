@@ -44,14 +44,19 @@ def _actor(user_ws: Dependencies.UserClient) -> str:
         return "unknown"
 
 
-@router.get("", response_model=list[SystemListOut], operation_id="listSystems")
-def list_systems(sql: SqlDependency) -> list[SystemListOut]:
+def _systems_where(archived: bool) -> str:
+    # archived_at NULL = ativo; NOT NULL = arquivado (soft-delete).
+    return "WHERE archived_at IS NOT NULL" if archived else "WHERE archived_at IS NULL"
+
+
+def _list_systems(sql, archived: bool) -> list[SystemListOut]:
     s = get_settings()
     rows = delta.fetch_all(
         sql,
         f"""
         SELECT system_id, system_name, domain, technology, is_active, environment
         FROM {s.fq_table('systems')}
+        {_systems_where(archived)}
         ORDER BY system_name
         """,
     )
@@ -63,6 +68,19 @@ def list_systems(sql: SqlDependency) -> list[SystemListOut]:
         )
         for r in rows
     ]
+
+
+@router.get("", response_model=list[SystemListOut], operation_id="listSystems")
+def list_systems(sql: SqlDependency) -> list[SystemListOut]:
+    """Sistemas ATIVOS (arquivados são ocultados — ver listArchivedSystems)."""
+    return _list_systems(sql, archived=False)
+
+
+# IMPORTANTE: rota literal /archived precisa vir ANTES de /{system_id}.
+@router.get("/archived", response_model=list[SystemListOut], operation_id="listArchivedSystems")
+def list_archived_systems(sql: SqlDependency) -> list[SystemListOut]:
+    """Sistemas arquivados (soft-deleted) — para restaurar."""
+    return _list_systems(sql, archived=True)
 
 
 @router.get("/{system_id}", response_model=SystemOut, operation_id="getSystem")
@@ -192,18 +210,42 @@ def delete_system(
     sql: SqlDependency,
     user_ws: Dependencies.UserClient,
 ) -> dict:
-    """Exclui o sistema e todo o seu modelo, retendo histórico.
+    """Exclui (arquiva) o sistema — SOFT-DELETE, retendo tudo.
 
-    Publica um snapshot de versão (histórico, recuperável em Versões), faz o
-    purge do modelo (cascade) e então remove o registro do sistema. O histórico
-    (model_versions, tickets, sync_log, extractions, audit_log) é preservado.
-    Restrito a Data Architect / Admin.
+    Em vez de apagar, marca `archived_at`: o sistema some das listas/navegador e
+    seus objetos deixam de aparecer, mas nada é perdido — dá pra RESTAURAR depois
+    (POST /systems/{id}/restore). Para zerar o modelo destrutivamente (mantendo o
+    sistema), use /clear. Restrito a Data Architect / Admin.
     """
     s = get_settings()
     actor = _actor(user_ws)
     require_role(sql, actor, ROLE_DATA_ARCHITECT, ROLE_ADMIN)
     _require_system(sql, system_id)
-    n = _snapshot_before_purge(sql, system_id, actor, "excluir o sistema")
-    purge_system_model(sql, system_id)
-    delta.delete_by_id(sql, s.fq_table("systems"), "system_id", system_id)
-    return {"deleted": system_id, "entities_removed": n}
+    delta.run_params(
+        sql,
+        f"UPDATE {s.fq_table('systems')} SET archived_at = current_timestamp(), "
+        f"archived_by = :actor, updated_at = current_timestamp(), updated_by = :actor "
+        f"WHERE system_id = :sid",
+        [delta.param("actor", actor), delta.param("sid", system_id)],
+    )
+    return {"archived": system_id}
+
+
+@router.post("/{system_id}/restore", operation_id="restoreSystem")
+def restore_system(
+    system_id: str,
+    sql: SqlDependency,
+    user_ws: Dependencies.UserClient,
+) -> dict:
+    """Restaura um sistema arquivado (limpa `archived_at`). Architect / Admin."""
+    s = get_settings()
+    actor = _actor(user_ws)
+    require_role(sql, actor, ROLE_DATA_ARCHITECT, ROLE_ADMIN)
+    _require_system(sql, system_id)
+    delta.run_params(
+        sql,
+        f"UPDATE {s.fq_table('systems')} SET archived_at = NULL, archived_by = NULL, "
+        f"updated_at = current_timestamp(), updated_by = :actor WHERE system_id = :sid",
+        [delta.param("actor", actor), delta.param("sid", system_id)],
+    )
+    return {"restored": system_id}
