@@ -839,6 +839,20 @@ export const useListTicketsSuspense = (
     ...s?.query,
   });
 
+// Tickets OPEN de um sistema — não-suspense (usado no DER para avisar que há
+// import/mudança pendente de aprovação, sem bloquear a renderização do canvas).
+export const useSystemOpenTickets = (systemId: string | null | undefined) =>
+  useQuery({
+    queryKey: ["listTickets", { status: "OPEN", systemId }],
+    queryFn: () =>
+      api
+        .get<TicketListOut[]>("/tickets", {
+          params: { status: "OPEN", system_id: systemId },
+        })
+        .then((r) => r.data),
+    enabled: !!systemId,
+  });
+
 export const useGetTicketSuspense = (id: string, s?: Selector<TicketOut>) =>
   useSuspenseQuery({
     queryKey: ["getTicket", id],

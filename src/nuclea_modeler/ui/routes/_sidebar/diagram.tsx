@@ -26,6 +26,7 @@ import { toPng } from "html-to-image";
 import {
   useCreateRelationship,
   useGetDiagramSuspense,
+  useSystemOpenTickets,
   useListSchemasSuspense,
   useListDiagramsSuspense,
   useGetDiagramById,
@@ -224,6 +225,8 @@ function DiagramBody() {
 
 function DiagramCanvas({ systemId }: { systemId: string }) {
   const { data: view } = useGetDiagramSuspense(systemId, "default", selector());
+  // Import/mudança pendente de aprovação → o DER pode não mostrar o modelo todo.
+  const { data: openTickets = [] } = useSystemOpenTickets(systemId);
   const { data: session } = useGetSessionStatusSuspense(systemId, selector());
   const { data: systems } = useListSystemsSuspense(selector());
   const systemTechnology = useMemo(
@@ -719,6 +722,23 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
 
   return (
     <div className="space-y-3">
+      {openTickets.length > 0 && (
+        <div className="flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          <span className="flex-1">
+            {openTickets.length === 1
+              ? "Há 1 import/alteração aguardando aprovação"
+              : `Há ${openTickets.length} imports/alterações aguardando aprovação`}
+            {" "}— o diagrama só mostra o modelo completo depois de aprovar e aplicar.
+          </span>
+          <Link
+            to="/tickets"
+            className="shrink-0 font-medium underline underline-offset-2 hover:opacity-80"
+          >
+            Abrir Tickets
+          </Link>
+        </div>
+      )}
       {session && totalChanges > 0 && (
         <SessionBanner
           session={session}
