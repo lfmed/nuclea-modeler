@@ -13,6 +13,7 @@ import {
   useArchiveSystem,
   useRestoreSystem,
   useArchivedSystems,
+  useRequestSystemDeletion,
 } from "@/lib/api";
 import selector from "@/lib/selector";
 
@@ -29,6 +30,7 @@ import {
   AlertCircle,
   Archive,
   ArchiveRestore,
+  Trash2,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_sidebar/explorer")({
@@ -134,6 +136,15 @@ function ArchivedSystemsSection() {
       onError: (e) => toast.error("Falha ao restaurar", { description: e.message }),
     },
   });
+  const reqDel = useRequestSystemDeletion({
+    mutation: {
+      onSuccess: () =>
+        toast.success(
+          "Exclusão solicitada — abra Tickets para aprovar. Só após aprovado o sistema é excluído definitivamente.",
+        ),
+      onError: (e) => toast.error("Falha ao solicitar exclusão", { description: e.message }),
+    },
+  });
   if (!canManage || archived.length === 0) return null;
   return (
     <div className="mt-3 border-t pt-2">
@@ -156,17 +167,37 @@ function ArchivedSystemsSection() {
                 <Database className="h-4 w-4 shrink-0" />
                 <span className="truncate">{sys.system_name}</span>
               </span>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-7 shrink-0"
-                disabled={restore.isPending}
-                onClick={() => restore.mutate({ systemId: sys.system_id })}
-                title="Restaurar este sistema"
-              >
-                <ArchiveRestore className="mr-1 h-3.5 w-3.5" />
-                Restaurar
-              </Button>
+              <div className="flex shrink-0 items-center gap-1">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7"
+                  disabled={restore.isPending}
+                  onClick={() => restore.mutate({ systemId: sys.system_id })}
+                  title="Restaurar este sistema"
+                >
+                  <ArchiveRestore className="mr-1 h-3.5 w-3.5" />
+                  Restaurar
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 text-destructive"
+                  disabled={reqDel.isPending}
+                  title="Solicitar exclusão definitiva (precisa de aprovação via ticket)"
+                  onClick={() => {
+                    if (
+                      confirm(
+                        `Solicitar EXCLUSÃO DEFINITIVA de "${sys.system_name}"? Isso abre um ticket; o sistema só é apagado depois de APROVADO em Tickets.`,
+                      )
+                    )
+                      reqDel.mutate({ systemId: sys.system_id });
+                  }}
+                >
+                  <Trash2 className="mr-1 h-3.5 w-3.5" />
+                  Excluir…
+                </Button>
+              </div>
             </li>
           ))}
         </ul>

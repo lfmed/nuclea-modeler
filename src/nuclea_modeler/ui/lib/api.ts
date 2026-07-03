@@ -316,6 +316,20 @@ export const useRestoreSystem = (
     ...opts?.mutation,
   });
 
+// Solicita exclusão DEFINITIVA de um sistema arquivado → cria ticket p/ aprovação.
+export const useRequestSystemDeletion = (
+  opts?: Opts<{ ticket_id: string; system_id: string }, { systemId: string }>,
+) =>
+  useMutation({
+    mutationFn: async ({ systemId }) =>
+      (
+        await api.post<{ ticket_id: string; system_id: string }>(
+          `/systems/${encodeURIComponent(systemId)}/request-deletion`,
+        )
+      ).data,
+    ...opts?.mutation,
+  });
+
 // Lista de sistemas arquivados (para restaurar). Não-suspense.
 export const useArchivedSystems = () =>
   useQuery({

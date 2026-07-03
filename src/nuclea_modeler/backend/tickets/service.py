@@ -126,7 +126,8 @@ def apply_ticket(
     s = get_settings()
     row = delta.fetch_one_params(
         sql,
-        f"SELECT diff_json, system_id, status FROM {s.fq_table('reconciliation_tickets')} "
+        f"SELECT diff_json, system_id, status, source_type "
+        f"FROM {s.fq_table('reconciliation_tickets')} "
         f"WHERE ticket_id = :ticket_id",
         [delta.param("ticket_id", ticket_id)],
     )
@@ -134,11 +135,38 @@ def apply_ticket(
         return TicketApplyResult(ticket_id=ticket_id, status="OPEN",
                                  applied_entities=0, applied_attributes=0,
                                  errors=[f"ticket '{ticket_id}' not found"])
-    diff_json, system_id, status = row
+    # Tolerante a linhas de 3 col (testes antigos) — source_type é opcional.
+    diff_json, system_id, status = row[0], row[1], row[2]
+    source_type = row[3] if len(row) > 3 else None
     if status != "APPROVED":
         return TicketApplyResult(ticket_id=ticket_id, status=status,
                                  applied_entities=0, applied_attributes=0,
                                  errors=[f"ticket must be APPROVED to apply (current: {status})"])
+
+    # Ticket de EXCLUSÃO DEFINITIVA de sistema (gate de aprovação): aprovado →
+    # purga o modelo e remove o registro do sistema. Só um sistema já arquivado
+    # chega aqui (ver systems/router.request_system_deletion).
+    if source_type == "SYSTEM_DELETE":
+        from ..systems.service import purge_system_model
+
+        now = datetime.utcnow()
+        try:
+            purge_system_model(sql, system_id)
+            delta.delete_by_id(sql, s.fq_table("systems"), "system_id", system_id)
+        except Exception as exc:  # noqa: BLE001
+            return TicketApplyResult(
+                ticket_id=ticket_id, status=status,
+                applied_entities=0, applied_attributes=0,
+                errors=[f"falha ao excluir o sistema: {exc}"],
+            )
+        delta.update_by_id(
+            sql, s.fq_table("reconciliation_tickets"), "ticket_id", ticket_id,
+            {"status": "APPLIED", "applied_at": now, "applied_by": applied_by},
+        )
+        return TicketApplyResult(
+            ticket_id=ticket_id, status="APPLIED",
+            applied_entities=0, applied_attributes=0, errors=[],
+        )
     try:
         diff = json.loads(diff_json) if diff_json else {"entities": []}
     except json.JSONDecodeError as exc:

@@ -511,3 +511,30 @@ def test_apply_continues_after_per_entity_error(state):
     result = tsvc.apply_ticket(MagicMock(), "ticket-1", applied_by="u")
     assert result.applied_entities == 1  # só o add funcionou
     assert any("change target not found" in e for e in result.errors)
+
+
+# ─── apply_ticket — SYSTEM_DELETE (exclusão via aprovação) ──────────────────
+
+
+def test_apply_system_delete_purges_and_removes_system(state, monkeypatch):
+    """Ticket SYSTEM_DELETE aprovado → purga o modelo, remove o sistema e marca APPLIED."""
+    from nuclea_modeler.backend.core import delta as _delta
+    from nuclea_modeler.backend.systems import service as _sysv
+
+    purged: list = []
+    deleted: list = []
+    monkeypatch.setattr(_sysv, "purge_system_model", lambda sql, sid: purged.append(sid))
+    monkeypatch.setattr(_delta, "delete_by_id", lambda sql, table, col, val: deleted.append((table, val)))
+
+    # linha do ticket: 4 colunas (diff_json, system_id, status, source_type)
+    state["fetch_one_returns"] = [("{}", "sys-1", "APPROVED", "SYSTEM_DELETE")]
+
+    result = tsvc.apply_ticket(MagicMock(), "ticket-1", applied_by="u")
+
+    assert result.status == "APPLIED"
+    assert purged == ["sys-1"]
+    assert any(table == "cat.sch.systems" and val == "sys-1" for table, val in deleted)
+    assert any(
+        u[0] == "cat.sch.reconciliation_tickets" and u[3].get("status") == "APPLIED"
+        for u in state["updates"]
+    )
