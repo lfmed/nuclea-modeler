@@ -24,6 +24,10 @@ from ..rbac.service import ROLE_ADMIN, ROLE_DATA_ARCHITECT, require_role
 from .models import (
     AttributeFlagApplyIn,
     AttributeFlagOut,
+    BatchFlagApplyIn,
+    BatchFlagItemResult,
+    BatchFlagRemoveIn,
+    BatchFlagResult,
     EntityFlagApplyIn,
     EntityFlagOut,
     FlagCategory,
@@ -200,6 +204,124 @@ def _entity_flag_row_to_out(r: list) -> EntityFlagOut:
     )
 
 
+def _summarize_batch(
+    action: str, results: list[BatchFlagItemResult]
+) -> BatchFlagResult:
+    """Consolida os itens de um lote no formato total/succeeded/failed (mesmo
+    contrato de BatchTicketResult, para a UI tratar tudo igual)."""
+    succeeded = sum(1 for r in results if r.ok)
+    return BatchFlagResult(
+        action=action,  # type: ignore[arg-type]
+        total=len(results),
+        succeeded=succeeded,
+        failed=len(results) - succeeded,
+        results=results,
+    )
+
+
+# NOTA DE ROTEAMENTO: os endpoints /batch/flags são declarados ANTES das rotas
+# dinâmicas /{entity_id}/flags. O FastAPI casa por ordem de declaração; se a rota
+# dinâmica viesse primeiro, "POST /entities/batch/flags" cairia nela com
+# entity_id="batch". Por isso batch vem primeiro.
+
+@entity_router.post(
+    "/batch/flags",
+    response_model=BatchFlagResult,
+    operation_id="batchApplyEntityFlags",
+)
+def batch_apply_entity_flags(
+    payload: BatchFlagApplyIn,
+    sql: SqlDependency,
+    user_ws: Dependencies.UserClient,
+) -> BatchFlagResult:
+    """Aplica VÁRIAS flags a VÁRIAS entidades numa única chamada.
+
+    Resolve o atrito de "aplicar flag em N entidades" sem inflar tickets. Cada par
+    (entidade, flag) vira um item em `results` — o lote não aborta por causa de um
+    item (ex.: flag LGPD sem justificativa falha só naquele item). Idempotente:
+    reaplicar flag já presente conta como sucesso.
+    """
+    actor = _current_email(user_ws)
+    if not actor:
+        raise HTTPException(401, "authentication required")
+    # Cache de flags para não refazer o SELECT do catálogo por par (alvo, flag).
+    flag_cache: dict[str, FlagOut] = {}
+    results: list[BatchFlagItemResult] = []
+    for spec in payload.flags:
+        try:
+            flag = flag_cache.get(spec.flag_id) or _fetch_flag(sql, spec.flag_id)
+            flag_cache[spec.flag_id] = flag
+            _validate_flag_applicable(flag, spec.justification)
+        except HTTPException as exc:
+            # Flag inválida/ausente ou justificativa faltando → falha para TODOS
+            # os alvos desta flag (o alvo em si não foi tocado).
+            for tid in payload.target_ids:
+                results.append(BatchFlagItemResult(
+                    target_id=tid, flag_id=spec.flag_id, ok=False,
+                    error=str(exc.detail),
+                ))
+            continue
+        for tid in payload.target_ids:
+            try:
+                efid = _apply_entity_flag_core(
+                    sql, entity_id=tid, flag=flag,
+                    justification=spec.justification, actor=actor,
+                )
+                results.append(BatchFlagItemResult(
+                    target_id=tid, flag_id=spec.flag_id, ok=True,
+                    applied_flag_id=efid,
+                ))
+            except Exception as exc:  # noqa: BLE001 — lote não aborta por 1 item
+                results.append(BatchFlagItemResult(
+                    target_id=tid, flag_id=spec.flag_id, ok=False,
+                    error=str(exc)[:300],
+                ))
+    return _summarize_batch("apply", results)
+
+
+@entity_router.post(
+    "/batch/flags/remove",
+    response_model=BatchFlagResult,
+    operation_id="batchRemoveEntityFlags",
+)
+def batch_remove_entity_flags(
+    payload: BatchFlagRemoveIn,
+    sql: SqlDependency,
+    user_ws: Dependencies.UserClient,
+) -> BatchFlagResult:
+    """Remove VÁRIAS flags de VÁRIAS entidades numa única chamada.
+
+    Remove por `flag_id` (não pelo id da linha), pois o lote cobre muitos alvos.
+    Idempotente: remover flag ausente conta como sucesso. Usamos POST (e não DELETE)
+    porque o corpo carrega listas — DELETE com body tem suporte irregular.
+    """
+    actor = _current_email(user_ws)
+    if not actor:
+        raise HTTPException(401, "authentication required")
+    s = get_settings()
+    results: list[BatchFlagItemResult] = []
+    for fid in payload.flag_ids:
+        for tid in payload.target_ids:
+            try:
+                delta.run_params(
+                    sql,
+                    f"DELETE FROM {s.fq_table('entity_flags')} "
+                    f"WHERE entity_id = :entity_id AND flag_id = :flag_id",
+                    [
+                        delta.param("entity_id", tid),
+                        delta.param("flag_id", fid),
+                    ],
+                )
+                results.append(BatchFlagItemResult(
+                    target_id=tid, flag_id=fid, ok=True,
+                ))
+            except Exception as exc:  # noqa: BLE001
+                results.append(BatchFlagItemResult(
+                    target_id=tid, flag_id=fid, ok=False, error=str(exc)[:300],
+                ))
+    return _summarize_batch("remove", results)
+
+
 @entity_router.get(
     "/{entity_id}/flags",
     response_model=list[EntityFlagOut],
@@ -236,15 +358,44 @@ def apply_entity_flag(
     if not actor:
         raise HTTPException(401, "authentication required")
     flag = _fetch_flag(sql, payload.flag_id)
+    _validate_flag_applicable(flag, payload.justification)
+    efid = _apply_entity_flag_core(
+        sql,
+        entity_id=entity_id,
+        flag=flag,
+        justification=payload.justification,
+        actor=actor,
+    )
+    return _entity_flag_by_id(sql, efid)
+
+
+def _validate_flag_applicable(flag: FlagOut, justification: str | None) -> None:
+    """Regras compartilhadas entre apply single-id e batch: flag ativa e
+    justificativa presente quando exigida. Levanta HTTPException(400)."""
     if not flag.is_active:
         raise HTTPException(400, f"flag '{flag.flag_key}' is inactive")
-    if flag.requires_justification and not (payload.justification or "").strip():
+    if flag.requires_justification and not (justification or "").strip():
         raise HTTPException(
             400,
             f"flag '{flag.flag_key}' requires a non-empty justification",
         )
+
+
+def _apply_entity_flag_core(
+    sql: Sql,
+    *,
+    entity_id: str,
+    flag: FlagOut,
+    justification: str | None,
+    actor: str,
+) -> str:
+    """Insere (ou reaproveita) a flag na entidade e devolve o entity_flag_id.
+
+    Idempotente: se a mesma flag já está aplicada, retorna o id existente sem
+    inserir de novo. Extraído do endpoint single-id para o batch reutilizar
+    exatamente a mesma lógica de persistência.
+    """
     s = get_settings()
-    # idempotent: skip if same flag already applied on entity
     existing = delta.fetch_one_params(
         sql,
         f"SELECT entity_flag_id FROM {s.fq_table('entity_flags')} "
@@ -255,9 +406,8 @@ def apply_entity_flag(
         ],
     )
     if existing:
-        return _entity_flag_by_id(sql, existing[0])
+        return existing[0]
     efid = delta.new_id("entflag-")
-    now = datetime.utcnow()
     delta.insert(
         sql,
         s.fq_table("entity_flags"),
@@ -265,14 +415,14 @@ def apply_entity_flag(
             "entity_flag_id": efid,
             "entity_id": entity_id,
             "flag_id": flag.flag_id,
-            "justification": payload.justification,
-            "applied_at": now,
+            "justification": justification,
+            "applied_at": datetime.utcnow(),
             "applied_by": actor,
             "applied_in_version": None,
             "is_propagated": False,
         },
     )
-    return _entity_flag_by_id(sql, efid)
+    return efid
 
 
 def _entity_flag_by_id(sql: Sql, entity_flag_id: str) -> EntityFlagOut:
@@ -440,6 +590,96 @@ def _cleanup_propagated_entity_flag(
     )
 
 
+# NOTA DE ROTEAMENTO: batch antes das rotas dinâmicas /{attribute_id}/flags,
+# pela mesma razão dos endpoints de entidade (evitar attribute_id="batch").
+
+@attribute_router.post(
+    "/batch/flags",
+    response_model=BatchFlagResult,
+    operation_id="batchApplyAttributeFlags",
+)
+def batch_apply_attribute_flags(
+    payload: BatchFlagApplyIn,
+    sql: SqlDependency,
+    user_ws: Dependencies.UserClient,
+) -> BatchFlagResult:
+    """Aplica VÁRIAS flags a VÁRIOS atributos numa única chamada.
+
+    Este é o endpoint que mata os ~250 cliques do cenário do cliente (50 atributos
+    × 5 flags). Cada par (atributo, flag) vira um item em `results` — o lote não
+    aborta por um item. Idempotente. Preserva a propagação LGPD atributo→entidade
+    reutilizando `_apply_attribute_flag_core`.
+    """
+    actor = _current_email(user_ws)
+    if not actor:
+        raise HTTPException(401, "authentication required")
+    flag_cache: dict[str, FlagOut] = {}
+    results: list[BatchFlagItemResult] = []
+    for spec in payload.flags:
+        try:
+            flag = flag_cache.get(spec.flag_id) or _fetch_flag(sql, spec.flag_id)
+            flag_cache[spec.flag_id] = flag
+            _validate_flag_applicable(flag, spec.justification)
+        except HTTPException as exc:
+            for tid in payload.target_ids:
+                results.append(BatchFlagItemResult(
+                    target_id=tid, flag_id=spec.flag_id, ok=False,
+                    error=str(exc.detail),
+                ))
+            continue
+        for tid in payload.target_ids:
+            try:
+                afid = _apply_attribute_flag_core(
+                    sql, attribute_id=tid, flag=flag,
+                    justification=spec.justification, actor=actor,
+                )
+                results.append(BatchFlagItemResult(
+                    target_id=tid, flag_id=spec.flag_id, ok=True,
+                    applied_flag_id=afid,
+                ))
+            except Exception as exc:  # noqa: BLE001 — lote não aborta por 1 item
+                results.append(BatchFlagItemResult(
+                    target_id=tid, flag_id=spec.flag_id, ok=False,
+                    error=str(exc)[:300],
+                ))
+    return _summarize_batch("apply", results)
+
+
+@attribute_router.post(
+    "/batch/flags/remove",
+    response_model=BatchFlagResult,
+    operation_id="batchRemoveAttributeFlags",
+)
+def batch_remove_attribute_flags(
+    payload: BatchFlagRemoveIn,
+    sql: SqlDependency,
+    user_ws: Dependencies.UserClient,
+) -> BatchFlagResult:
+    """Remove VÁRIAS flags de VÁRIOS atributos numa única chamada.
+
+    Preserva a limpeza da propagação LGPD (remove a flag propagada da entidade só
+    se nenhuma outra coluna ainda a carrega). Idempotente.
+    """
+    actor = _current_email(user_ws)
+    if not actor:
+        raise HTTPException(401, "authentication required")
+    results: list[BatchFlagItemResult] = []
+    for fid in payload.flag_ids:
+        for tid in payload.target_ids:
+            try:
+                _remove_attribute_flag_by_flag(
+                    sql, attribute_id=tid, flag_id=fid
+                )
+                results.append(BatchFlagItemResult(
+                    target_id=tid, flag_id=fid, ok=True,
+                ))
+            except Exception as exc:  # noqa: BLE001
+                results.append(BatchFlagItemResult(
+                    target_id=tid, flag_id=fid, ok=False, error=str(exc)[:300],
+                ))
+    return _summarize_batch("remove", results)
+
+
 @attribute_router.get(
     "/{attribute_id}/flags",
     response_model=list[AttributeFlagOut],
@@ -478,13 +718,33 @@ def apply_attribute_flag(
     if not actor:
         raise HTTPException(401, "authentication required")
     flag = _fetch_flag(sql, payload.flag_id)
-    if not flag.is_active:
-        raise HTTPException(400, f"flag '{flag.flag_key}' is inactive")
-    if flag.requires_justification and not (payload.justification or "").strip():
-        raise HTTPException(
-            400,
-            f"flag '{flag.flag_key}' requires a non-empty justification",
-        )
+    _validate_flag_applicable(flag, payload.justification)
+    afid = _apply_attribute_flag_core(
+        sql,
+        attribute_id=attribute_id,
+        flag=flag,
+        justification=payload.justification,
+        actor=actor,
+    )
+    return _attribute_flag_by_id(sql, afid)
+
+
+def _apply_attribute_flag_core(
+    sql: Sql,
+    *,
+    attribute_id: str,
+    flag: FlagOut,
+    justification: str | None,
+    actor: str,
+) -> str:
+    """Insere (ou reaproveita) a flag no atributo, propaga LGPD e devolve o
+    attribute_flag_id.
+
+    Idempotente. Preserva a regra de propagação (spec §4.5.2): qualquer flag LGPD
+    numa coluna também marca a entidade-pai (para o DPO ver que a tabela é tocada
+    por dado pessoal). Extraído do endpoint single-id para o batch reutilizar a
+    MESMA propagação — não duplicar a lógica.
+    """
     s = get_settings()
     existing = delta.fetch_one_params(
         sql,
@@ -496,24 +756,24 @@ def apply_attribute_flag(
         ],
     )
     if existing:
-        return _attribute_flag_by_id(sql, existing[0])
-    afid = delta.new_id("attrflag-")
-    now = datetime.utcnow()
-    delta.insert(
-        sql,
-        s.fq_table("attribute_flags"),
-        {
-            "attribute_flag_id": afid,
-            "attribute_id": attribute_id,
-            "flag_id": flag.flag_id,
-            "justification": payload.justification,
-            "applied_at": now,
-            "applied_by": actor,
-            "applied_in_version": None,
-        },
-    )
-    # Propagation rule (spec §4.5.2): any LGPD flag on a column also marks the
-    # parent entity, so DPOs see the table is touched by personal data.
+        afid = existing[0]
+    else:
+        afid = delta.new_id("attrflag-")
+        delta.insert(
+            sql,
+            s.fq_table("attribute_flags"),
+            {
+                "attribute_flag_id": afid,
+                "attribute_id": attribute_id,
+                "flag_id": flag.flag_id,
+                "justification": justification,
+                "applied_at": datetime.utcnow(),
+                "applied_by": actor,
+                "applied_in_version": None,
+            },
+        )
+    # Propagação LGPD atributo→entidade (idempotente): roda mesmo quando a flag já
+    # existia, para curar casos em que a propagação tenha falhado antes.
     if flag.category == "LGPD":
         entity_id = _entity_id_for_attribute(sql, attribute_id)
         if entity_id:
@@ -523,7 +783,7 @@ def apply_attribute_flag(
                 flag_id=flag.flag_id,
                 applied_by=actor,
             )
-    return _attribute_flag_by_id(sql, afid)
+    return afid
 
 
 @attribute_router.delete(
@@ -573,3 +833,40 @@ def remove_attribute_flag(
                 sql, entity_id=entity_id, flag_id=row[0]
             )
     return {"deleted": attribute_flag_id}
+
+
+def _remove_attribute_flag_by_flag(
+    sql: Sql, *, attribute_id: str, flag_id: str
+) -> None:
+    """Remove a flag do atributo por (attribute_id, flag_id) e limpa a propagação
+    LGPD na entidade-pai se nenhuma outra coluna ainda carregar a mesma flag.
+
+    Usado pelo batch (que opera por flag_id, não pelo id da linha). Idempotente:
+    se a flag não estava aplicada, o DELETE é noop e a limpeza LGPD não remove nada
+    indevido (o guard `still_used` protege).
+    """
+    s = get_settings()
+    # Descobre a categoria antes de deletar, para decidir se precisa limpar a
+    # propagação LGPD depois.
+    cat_row = delta.fetch_one_params(
+        sql,
+        f"SELECT category FROM {s.fq_table('flags')} WHERE flag_id = :flag_id",
+        [delta.param("flag_id", flag_id)],
+    )
+    delta.run_params(
+        sql,
+        f"DELETE FROM {s.fq_table('attribute_flags')} "
+        f"WHERE attribute_id = :attribute_id AND flag_id = :flag_id",
+        [
+            delta.param("attribute_id", attribute_id),
+            delta.param("flag_id", flag_id),
+        ],
+    )
+    if cat_row and cat_row[0] == "LGPD":
+        entity_id = _entity_id_for_attribute(sql, attribute_id)
+        if entity_id:
+            _cleanup_propagated_entity_flag(
+                sql, entity_id=entity_id, flag_id=flag_id
+            )
+
+

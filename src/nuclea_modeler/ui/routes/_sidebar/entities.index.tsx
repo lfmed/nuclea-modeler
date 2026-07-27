@@ -16,17 +16,21 @@
  */
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Suspense, useMemo, useState } from "react";
-import { QueryErrorResetBoundary } from "@tanstack/react-query";
+import { QueryErrorResetBoundary, useQueryClient } from "@tanstack/react-query";
 import { ErrorBoundary } from "react-error-boundary";
+import { toast } from "sonner";
 
 import {
   useListEntitiesPaginatedSuspense,
   useListSystemsSuspense,
   useListFlagsSuspense,
+  useBatchApplyEntityFlags,
+  useBatchRemoveEntityFlags,
   type EntitiesPageParams,
   type EntityListOut,
   type FlagOut,
   type SystemListOut,
+  type BatchFlagSpec,
 } from "@/lib/api";
 import selector from "@/lib/selector";
 
@@ -45,6 +49,7 @@ import {
   ExportCsvButton,
   downloadCsv,
 } from "@/components/listings/listing-controls";
+import { FlagBatchBar, toastBatchFlagResult } from "@/components/flags/flag-batch-bar";
 
 export const Route = createFileRoute("/_sidebar/entities/")({
   component: EntitiesPage,
@@ -278,6 +283,7 @@ function EntitiesTable({
   const { data } = useListEntitiesPaginatedSuspense(params, selector());
   const navigate = useNavigate();
   const entities = data.items;
+  const qc = useQueryClient();
 
   const exportCsv = () => {
     const headers = [
@@ -297,6 +303,65 @@ function EntitiesTable({
     ]);
     downloadCsv("entidades.csv", headers, rows);
   };
+
+  // Seleção múltipla p/ operações em lote de flags (Blocos 3 + 6).
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const toggle = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const clearSelection = () => setSelected(new Set());
+
+  const invalidateFlags = () => {
+    // As flags de cada entidade são carregadas na página de detalhe e agora
+    // também na coluna de flags desta lista paginada; invalidamos ambas para
+    // refletir mudanças imediatamente.
+    qc.invalidateQueries({ queryKey: ["listEntityFlags"] });
+    qc.invalidateQueries({ queryKey: ["listEntitiesPaginated"] });
+  };
+
+  const { mutate: applyFlags, isPending: applying } = useBatchApplyEntityFlags({
+    mutation: {
+      onSuccess: (r) => {
+        invalidateFlags();
+        clearSelection();
+        toastBatchFlagResult(r);
+      },
+      onError: (e) =>
+        toast.error("Falha ao aplicar flags", {
+          description: e instanceof Error ? e.message : "Erro desconhecido",
+        }),
+    },
+  });
+  const { mutate: removeFlags, isPending: removing } = useBatchRemoveEntityFlags({
+    mutation: {
+      onSuccess: (r) => {
+        invalidateFlags();
+        clearSelection();
+        toastBatchFlagResult(r);
+      },
+      onError: (e) =>
+        toast.error("Falha ao remover flags", {
+          description: e instanceof Error ? e.message : "Erro desconhecido",
+        }),
+    },
+  });
+
+  const ids = Array.from(selected);
+  const onApply = (specs: BatchFlagSpec[]) =>
+    applyFlags({ data: { target_ids: ids, flags: specs } });
+  const onRemove = (flagIds: string[]) =>
+    removeFlags({ data: { target_ids: ids, flag_ids: flagIds } });
+  const allSelected = entities.length > 0 && selected.size === entities.length;
+  const toggleAll = () =>
+    setSelected((prev) =>
+      prev.size === entities.length
+        ? new Set()
+        : new Set(entities.map((e) => e.entity_id)),
+    );
 
   if (!entities || entities.length === 0) {
     // Página vazia: se estamos filtrando/paginando, mostra mensagem simples;
@@ -330,7 +395,17 @@ function EntitiesTable({
   }
 
   return (
-    <div>
+    <div className="space-y-4">
+      {selected.size > 0 && (
+        <FlagBatchBar
+          count={selected.size}
+          busy={applying || removing}
+          noun="entidade"
+          onClear={clearSelection}
+          onApply={onApply}
+          onRemove={onRemove}
+        />
+      )}
       <div className="flex justify-end pb-2">
         <ExportCsvButton onClick={exportCsv} />
       </div>
@@ -338,6 +413,15 @@ function EntitiesTable({
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b text-left text-muted-foreground">
+              <th className="py-2 pr-3 font-medium w-8">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 cursor-pointer accent-nuclea-primary"
+                  checked={allSelected}
+                  onChange={toggleAll}
+                  aria-label="Selecionar todas as entidades"
+                />
+              </th>
               <SortableTh label="Nome técnico" col="technical_name" sortBy={sortBy} sortDir={sortDir} onSort={onSort} />
               <SortableTh label="Nome lógico" col="logical_name" sortBy={sortBy} sortDir={sortDir} onSort={onSort} />
               <SortableTh label="Sistema · Schema" col="system_name" sortBy={sortBy} sortDir={sortDir} onSort={onSort} />
@@ -352,9 +436,21 @@ function EntitiesTable({
             {entities.map((e: EntityListOut) => (
               <tr
                 key={e.entity_id}
-                className="border-b hover:bg-muted/40 cursor-pointer transition-colors"
+                className={
+                  "border-b hover:bg-muted/40 cursor-pointer transition-colors " +
+                  (selected.has(e.entity_id) ? "bg-nuclea-primary/5" : "")
+                }
                 onClick={() => navigate({ to: "/entities/$id", params: { id: e.entity_id } })}
               >
+                <td className="py-2 pr-3" onClick={(ev) => ev.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 cursor-pointer accent-nuclea-primary"
+                    checked={selected.has(e.entity_id)}
+                    onChange={() => toggle(e.entity_id)}
+                    aria-label={`Selecionar ${e.technical_name}`}
+                  />
+                </td>
                 <td className="py-2 pr-3 font-mono text-xs">
                   <Link
                     to="/entities/$id"
