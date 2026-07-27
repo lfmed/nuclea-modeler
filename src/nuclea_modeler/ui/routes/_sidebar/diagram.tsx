@@ -75,6 +75,7 @@ import {
   RefreshCw,
   Save,
   Search,
+  Sparkles,
   FileJson,
   ShieldAlert,
   ShieldCheck,
@@ -87,7 +88,12 @@ import { AttachmentsPanel } from "@/components/attachments/attachments-panel";
 import { NewSystemWizard } from "@/components/apx/new-system-wizard";
 
 import { EntityNode } from "@/components/diagram/entity-node";
-import { applyDagreLayout, type LayoutDirection } from "@/components/diagram/layout";
+import {
+  applyDagreLayout,
+  applyIncrementalLayout,
+  layoutWithSavedPositions,
+  type LayoutDirection,
+} from "@/components/diagram/layout";
 import { getTypesForTechnology } from "@/components/diagram/types-by-tech";
 import { TypePicker } from "@/components/diagram/type-picker";
 
@@ -371,18 +377,45 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
     [filteredEntities],
   );
 
+  // Resolve a posição SALVA de uma entidade (null quando não há posição salva).
+  // Fundamental para o fix do bug de auto-distribuição: distinguimos "sem
+  // posição" (NULL no backend) de uma posição real que por acaso é (0,0).
+  // - Com diagrama (M6): a posição vem de diagram_entities.pos_x/pos_y, que o
+  //   backend já entrega como null quando não gravada (diagrams/router.py).
+  // - Sem diagrama (M4): vem do layout salvo do sistema (der_layouts) via
+  //   view.layout, que só contém entidades cujo layout foi persistido.
+  const savedPosOf = useCallback(
+    (entityId: string): { x: number; y: number } | undefined =>
+      (diagramId ? memberPos.get(entityId) : undefined) ?? view.layout[entityId],
+    [diagramId, memberPos, view.layout],
+  );
+
+  // IDs das entidades visíveis que TÊM posição salva. Os demais são "novos"
+  // (sem posição) e serão distribuídos pelo layout incremental — nunca mais
+  // empilhados em (0,0).
+  const positionedIds = useMemo(() => {
+    const s = new Set<string>();
+    for (const e of filteredEntities) {
+      if (savedPosOf(e.entity_id)) s.add(e.entity_id);
+    }
+    return s;
+  }, [filteredEntities, savedPosOf]);
+
   const baseNodes = useMemo<Node[]>(() => {
-    return filteredEntities.map((e) => ({
-      id: e.entity_id,
-      type: "entity",
-      position:
-        (diagramId ? memberPos.get(e.entity_id) : undefined) ??
-        view.layout[e.entity_id] ??
-        { x: 0, y: 0 },
-      data: { entity: e, expanded } as any,
-      draggable: true,
-    }));
-  }, [filteredEntities, view.layout, expanded, diagramId, memberPos]);
+    return filteredEntities.map((e) => {
+      const saved = savedPosOf(e.entity_id);
+      return {
+        id: e.entity_id,
+        type: "entity",
+        // Placeholder (0,0) apenas para nós SEM posição salva — eles serão
+        // reposicionados pelo layout incremental. Quem decide se um nó é "novo"
+        // é positionedIds, não a coordenada (evita o bug do sentinel (0,0)).
+        position: saved ?? { x: 0, y: 0 },
+        data: { entity: e, expanded } as any,
+        draggable: true,
+      };
+    });
+  }, [filteredEntities, savedPosOf, expanded]);
 
   const baseEdges = useMemo<Edge[]>(() => {
     return view.relationships
@@ -393,40 +426,59 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
 
-  // Initialize / re-layout. Roda quando muda systemId, expanded, filter ou
-  // domainFilter — momentos onde faz sentido recalcular dagre se não há
-  // posições salvas.
+  // Initialize / re-layout. Roda quando muda systemId, expanded, filter,
+  // domainFilter, schema ou diagrama — momentos onde a estrutura de nós muda e
+  // faz sentido recalcular o layout.
+  //
+  // FIX auto-distribuição: usamos layout INCREMENTAL em vez da detecção binária
+  // antiga. Preserva as posições salvas e distribui apenas os nós SEM posição
+  // (novos) ao redor/à direita dos existentes — se não houver nenhum salvo,
+  // roda dagre em todos (diagrama novo).
   useEffect(() => {
-    const hasAnyPositions = baseNodes.some(
-      (n) => n.position.x !== 0 || n.position.y !== 0,
-    );
-    if (hasAnyPositions) {
-      setNodes(baseNodes);
-    } else {
-      setNodes(applyDagreLayout(baseNodes, baseEdges, direction, expanded));
-    }
+    setNodes(layoutWithSavedPositions(baseNodes, positionedIds, baseEdges, direction, expanded));
     setEdges(baseEdges);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [systemId, expanded, filter, domainFilter, schemaId, diagramId, memberIds]);
 
   // Re-sync data quando view.entities/relationships mudarem por refetch
-  // (ex: invalidate após adicionar/remover atributo). Preserva posições atuais
-  // dos nodes — não roda dagre nem reset de UI.
+  // (ex: invalidate após adicionar atributo OU após importar DDL/DM1 que traz
+  // entidades novas). Preserva as posições ATUAIS dos nós já no canvas
+  // (inclusive as arrastadas manualmente) e NÃO re-embaralha nada.
+  //
+  // FIX auto-distribuição (import): entidades novas chegam sem posição salva.
+  // Em vez de largá-las em (0,0) — o bug —, rodamos layout INCREMENTAL usando
+  // os nós já presentes como âncora, distribuindo só os novos à direita deles.
   useEffect(() => {
     setNodes((prev) => {
-      const byId = new Map(baseNodes.map((n) => [n.id, n]));
-      const updated: Node[] = [];
-      for (const p of prev) {
-        const next = byId.get(p.id);
-        if (next) {
-          // Atualiza data (entity + attributes) mas mantém position atual
-          updated.push({ ...p, data: next.data });
-          byId.delete(p.id);
+      const prevById = new Map(prev.map((n) => [n.id, n]));
+      const kept: Node[] = [];
+      const newWithSaved: Node[] = [];
+      const newUnpositioned: Node[] = [];
+
+      for (const n of baseNodes) {
+        const existing = prevById.get(n.id);
+        if (existing) {
+          // Nó já no canvas: atualiza só os dados (entity + attrs), mantém a
+          // posição corrente (pode ter sido arrastada pelo usuário).
+          kept.push({ ...existing, data: n.data });
+        } else if (positionedIds.has(n.id)) {
+          // Nó novo mas com posição salva (ex.: trocou de diagrama): respeita.
+          newWithSaved.push(n);
+        } else {
+          // Nó novo SEM posição (importado agora) → layout incremental.
+          newUnpositioned.push(n);
         }
       }
-      // Adiciona nodes novos (que não existiam antes)
-      for (const n of byId.values()) updated.push(n);
-      return updated;
+
+      if (newUnpositioned.length === 0) {
+        return [...kept, ...newWithSaved];
+      }
+
+      // Os novos entram distribuídos ao redor dos existentes (âncora = tudo o
+      // que já está posicionado no canvas). O efeito de fitView keyado em
+      // nodeIdSig reenquadra automaticamente quando o conjunto de ids muda.
+      const anchor = [...kept, ...newWithSaved];
+      return applyIncrementalLayout(anchor, newUnpositioned, baseEdges, direction, expanded);
     });
     setEdges(baseEdges);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -456,32 +508,64 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
     setPendingConn({ source: conn.source, target: conn.target });
   }, []);
 
+  const { fitView } = useReactFlow();
+
   const autoLayout = useCallback(() => {
     setNodes((nds) => applyDagreLayout(nds, edges, direction, expanded));
   }, [edges, direction, expanded]);
 
-  const saveCurrentLayout = useCallback(() => {
-    // Com um diagrama selecionado, salva as posições NELE; senão, no layout
-    // "default" do sistema (comportamento legado).
-    if (diagramId) {
-      saveDiagramLayout({
-        diagramId,
-        data: {
-          positions: nodes.map((n) => ({
-            entity_id: n.id,
-            pos_x: n.position.x,
-            pos_y: n.position.y,
-          })),
-        },
-      });
-      return;
-    }
-    const positions: Record<string, { x: number; y: number }> = {};
-    for (const n of nodes) {
-      positions[n.id] = { x: n.position.x, y: n.position.y };
-    }
-    saveLayout({ systemId, data: { layout_name: "default", positions } });
-  }, [nodes, saveLayout, saveDiagramLayout, systemId, diagramId]);
+  // Persiste posições de uma lista EXPLÍCITA de nós. Recebe a lista por
+  // parâmetro (em vez de ler `nodes` do closure) para poder salvar logo após um
+  // setNodes no mesmo tick — o state `nodes` ainda estaria stale nesse momento.
+  const persistPositions = useCallback(
+    (nodeList: Node[]) => {
+      // Com um diagrama selecionado, salva as posições NELE (M6, diagram_entities);
+      // senão, no layout "default" do sistema (M4, der_layouts — legado).
+      if (diagramId) {
+        saveDiagramLayout({
+          diagramId,
+          data: {
+            positions: nodeList.map((n) => ({
+              entity_id: n.id,
+              pos_x: n.position.x,
+              pos_y: n.position.y,
+            })),
+          },
+        });
+        return;
+      }
+      const positions: Record<string, { x: number; y: number }> = {};
+      for (const n of nodeList) {
+        positions[n.id] = { x: n.position.x, y: n.position.y };
+      }
+      saveLayout({ systemId, data: { layout_name: "default", positions } });
+    },
+    [saveLayout, saveDiagramLayout, systemId, diagramId],
+  );
+
+  const saveCurrentLayout = useCallback(
+    () => persistPositions(nodes),
+    [persistPositions, nodes],
+  );
+
+  // "Auto-organizar tudo": reroda o Dagre no diagrama INTEIRO (sobrescreve
+  // posições manuais — por isso pede confirmação) e persiste automaticamente,
+  // para o usuário não perder a organização ao sair sem "Salvar layout".
+  const autoOrganizeAll = useCallback(() => {
+    if (nodes.length === 0) return;
+    const ok = window.confirm(
+      "Reorganizar automaticamente TODAS as entidades deste diagrama?\n\n" +
+        "As posições manuais atuais serão sobrescritas e o novo layout será " +
+        "salvo automaticamente.",
+    );
+    if (!ok) return;
+    const organized = applyDagreLayout(nodes, edges, direction, expanded);
+    setNodes(organized);
+    // Salva o MESMO array recém-calculado (o state `nodes` só atualiza no
+    // próximo render, então não dá pra reaproveitar saveCurrentLayout aqui).
+    persistPositions(organized);
+    fitView({ padding: 0.15, minZoom: 0.1, maxZoom: 1.5, duration: 300 });
+  }, [nodes, edges, direction, expanded, persistPositions, fitView]);
 
   const onCreateDiagram = useCallback(() => {
     if (!schemaId) return;
@@ -506,8 +590,6 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
   }, [schemaId, systemId, createDiagram, setDiagramMembers, view.entities, selectedSchema]);
 
   const [showMembers, setShowMembers] = useState(false);
-
-  const { fitView } = useReactFlow();
 
   // Item 5: ao trocar a estrutura (schema/diagrama/filtro), reajusta o zoom
   // para o diagrama caber sempre na tela. Keyado na assinatura dos IDS dos nós
@@ -815,9 +897,24 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
               <option value="RL">Dir → Esq</option>
               <option value="BT">Baixo → Cima</option>
             </select>
-            <Button variant="outline" size="sm" onClick={autoLayout}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={autoLayout}
+              title="Reorganizar as posições no canvas (sem salvar). Use 'Salvar layout' para persistir."
+            >
               <LayoutGrid className="mr-2 h-4 w-4" />
               Auto-layout
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={autoOrganizeAll}
+              disabled={saving || savingDiagramLayout || nodes.length === 0}
+              title="Reorganiza TODAS as entidades (sobrescreve posições manuais) e salva automaticamente"
+            >
+              <Sparkles className="mr-2 h-4 w-4" />
+              Auto-organizar tudo
             </Button>
             {schemaId && (
               <Button
