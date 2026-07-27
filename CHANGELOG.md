@@ -6,6 +6,15 @@ Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 ## [Unreleased]
 
 ### Added
+- **Flagueamento em lote de entidades e atributos (v1.0018)** — aplicar/remover
+  **várias flags a vários alvos numa única ação**, matando os ~250 cliques do
+  fluxo antigo (um modal por flag/atributo). O `FlagPicker` virou **multi-select**
+  (justificativa por flag quando exigida); as listas de entidades e a tabela de
+  atributos ganharam **seleção múltipla + barra flutuante** ("Aplicar flags"/
+  "Remover flags"), no mesmo padrão do batch de tickets. Backend: `POST
+  /entities/batch/flags` (`batchApplyEntityFlags`), `POST /entities/batch/flags/remove`
+  (`batchRemoveEntityFlags`) e os equivalentes de atributo — idempotentes, com erro
+  parcial por item e propagação LGPD atributo→entidade preservada.
 - **Listas de entidades, atributos e índices (v1.0017)** — a lista de entidades
   passou a **consumir a paginação** do backend (antes carregava tudo) com busca,
   filtros (sistema, tipo, criticidade, flag), ordenação por coluna, coluna de
