@@ -96,6 +96,11 @@ import {
 } from "@/components/diagram/layout";
 import { getTypesForTechnology } from "@/components/diagram/types-by-tech";
 import { TypePicker } from "@/components/diagram/type-picker";
+import {
+  PkToggle,
+  computePkOrdinals,
+  getPkWarnings,
+} from "@/components/attributes/pk-controls";
 
 const nodeTypes: NodeTypes = { entity: EntityNode };
 
@@ -1160,6 +1165,7 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
         <EditEntityDialog
           entity={editingEntity}
           candidateEntities={view.entities}
+          relationships={view.relationships}
           systemTechnology={systemTechnology}
           onClose={() => setEditingEntity(null)}
           onSaved={() => {
@@ -2027,12 +2033,14 @@ function relationshipToEdge(r: DiagramRelationship): Edge {
 function EditEntityDialog({
   entity,
   candidateEntities,
+  relationships,
   systemTechnology,
   onClose,
   onSaved,
 }: {
   entity: DiagramEntity;
   candidateEntities: DiagramEntity[];
+  relationships: DiagramRelationship[];
   systemTechnology?: string | null;
   onClose: () => void;
   onSaved: () => void;
@@ -2164,6 +2172,7 @@ function EditEntityDialog({
               systemId={entity.system_id}
               systemTechnology={systemTechnology}
               candidateEntities={candidateEntities}
+              relationships={relationships}
               onChanged={() => qc.invalidateQueries({ queryKey: ["getDiagram"] })}
             />
           </div>
@@ -2189,16 +2198,29 @@ function AttributesEditor({
   systemId,
   systemTechnology,
   candidateEntities,
+  relationships,
   onChanged,
 }: {
   entityId: string;
   systemId: string;
   systemTechnology?: string | null;
   candidateEntities: DiagramEntity[];
+  relationships: DiagramRelationship[];
   onChanged: () => void;
 }) {
   const { data: attrs } = useListAttributesSuspense(entityId, selector());
   const qc = useQueryClient();
+
+  // FKs desta entity → avisa (não bloqueia) ao marcar como PK.
+  const fkAttrIds = new Set<string>();
+  for (const rel of relationships) {
+    if (rel.source_entity_id === entityId)
+      for (const id of rel.source_attrs) fkAttrIds.add(id);
+    if (rel.target_entity_id === entityId)
+      for (const id of rel.target_attrs) fkAttrIds.add(id);
+  }
+  // Numeração PK1, PK2… na ordem de definição (ordinal_position).
+  const pkOrdinals = computePkOrdinals(attrs);
   const [newName, setNewName] = useState("");
   const [newType, setNewType] = useState("STRING");
   const [newPk, setNewPk] = useState(false);
@@ -2212,8 +2234,11 @@ function AttributesEditor({
     mutation: {
       onSuccess: () => {
         qc.invalidateQueries({ queryKey: ["listAttributes", entityId] });
+        // Mantém o badge de "mudanças pendentes" (SessionBanner) em dia.
+        qc.invalidateQueries({ queryKey: ["getSessionStatus", systemId] });
         onChanged();
-        toast.success("Atributo atualizado");
+        // Toast específico é disparado pelo caller (ex.: PkToggle) para dar
+        // feedback contextual (PK marcada/desmarcada).
       },
     },
   });
@@ -2232,51 +2257,64 @@ function AttributesEditor({
         <table className="w-full text-xs">
           <thead>
             <tr className="border-b text-left text-muted-foreground">
-              <th className="py-1 pr-2 font-medium w-6"></th>
               <th className="py-1 pr-2 font-medium">Nome</th>
               <th className="py-1 pr-2 font-medium">Tipo</th>
-              <th className="py-1 pr-2 font-medium w-12">PK</th>
+              <th className="py-1 pr-2 font-medium w-20">PK</th>
               <th className="py-1 pr-2 w-8"></th>
             </tr>
           </thead>
           <tbody>
-            {attrs.map((a) => (
-              <tr key={a.attribute_id} className="border-b">
-                <td className="py-1 pr-2">{a.is_primary_key && "🔑"}</td>
-                <td className="py-1 pr-2 font-mono">{a.technical_name}</td>
-                <td className="py-1 pr-2 font-mono text-muted-foreground">{a.native_data_type || "—"}</td>
-                <td className="py-1 pr-2">
-                  <input
-                    type="checkbox"
-                    checked={a.is_primary_key}
-                    onChange={(e) =>
-                      updateAttr.mutate({
-                        entityId,
-                        attributeId: a.attribute_id,
-                        data: {
-                          entity_id: entityId,
-                          technical_name: a.technical_name,
-                          native_data_type: a.native_data_type || null,
-                          is_nullable: a.is_nullable,
-                          is_primary_key: e.target.checked,
-                        },
-                      })
-                    }
-                  />
-                </td>
-                <td className="py-1 pr-2">
-                  <button
-                    onClick={() => {
-                      if (confirm(`Remover ${a.technical_name}?`))
-                        deleteAttr.mutate({ entityId, attributeId: a.attribute_id });
-                    }}
-                    className="text-muted-foreground hover:text-destructive"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {attrs.map((a) => {
+              const warnings = getPkWarnings({
+                isNullable: a.is_nullable,
+                isForeignKey: fkAttrIds.has(a.attribute_id),
+              });
+              return (
+                <tr key={a.attribute_id} className="border-b">
+                  <td className="py-1 pr-2 font-mono">{a.technical_name}</td>
+                  <td className="py-1 pr-2 font-mono text-muted-foreground">{a.native_data_type || "—"}</td>
+                  <td className="py-1 pr-2">
+                    <PkToggle
+                      checked={a.is_primary_key}
+                      ordinal={pkOrdinals.get(a.attribute_id)}
+                      warnings={warnings}
+                      // STAGE via PUT (fluxo editorial → ticket). Ao marcar PK,
+                      // força NOT NULL (PK não pode ser nullable).
+                      onCheckedChange={(checked) => {
+                        updateAttr.mutate({
+                          entityId,
+                          attributeId: a.attribute_id,
+                          data: {
+                            entity_id: entityId,
+                            technical_name: a.technical_name,
+                            native_data_type: a.native_data_type || null,
+                            ordinal_position: a.ordinal_position ?? null,
+                            is_nullable: checked ? false : a.is_nullable,
+                            is_primary_key: checked,
+                          },
+                        });
+                        toast.success(
+                          checked
+                            ? `"${a.technical_name}" marcada como PK (pendente)`
+                            : `"${a.technical_name}" deixou de ser PK (pendente)`,
+                        );
+                      }}
+                    />
+                  </td>
+                  <td className="py-1 pr-2">
+                    <button
+                      onClick={() => {
+                        if (confirm(`Remover ${a.technical_name}?`))
+                          deleteAttr.mutate({ entityId, attributeId: a.attribute_id });
+                      }}
+                      className="text-muted-foreground hover:text-destructive"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -2353,10 +2391,7 @@ function AttributesEditor({
               technology={systemTechnology}
             />
           </div>
-          <label className="flex items-center gap-1 text-xs">
-            <input type="checkbox" checked={newPk} onChange={(e) => setNewPk(e.target.checked)} />
-            PK
-          </label>
+          <PkToggle checked={newPk} onCheckedChange={setNewPk} />
           <Button type="submit" size="sm" disabled={!newName.trim() || createAttr.isPending || createFkRel.isPending}>
             <Plus className="h-3 w-3" />
           </Button>

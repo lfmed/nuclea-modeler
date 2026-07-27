@@ -3,10 +3,13 @@ import { Suspense, useState } from "react";
 import { QueryErrorResetBoundary, useQueryClient } from "@tanstack/react-query";
 import { ErrorBoundary } from "react-error-boundary";
 
+import { toast } from "sonner";
+
 import {
   useGetEntitySuspense,
   useListAttributesSuspense,
   useCreateAttribute,
+  useUpdateAttribute,
   useDeleteAttribute,
   useDeleteEntity,
   useListEntityFlagsSuspense,
@@ -17,7 +20,10 @@ import {
   useBatchRemoveAttributeFlags,
   useRemoveAttributeFlag,
   useListSystemsSuspense,
+  useGetDiagramSuspense,
+  useGetSessionStatusSuspense,
   type BatchFlagSpec,
+  type AttributeOut,
 } from "@/lib/api";
 import selector from "@/lib/selector";
 import { TypePicker } from "@/components/diagram/type-picker";
@@ -25,7 +31,12 @@ import { IndexesSection } from "@/components/diagram/indexes-section";
 import { PartitioningSection } from "@/components/diagram/partitioning-section";
 import { AttachmentsPanel } from "@/components/attachments/attachments-panel";
 import { FlagBatchBar, toastBatchFlagResult } from "@/components/flags/flag-batch-bar";
-import { toast } from "sonner";
+import {
+  PkToggle,
+  computePkOrdinals,
+  getPkWarnings,
+  usePkDragReorder,
+} from "@/components/attributes/pk-controls";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,6 +47,7 @@ import { Separator } from "@/components/ui/separator";
 import { FlagPicker } from "@/components/flags/flag-picker";
 import {
   ArrowLeft, AlertCircle, Trash2, Plus, Key, FileText, ShieldCheck,
+  ClipboardList, GripVertical,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_sidebar/entities/$id")({
@@ -175,7 +187,11 @@ function EntityDetail() {
       </Suspense>
 
       <Suspense fallback={<Skeleton className="h-40 w-full" />}>
-        <AttributesSection entityId={id} technology={systemTechnology} />
+        <AttributesSection
+          entityId={id}
+          systemId={entity.system_id}
+          technology={systemTechnology}
+        />
       </Suspense>
 
       <IndexesSection entityId={id} technology={systemTechnology} />
@@ -304,14 +320,60 @@ function extractErrorMessage(e: unknown): string {
   return anyE?.response?.data?.detail || anyE?.message || "Erro ao aplicar flag";
 }
 
+/**
+ * Banner reutilizável de "mudanças pendentes" (mesma linguagem visual do
+ * SessionBanner do diagrama, v1.0014). Mostrado no topo da seção de atributos
+ * quando a edição de PK/coluna virou ticket OPEN — assim o usuário sabe que a
+ * mudança está STAGED (não gravada direto no catálogo) e precisa de aprovação.
+ */
+function PendingChangesBanner({ systemId }: { systemId: string }) {
+  const { data: session } = useGetSessionStatusSuspense(systemId, selector());
+  const total = session
+    ? session.additions + session.changes + session.removals
+    : 0;
+  if (!session || total === 0) return null;
+  return (
+    <div className="mb-4 rounded-md border border-amber-500/40 bg-amber-500/10 p-2.5 flex flex-wrap items-center justify-between gap-2">
+      <div className="flex items-center gap-2 text-sm">
+        <ClipboardList className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
+        <span>
+          <strong>{total}</strong> mudança{total !== 1 ? "s" : ""} pendente
+          {total !== 1 ? "s" : ""} de aprovação nesta sessão (inclui edições de PK).
+        </span>
+      </div>
+      <Button asChild size="sm" variant="outline">
+        <Link to="/tickets/$id" params={{ id: session.ticket_id }}>
+          Revisar e aprovar
+        </Link>
+      </Button>
+    </div>
+  );
+}
+
 function AttributesSection({
   entityId,
+  systemId,
   technology,
 }: {
   entityId: string;
+  systemId: string;
   technology: string | null;
 }) {
   const { data: attrs } = useListAttributesSuspense(entityId, selector());
+  // Diagrama do sistema → detecta quais colunas desta entity são FK, para avisar
+  // (não bloquear) quando marcadas como PK. `source_attrs`/`target_attrs` do
+  // relacionamento carregam IDs de atributos. Usamos o diagram view porque a
+  // rota resumida de relationships não expõe as colunas.
+  const { data: diagram } = useGetDiagramSuspense(systemId, "default", selector());
+  const fkAttrIds = new Set<string>();
+  for (const rel of diagram.relationships) {
+    if (rel.source_entity_id === entityId) {
+      for (const id of rel.source_attrs) fkAttrIds.add(id);
+    }
+    if (rel.target_entity_id === entityId) {
+      for (const id of rel.target_attrs) fkAttrIds.add(id);
+    }
+  }
   const qc = useQueryClient();
   const [showForm, setShowForm] = useState(false);
 
@@ -336,6 +398,13 @@ function AttributesSection({
   const invalidateAttrFlags = () => {
     qc.invalidateQueries({ queryKey: ["listAttributeFlags"] });
     qc.invalidateQueries({ queryKey: ["listEntityFlags", entityId] });
+  };
+  // Invalida as queries afetadas pela edição de atributo/PK (inclui o status da
+  // sessão, para o banner de "mudanças pendentes" refletir o novo ticket).
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["listAttributes", entityId] });
+    qc.invalidateQueries({ queryKey: ["getEntity", entityId] });
+    qc.invalidateQueries({ queryKey: ["getSessionStatus", systemId] });
   };
   const { mutate: applyFlags, isPending: applyingFlags } =
     useBatchApplyAttributeFlags({
@@ -374,17 +443,23 @@ function AttributesSection({
   const { mutate: createAttr, isPending } = useCreateAttribute({
     mutation: {
       onSuccess: () => {
-        qc.invalidateQueries({ queryKey: ["listAttributes", entityId] });
-        qc.invalidateQueries({ queryKey: ["getEntity", entityId] });
+        invalidate();
         setShowForm(false);
+        toast.success("Atributo adicionado (pendente de aprovação)");
       },
+    },
+  });
+  const { mutate: updateAttr } = useUpdateAttribute({
+    mutation: {
+      onSuccess: () => invalidate(),
+      onError: (e) => toast.error(extractErrorMessage(e)),
     },
   });
   const { mutate: delAttr } = useDeleteAttribute({
     mutation: {
       onSuccess: () => {
-        qc.invalidateQueries({ queryKey: ["listAttributes", entityId] });
-        qc.invalidateQueries({ queryKey: ["getEntity", entityId] });
+        invalidate();
+        toast.success("Remoção de atributo staged (pendente)");
       },
     },
   });
@@ -405,7 +480,8 @@ function AttributesSection({
         technical_name: techName,
         logical_name: logName || null,
         native_data_type: dataType || null,
-        is_nullable: nullable,
+        // PK não deveria ser nullable — ao marcar PK na criação, força NOT NULL.
+        is_nullable: isPk ? false : nullable,
         is_primary_key: isPk,
         description_md: desc || null,
       },
@@ -418,13 +494,81 @@ function AttributesSection({
     setNullable(true);
   };
 
+  // Numeração PK1, PK2… na ordem de definição (ordinal_position).
+  const pkOrdinals = computePkOrdinals(attrs);
+
+  /**
+   * Alterna PK de uma coluna. STAGE via PUT /entities/{id}/attributes/{attrId}
+   * (fluxo editorial → ticket, não grava direto). Ao MARCAR como PK, também
+   * força NOT NULL (uma PK não pode ser nullable). Feedback via toast.
+   */
+  const togglePk = (a: AttributeOut, checked: boolean) => {
+    updateAttr({
+      entityId,
+      attributeId: a.attribute_id,
+      data: {
+        entity_id: entityId,
+        technical_name: a.technical_name,
+        logical_name: a.logical_name ?? null,
+        native_data_type: a.native_data_type ?? null,
+        ordinal_position: a.ordinal_position ?? null,
+        is_nullable: checked ? false : a.is_nullable,
+        default_value: a.default_value ?? null,
+        is_primary_key: checked,
+        description_md: a.description_md ?? null,
+      },
+    });
+    toast.success(
+      checked
+        ? `"${a.technical_name}" marcada como PK (pendente)`
+        : `"${a.technical_name}" deixou de ser PK (pendente)`,
+    );
+  };
+
+  // Reordenação de PK composta via drag (P2): stage novo ordinal_position.
+  const { rowProps, dragId } = usePkDragReorder({
+    attrs,
+    onApply: (updates) => {
+      if (updates.length === 0) return;
+      const byId = new Map(attrs.map((a) => [a.attribute_id, a]));
+      for (const u of updates) {
+        const a = byId.get(u.attribute_id);
+        if (!a) continue;
+        updateAttr({
+          entityId,
+          attributeId: a.attribute_id,
+          data: {
+            entity_id: entityId,
+            technical_name: a.technical_name,
+            logical_name: a.logical_name ?? null,
+            native_data_type: a.native_data_type ?? null,
+            ordinal_position: u.ordinal_position,
+            is_nullable: a.is_nullable,
+            default_value: a.default_value ?? null,
+            is_primary_key: a.is_primary_key,
+            description_md: a.description_md ?? null,
+          },
+        });
+      }
+      toast.success("Ordem da PK composta atualizada (pendente)");
+    },
+  });
+  const pkCount = attrs.filter((a) => a.is_primary_key).length;
+
   return (
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div>
             <CardTitle>Atributos ({attrs.length})</CardTitle>
-            <CardDescription>Colunas catalogadas desta entidade</CardDescription>
+            <CardDescription>
+              Colunas catalogadas desta entidade. Marque a{" "}
+              <span className="inline-flex items-center gap-0.5 text-nuclea-primary">
+                <Key className="h-3 w-3" />PK
+              </span>{" "}
+              direto na tabela — a mudança vira um ticket para aprovação.
+              {pkCount > 1 && " PK composta é numerada PK1, PK2… na ordem."}
+            </CardDescription>
           </div>
           <Button size="sm" onClick={() => setShowForm(!showForm)}>
             <Plus className="mr-2 h-4 w-4" />
@@ -433,6 +577,10 @@ function AttributesSection({
         </div>
       </CardHeader>
       <CardContent>
+        <Suspense fallback={null}>
+          <PendingChangesBanner systemId={systemId} />
+        </Suspense>
+
         {showForm && (
           <form onSubmit={submit} className="mb-6 rounded-lg border bg-muted/30 p-4 space-y-3">
             <div className="grid md:grid-cols-3 gap-3">
@@ -441,12 +589,21 @@ function AttributesSection({
               <TypePicker value={dataType} onChange={setDataType} technology={technology} />
             </div>
             <div className="flex items-center gap-4 text-sm">
+              <PkToggle
+                checked={isPk}
+                warnings={getPkWarnings({ isNullable: isPk ? false : nullable })}
+                onCheckedChange={(v) => {
+                  setIsPk(v);
+                  if (v) setNullable(false); // PK ⇒ NOT NULL
+                }}
+              />
               <label className="flex items-center gap-2">
-                <input type="checkbox" checked={isPk} onChange={(e) => setIsPk(e.target.checked)} />
-                Chave primária
-              </label>
-              <label className="flex items-center gap-2">
-                <input type="checkbox" checked={nullable} onChange={(e) => setNullable(e.target.checked)} />
+                <input
+                  type="checkbox"
+                  checked={nullable}
+                  disabled={isPk}
+                  onChange={(e) => setNullable(e.target.checked)}
+                />
                 Nullable
               </label>
             </div>
@@ -490,7 +647,7 @@ function AttributesSection({
                       aria-label="Selecionar todos os atributos"
                     />
                   </th>
-                  <th className="py-2 pr-3 font-medium w-8"></th>
+                  <th className="py-2 pr-3 font-medium w-32">PK</th>
                   <th className="py-2 pr-3 font-medium">Nome técnico</th>
                   <th className="py-2 pr-3 font-medium">Nome lógico</th>
                   <th className="py-2 pr-3 font-medium">Tipo</th>
@@ -501,54 +658,80 @@ function AttributesSection({
                 </tr>
               </thead>
               <tbody>
-                {attrs.map((a) => (
-                  <tr
-                    key={a.attribute_id}
-                    className={
-                      "border-b hover:bg-muted/40 align-top " +
-                      (selected.has(a.attribute_id) ? "bg-nuclea-primary/5" : "")
-                    }
-                  >
-                    <td className="py-2 pr-3">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 cursor-pointer accent-nuclea-primary"
-                        checked={selected.has(a.attribute_id)}
-                        onChange={() => toggle(a.attribute_id)}
-                        aria-label={`Selecionar ${a.technical_name}`}
-                      />
-                    </td>
-                    <td className="py-2 pr-3">
-                      {a.is_primary_key && <Key className="h-3.5 w-3.5 text-nuclea-primary" />}
-                    </td>
-                    <td className="py-2 pr-3 font-mono text-xs">{a.technical_name}</td>
-                    <td className="py-2 pr-3">{a.logical_name || "—"}</td>
-                    <td className="py-2 pr-3 font-mono text-xs text-muted-foreground">{a.native_data_type || "—"}</td>
-                    <td className="py-2 pr-3 text-xs">{a.is_nullable === false ? "NOT NULL" : "NULL"}</td>
-                    <td className="py-2 pr-3">
-                      <Suspense
-                        fallback={<Skeleton className="h-5 w-20" />}
-                      >
-                        <AttributeFlagsCell attributeId={a.attribute_id} />
-                      </Suspense>
-                    </td>
-                    <td className="py-2 pr-3 text-muted-foreground">
-                      {a.description_md ? (a.description_md.length > 80 ? a.description_md.slice(0, 80) + "…" : a.description_md) : "—"}
-                    </td>
-                    <td className="py-2 pr-3">
-                      <button
-                        onClick={() => {
-                          if (confirm(`Remover atributo "${a.technical_name}"?`))
-                            delAttr({ entityId, attributeId: a.attribute_id });
-                        }}
-                        className="text-muted-foreground hover:text-destructive"
-                        title="Remover"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {attrs.map((a) => {
+                  const isFk = fkAttrIds.has(a.attribute_id);
+                  const warnings = getPkWarnings({
+                    isNullable: a.is_nullable,
+                    isForeignKey: isFk,
+                  });
+                  const pending = a.pending_op;
+                  return (
+                    <tr
+                      key={a.attribute_id}
+                      className={`border-b hover:bg-muted/40 align-top ${
+                        dragId === a.attribute_id ? "opacity-50" : ""
+                      } ${selected.has(a.attribute_id) ? "bg-nuclea-primary/5" : ""}`}
+                      {...rowProps(a)}
+                    >
+                      <td className="py-2 pr-3">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 cursor-pointer accent-nuclea-primary"
+                          checked={selected.has(a.attribute_id)}
+                          onChange={() => toggle(a.attribute_id)}
+                          aria-label={`Selecionar ${a.technical_name}`}
+                        />
+                      </td>
+                      <td className="py-2 pr-3">
+                        <div className="flex items-center gap-1">
+                          {a.is_primary_key && pkCount > 1 && (
+                            <GripVertical
+                              className="h-3.5 w-3.5 text-muted-foreground/40 cursor-grab shrink-0"
+                              aria-label="Arraste para reordenar a PK composta"
+                            />
+                          )}
+                          <PkToggle
+                            checked={a.is_primary_key}
+                            ordinal={pkOrdinals.get(a.attribute_id)}
+                            warnings={warnings}
+                            onCheckedChange={(v) => togglePk(a, v)}
+                          />
+                        </div>
+                      </td>
+                      <td className="py-2 pr-3 font-mono text-xs">
+                        {a.technical_name}
+                        {pending && (
+                          <span className="ml-1.5 text-[9px] rounded px-1 py-0.5 border border-amber-500/40 bg-amber-500/15 text-amber-700 dark:text-amber-300">
+                            pendente
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2 pr-3">{a.logical_name || "—"}</td>
+                      <td className="py-2 pr-3 font-mono text-xs text-muted-foreground">{a.native_data_type || "—"}</td>
+                      <td className="py-2 pr-3 text-xs">{a.is_nullable === false ? "NOT NULL" : "NULL"}</td>
+                      <td className="py-2 pr-3">
+                        <Suspense fallback={<Skeleton className="h-5 w-20" />}>
+                          <AttributeFlagsCell attributeId={a.attribute_id} />
+                        </Suspense>
+                      </td>
+                      <td className="py-2 pr-3 text-muted-foreground">
+                        {a.description_md ? (a.description_md.length > 80 ? a.description_md.slice(0, 80) + "…" : a.description_md) : "—"}
+                      </td>
+                      <td className="py-2 pr-3">
+                        <button
+                          onClick={() => {
+                            if (confirm(`Remover atributo "${a.technical_name}"?`))
+                              delAttr({ entityId, attributeId: a.attribute_id });
+                          }}
+                          className="text-muted-foreground hover:text-destructive"
+                          title="Remover"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

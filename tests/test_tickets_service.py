@@ -471,6 +471,87 @@ def test_apply_change_with_no_allowed_field_changes_does_nothing(state):
     assert entity_updates == []
 
 
+# ─── apply_ticket — edição de PK (bloco 4: PK UX) ───────────────────────────
+#
+# Estes testes documentam o contrato do fluxo editorial de PK: marcar/desmarcar
+# PK e reordenar PK composta são staged como `attribute:NAME.update` e, no apply,
+# viram UPDATE em `attributes`. `is_primary_key` e `ordinal_position` PRECISAM
+# estar na allowlist do dispatch — senão a mudança não sobreviveria ao apply.
+
+
+def _find_attr_update_run(runs):
+    """Retorna (query, params_dict) do UPDATE em attributes disparado via run_params."""
+    for q, params in runs:
+        if "UPDATE" in q and "attributes" in q:
+            return q, dict(params)
+    return None, {}
+
+
+def test_apply_change_marks_attribute_as_pk(state):
+    """Toggle de PK (is_primary_key=True) é aplicado no catálogo via UPDATE attributes."""
+    attr_payload = {
+        "attribute_id": "attr-1",
+        "technical_name": "id",
+        "is_primary_key": True,
+        "is_nullable": False,  # PK ⇒ NOT NULL (forçado na UI)
+    }
+    diff = {
+        "entities": [
+            {
+                "op": "change", "schema_name": "public", "technical_name": "cliente",
+                "field_changes": [
+                    {"field": "attribute:id.update", "before": None, "after": attr_payload},
+                ],
+            }
+        ]
+    }
+    state["fetch_one_returns"] = [
+        (json.dumps(diff), "sys-1", "APPROVED"),
+        ("ent-abc",),  # entity existe
+    ]
+
+    result = tsvc.apply_ticket(MagicMock(), "ticket-1", applied_by="u")
+    assert not result.errors
+    q, params = _find_attr_update_run(state.get("runs", []))
+    assert q is not None, "esperava um UPDATE em attributes"
+    assert params.get("is_primary_key") is True
+    assert params.get("is_nullable") is False
+    # WHERE amarra pela entity + nome técnico da coluna.
+    assert params.get("entity_id") == "ent-abc"
+    assert params.get("name") == "id"
+
+
+def test_apply_change_reorders_composite_pk_via_ordinal(state):
+    """Reordenar PK composta (drag) stage novo ordinal_position — aplicado no UPDATE."""
+    attr_payload = {
+        "attribute_id": "attr-2",
+        "technical_name": "cpf",
+        "is_primary_key": True,
+        "ordinal_position": 1,  # movida para 1ª posição da PK composta
+    }
+    diff = {
+        "entities": [
+            {
+                "op": "change", "schema_name": "public", "technical_name": "cliente",
+                "field_changes": [
+                    {"field": "attribute:cpf.update", "before": None, "after": attr_payload},
+                ],
+            }
+        ]
+    }
+    state["fetch_one_returns"] = [
+        (json.dumps(diff), "sys-1", "APPROVED"),
+        ("ent-abc",),
+    ]
+
+    result = tsvc.apply_ticket(MagicMock(), "ticket-1", applied_by="u")
+    assert not result.errors
+    q, params = _find_attr_update_run(state.get("runs", []))
+    assert q is not None
+    assert params.get("ordinal_position") == 1
+    assert params.get("name") == "cpf"
+
+
 # ─── apply_ticket — finalização ─────────────────────────────────────────────
 
 
