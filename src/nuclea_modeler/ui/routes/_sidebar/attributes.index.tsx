@@ -139,7 +139,6 @@ function AttributesPage() {
                 <Suspense fallback={<TableSkeleton />}>
                   <AttributesTable
                     params={params}
-                    page={page}
                     setPage={setPage}
                     sortBy={sortBy}
                     sortDir={sortDir}
@@ -176,14 +175,12 @@ function FlagFilter({ value, onChange }: { value: string; onChange: (v: string) 
 
 function AttributesTable({
   params,
-  page,
   setPage,
   sortBy,
   sortDir,
   onSort,
 }: {
   params: AttributesPageParams;
-  page: number;
   setPage: (fn: (p: number) => number) => void;
   sortBy: string;
   sortDir: "asc" | "desc";
