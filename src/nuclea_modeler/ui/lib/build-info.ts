@@ -16,7 +16,7 @@
  */
 
 /** Versão do app. INCREMENTE a cada melhoria (1.0001 → 1.0002 → …). */
-export const APP_VERSION = "1.0016";
+export const APP_VERSION = "1.0017";
 
 /** Instante do build da UI (ISO 8601), injetado no build. */
 export const BUILD_TIME: string = __BUILD_TIME__;

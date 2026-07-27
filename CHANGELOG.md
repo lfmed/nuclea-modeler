@@ -5,6 +5,16 @@ Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+### Added
+- **Listas de entidades, atributos e índices (v1.0017)** — a lista de entidades
+  passou a **consumir a paginação** do backend (antes carregava tudo) com busca,
+  filtros (sistema, tipo, criticidade, flag), ordenação por coluna, coluna de
+  flags e export CSV. Novas telas globais **Atributos** (`/attributes`) e
+  **Índices** (`/indexes`) com filtros próprios (PK, tipo de índice, UNIQUE, flag)
+  e export. Backend: rotas `GET /attributes/page` (`listAttributesPaginated`) e
+  `GET /indexes/page` (`listIndexesPaginated`); `GET /entities/page` estendido com
+  filtros/ordenação (whitelist anti-injeção) e coluna de flags.
+
 ### Fixed 🐛
 - **Autodistribuição do layout do DER (v1.0016)** — entidades novas importadas
   (via DDL/DM1) num diagrama já organizado deixavam de empilhar invisíveis na
