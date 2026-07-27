@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 from ..._metadata import api_prefix
 from ..core import Dependencies, delta
@@ -28,6 +28,7 @@ from ..tickets.session import (
     get_or_create_session_ticket,
     stage_entity_change,
 )
+from .listings import escape_like, flags_by_entity
 from .models import (
     AttributeIn, AttributeOut,
     EntityIn, EntityListOut, EntityOut, PaginatedEntities,
@@ -378,6 +379,22 @@ def list_entities(
     return _overlay_entity_list(items, system_id, ticket_id, diff)
 
 
+# Mapeamento coluna-de-ordenação → expressão SQL. Whitelist explícita porque
+# o valor de `sort_by` vem do cliente e é interpolado no ORDER BY (não dá pra
+# parametrizar identificadores). Só chaves conhecidas passam; qualquer outra
+# cai no default (updated_at). Isso fecha a porta pra SQL injection via sort.
+_ENT_SORT_COLS = {
+    "technical_name": "e.technical_name",
+    "logical_name": "e.logical_name",
+    "system_name": "sys.system_name",
+    "schema_name": "e.schema_name",
+    "entity_type": "e.entity_type",
+    "domain": "e.domain",
+    "criticality": "e.criticality",
+    "updated_at": "e.updated_at",
+}
+
+
 @router.get(
     "/page",
     response_model=PaginatedEntities,
@@ -387,14 +404,28 @@ def list_entities_paginated(
     sql: SqlDependency,
     user_ws: Dependencies.UserClient,
     system_id: str | None = None,
+    schema_name: str | None = None,
+    entity_type: str | None = None,
     domain: str | None = None,
+    criticality: str | None = None,
+    q: str | None = Query(None, description="Busca textual (nome técnico/lógico)"),
+    flag_id: str | None = Query(None, description="Filtra entidades com esta flag"),
+    sort_by: str = Query("updated_at", description="Coluna de ordenação"),
+    sort_dir: str = Query("desc", description="asc | desc"),
     page: int = 1,
     page_size: int = 50,
 ) -> PaginatedEntities:
-    """Listagem paginada — preferida para sistemas com muitas tabelas.
+    """Listagem paginada + filtros + busca + ordenação + coluna de flags.
 
-    - `page` é 1-indexed.
-    - `page_size` é clamped em [1, 200].
+    Suporta os filtros que a UI de listagem oferece (ponto 5 do plano):
+    sistema, schema, tipo, domínio, criticidade, busca textual e "por flag".
+
+    - `page` é 1-indexed; `page_size` é clamped em [1, 200].
+    - `sort_by` é validado contra whitelist (`_ENT_SORT_COLS`); valor inválido
+      volta pro default `updated_at`.
+    - Filtro por flag usa EXISTS (não JOIN) para não duplicar linhas quando a
+      entidade tem várias flags; aplicado igualmente no COUNT e na página para
+      manter `total` coerente.
     """
     s = get_settings()
     page = max(1, int(page))
@@ -406,9 +437,32 @@ def list_entities_paginated(
     if system_id:
         where.append("e.system_id = :system_id")
         params.append(delta.param("system_id", system_id))
+    if schema_name:
+        where.append("e.schema_name = :schema_name")
+        params.append(delta.param("schema_name", schema_name))
+    if entity_type:
+        where.append("e.entity_type = :entity_type")
+        params.append(delta.param("entity_type", entity_type))
     if domain:
         where.append("e.domain = :domain")
         params.append(delta.param("domain", domain))
+    if criticality:
+        where.append("e.criticality = :criticality")
+        params.append(delta.param("criticality", criticality))
+    if q and q.strip():
+        pat = f"%{escape_like(q.strip().lower())}%"
+        where.append(
+            "(LOWER(COALESCE(e.technical_name, '')) LIKE :q ESCAPE '\\\\' "
+            "OR LOWER(COALESCE(e.logical_name, '')) LIKE :q ESCAPE '\\\\')"
+        )
+        params.append(delta.param("q", pat))
+    if flag_id:
+        # EXISTS evita duplicação de linhas; casa flag direta ou propagada.
+        where.append(
+            f"EXISTS (SELECT 1 FROM {s.fq_table('entity_flags')} ef "
+            f"WHERE ef.entity_id = e.entity_id AND ef.flag_id = :flag_id)"
+        )
+        params.append(delta.param("flag_id", flag_id))
     # Esconde entidades de sistemas arquivados (soft-deleted). Subquery (não JOIN)
     # para funcionar também no COUNT do paginado, que não junta `systems`.
     where.append(
@@ -416,6 +470,9 @@ def list_entities_paginated(
         f"(SELECT system_id FROM {s.fq_table('systems')} WHERE archived_at IS NOT NULL)"
     )
     where_clause = ("WHERE " + " AND ".join(where)) if where else ""
+
+    sort_col = _ENT_SORT_COLS.get(sort_by, "e.updated_at")
+    direction = "ASC" if str(sort_dir).lower() == "asc" else "DESC"
 
     total_row = delta.fetch_one_params(
         sql,
@@ -434,7 +491,7 @@ def list_entities_paginated(
         FROM {s.fq_table('entities')} e
         LEFT JOIN {s.fq_table('systems')} sys ON sys.system_id = e.system_id
         {where_clause}
-        ORDER BY e.updated_at DESC
+        ORDER BY {sort_col} {direction}
         LIMIT {page_size} OFFSET {offset}
         """,
         params,
@@ -449,6 +506,10 @@ def list_entities_paginated(
         )
         for r in rows
     ]
+    # Coluna de flags: 1 query agregada para a página inteira (evita N+1).
+    flags_map = flags_by_entity(sql, [it.entity_id for it in items])
+    for it in items:
+        it.flags = flags_map.get(it.entity_id, [])
     ticket_id, diff, _ = _get_session_diff(sql, user_ws, system_id)
     items = _overlay_entity_list(items, system_id, ticket_id, diff)
     return PaginatedEntities(

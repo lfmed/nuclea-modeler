@@ -63,6 +63,22 @@ class EntityOut(BaseModel):
     pending_ticket_id: str | None = None
 
 
+class FlagBadge(BaseModel):
+    """Resumo compacto de uma flag aplicada — usado nas listagens para
+    exibir uma coluna de flags sem carregar todo o payload de EntityFlagOut.
+
+    Só os campos que a UI precisa para renderizar a chip (cor + rótulo) e
+    filtrar por flag. Mantido separado de FlagOut (flags/models.py) para não
+    acoplar o módulo de listagens ao catálogo de flags e evitar import circular.
+    """
+
+    flag_id: str
+    flag_key: str
+    display_name: str
+    color_hex: str | None = None
+    category: str | None = None
+
+
 class EntityListOut(BaseModel):
     entity_id: str
     system_id: str
@@ -76,6 +92,9 @@ class EntityListOut(BaseModel):
     attributes_count: int | None = None
     updated_at: datetime
     is_shared: bool = False
+    # Coluna de flags nas listagens (ponto 5.3 do plano). Preenchida só nos
+    # endpoints paginados que fazem o join agregado; listas "frias" deixam [].
+    flags: list[FlagBadge] = Field(default_factory=list)
     pending_op: PendingOp | None = None
     pending_ticket_id: str | None = None
 
@@ -201,3 +220,64 @@ class EntityPartitioningOut(BaseModel):
     updated_at: datetime | None = None
     updated_by: str | None = None
     pending_op: PendingOp | None = None
+
+
+# -------------------- Global listings (visão de sistema) --------------------
+# Visões globais de atributos e índices (ponto 5.2 do plano). Diferente das
+# listagens por-entity, estas cruzam TODAS as entidades de um sistema/catálogo
+# e trazem o contexto da entity-host (nome técnico, schema, sistema) para que a
+# tabela seja legível sem navegar até cada entidade. Definidas aqui no fim do
+# arquivo porque dependem de IndexType/IndexColumn declarados acima.
+
+
+class AttributeListOut(BaseModel):
+    """Linha da visão global de atributos — atributo + contexto da entity."""
+
+    attribute_id: str
+    entity_id: str
+    entity_technical_name: str | None = None
+    entity_logical_name: str | None = None
+    schema_name: str | None = None
+    system_id: str | None = None
+    system_name: str | None = None
+    technical_name: str
+    logical_name: str | None = None
+    ordinal_position: int | None = None
+    native_data_type: str | None = None
+    is_nullable: bool | None = None
+    is_primary_key: bool = False
+    updated_at: datetime | None = None
+    flags: list[FlagBadge] = Field(default_factory=list)
+
+
+class PaginatedAttributes(BaseModel):
+    items: list[AttributeListOut]
+    total: int
+    page: int = Field(ge=1)
+    page_size: int = Field(ge=1, le=200)
+    has_more: bool
+
+
+class IndexListOut(BaseModel):
+    """Linha da visão global de índices — índice + contexto da entity."""
+
+    index_id: str
+    entity_id: str
+    entity_technical_name: str | None = None
+    schema_name: str | None = None
+    system_id: str | None = None
+    system_name: str | None = None
+    index_name: str
+    index_type: IndexType
+    columns: list[IndexColumn] = Field(default_factory=list)
+    is_unique: bool = False
+    origin: Literal["EXTRACTED", "MANUAL"] | None = None
+    updated_at: datetime | None = None
+
+
+class PaginatedIndexes(BaseModel):
+    items: list[IndexListOut]
+    total: int
+    page: int = Field(ge=1)
+    page_size: int = Field(ge=1, le=200)
+    has_more: bool
