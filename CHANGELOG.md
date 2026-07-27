@@ -5,6 +5,16 @@ Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+### Fixed 🐛
+- **Autodistribuição do layout do DER (v1.0016)** — entidades novas importadas
+  (via DDL/DM1) num diagrama já organizado deixavam de empilhar invisíveis na
+  origem `(0,0)`. A causa era o sentinel `{x:0,y:0}` + detecção binária de
+  "tem layout"; agora distingue-se **"sem posição"** de **"(0,0)"** e roda-se um
+  **layout incremental** que posiciona só os nós novos ao lado do bloco já
+  organizado (preservando os arrastados manualmente), com reenquadre automático.
+  Novo botão **"Auto-organizar tudo"** reroda o layout do diagrama inteiro (com
+  confirmação) e **salva** as posições.
+
 ### Added
 - **Paridade do import DDL com o DM1 (v1.0015)** — o parser DDL agora extrai
   `CREATE [UNIQUE] INDEX` (colunas ordenadas, `INCLUDE`, `WHERE` parcial),
