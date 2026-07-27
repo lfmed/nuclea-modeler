@@ -84,6 +84,13 @@ class ExtractedIndex(BaseModel):
     is_unique: bool = False
     columns: list[ExtractedIndexColumn] = Field(default_factory=list)
     native_comment: str | None = None
+    # `include_columns` / `partial_where` só são preenchidos por fontes que
+    # expõem esses metadados (ex.: DDL Postgres com `INCLUDE (...)` / `WHERE`).
+    # Default vazio/None mantém o shape do DM1/UC (que não os informam). O apply
+    # (`entities.indexes.apply_index_add`) já lê essas chaves do payload, então
+    # basta o model_dump() carregá-las até a tabela `entity_indexes`.
+    include_columns: list[str] = Field(default_factory=list)
+    partial_where: str | None = None
 
 
 class ExtractedEntity(BaseModel):

@@ -37,13 +37,49 @@ from .models import (
 log = logging.getLogger(__name__)
 
 
-def _ddl_reference_to_rel(
+# Uma FK "crua" coletada na 1ª passe do parser DDL, ANTES de resolver a tabela
+# referenciada. Guardamos o nome/schema-hint da tabela-alvo e resolvemos por
+# nome só na 2ª passe (quando todas as entities do arquivo já foram parseadas).
+# Ver `run_ddl_import` para o porquê das 2 passes (ordem de CREATE não importa).
+class _PendingFK:
+    __slots__ = (
+        "parent_schema_hint",
+        "parent_name",
+        "parent_cols",
+        "child_schema",
+        "child_table",
+        "child_cols",
+    )
+
+    def __init__(
+        self,
+        parent_schema_hint: str | None,
+        parent_name: str,
+        parent_cols: list[str],
+        child_schema: str,
+        child_table: str,
+        child_cols: list[str],
+    ) -> None:
+        self.parent_schema_hint = parent_schema_hint  # schema explícito no REFERENCES, se houver
+        self.parent_name = parent_name
+        self.parent_cols = parent_cols
+        self.child_schema = child_schema
+        self.child_table = child_table
+        self.child_cols = child_cols
+
+
+def _ddl_reference_raw(
     ref, child_schema: str, child_table: str, child_cols: list[str]
-) -> ExtractedRelationship | None:
-    """Converte um nó sqlglot exp.Reference (FK inline ou table-level) em
-    ExtractedRelationship. parent = tabela referenciada (PK); child = tabela
-    sendo definida (segura a FK). Defensivo: retorna None se não der pra
-    resolver a tabela referenciada."""
+) -> _PendingFK | None:
+    """Extrai os dados CRUS de um nó sqlglot exp.Reference (FK inline ou
+    table-level) SEM resolver a tabela-alvo. parent = tabela referenciada (PK);
+    child = tabela sendo definida (segura a FK).
+
+    Diferente da versão antiga (`_ddl_reference_to_rel`), NÃO descarta a FK
+    quando a tabela referenciada ainda não foi vista — só coleta o nome. A
+    resolução (schema + colunas PK + aviso de órfã) acontece na 2ª passe em
+    `_resolve_pending_fks`. Retorna None só quando o nó não tem nome de tabela
+    algum (ex.: sintaxe não reconhecida)."""
     from sqlglot import expressions as exp
 
     sch = ref.this
@@ -57,16 +93,125 @@ def _ddl_reference_to_rel(
         return None
     if rtbl is None or not getattr(rtbl, "name", ""):
         return None
-    parent_schema = (rtbl.db if getattr(rtbl, "db", "") else None) or child_schema
-    return ExtractedRelationship(
-        parent_schema=parent_schema,
-        parent_entity=rtbl.name,
-        parent_columns=parent_cols,
+    parent_schema_hint = rtbl.db if getattr(rtbl, "db", "") else None
+    return _PendingFK(
+        parent_schema_hint=parent_schema_hint,
+        parent_name=rtbl.name,
+        parent_cols=parent_cols,
         child_schema=child_schema,
-        child_entity=child_table,
-        child_columns=child_cols,
-        rel_type="1:N",
+        child_table=child_table,
+        child_cols=child_cols,
     )
+
+
+def _resolve_pending_fks(
+    pending: list[_PendingFK],
+    entities: list[ExtractedEntity],
+    search_path: list[str],
+    catalog_keys: set[tuple[str, str]] | None,
+) -> tuple[list[ExtractedRelationship], list[str]]:
+    """2ª passe: resolve cada FK crua por NOME, agora que todas as entities do
+    DDL já foram parseadas. Espelha o comportamento do fluxo DM1 (avisa quando
+    a tabela-alvo não existe, em vez de descartar em silêncio).
+
+    Resolução do schema da tabela-alvo (Postgres-like), na ordem:
+      1. schema explícito no `REFERENCES schema.tabela`;
+      2. mesmo schema da tabela filha (comum em modelos single-schema);
+      3. schemas do `search_path`, na ordem;
+      4. qualquer entity do DDL com aquele nome (match único por nome).
+
+    parent_columns: quando o `REFERENCES` não traz colunas, assume a(s) PK(s) da
+    entity-alvo do próprio DDL. Se a alvo não tem PK conhecida, registra aviso e
+    segue (o relacionamento ainda é útil como "1:N por nome").
+
+    Aviso de órfã: emitido só quando a tabela-alvo não existe NEM no DDL NEM no
+    catálogo (`catalog_keys`) — padrão do DM1. Quando existe só no catálogo, o
+    relacionamento é emitido normalmente (resolvido por nome no apply)."""
+    # Índices por (schema, nome) e por nome-só das entities parseadas neste DDL.
+    by_key: dict[tuple[str, str], ExtractedEntity] = {
+        (e.schema_name, e.technical_name): e for e in entities
+    }
+    by_name: dict[str, list[ExtractedEntity]] = {}
+    for e in entities:
+        by_name.setdefault(e.technical_name, []).append(e)
+
+    catalog_keys = catalog_keys or set()
+    catalog_names = {name for (_sch, name) in catalog_keys}
+
+    relationships: list[ExtractedRelationship] = []
+    warnings: list[str] = []
+
+    for fk in pending:
+        # Candidatos de schema, na ordem de preferência.
+        candidate_schemas: list[str] = []
+        if fk.parent_schema_hint:
+            candidate_schemas.append(fk.parent_schema_hint)
+        candidate_schemas.append(fk.child_schema)
+        candidate_schemas.extend(search_path)
+
+        resolved_entity: ExtractedEntity | None = None
+        resolved_schema: str | None = None
+        for sch in candidate_schemas:
+            ent = by_key.get((sch, fk.parent_name))
+            if ent is not None:
+                resolved_entity = ent
+                resolved_schema = sch
+                break
+        # Sem hit por schema: aceita match único por nome dentro do DDL.
+        if resolved_entity is None:
+            same_name = by_name.get(fk.parent_name, [])
+            if len(same_name) == 1:
+                resolved_entity = same_name[0]
+                resolved_schema = same_name[0].schema_name
+
+        # Fallback do schema quando a alvo não está no DDL (só no catálogo, ou
+        # órfã): usa hint → child_schema → 1º do search_path.
+        if resolved_schema is None:
+            resolved_schema = (
+                fk.parent_schema_hint
+                or fk.child_schema
+                or (search_path[0] if search_path else "public")
+            )
+
+        # A alvo existe em algum lugar conhecido?
+        target_in_ddl = resolved_entity is not None
+        target_in_catalog = (
+            (resolved_schema, fk.parent_name) in catalog_keys
+            or fk.parent_name in catalog_names
+        )
+        if not target_in_ddl and not target_in_catalog:
+            warnings.append(
+                f"FK de {fk.child_schema}.{fk.child_table} referencia tabela "
+                f"'{fk.parent_name}' inexistente no DDL e no catálogo — "
+                f"relacionamento criado por nome (revisar)."
+            )
+
+        # parent_columns: usa as do REFERENCES; senão infere PK da alvo do DDL.
+        parent_cols = list(fk.parent_cols)
+        if not parent_cols and resolved_entity is not None:
+            parent_cols = [
+                a.technical_name for a in resolved_entity.attributes if a.is_primary_key
+            ]
+            if not parent_cols:
+                warnings.append(
+                    f"FK de {fk.child_schema}.{fk.child_table} para "
+                    f"'{fk.parent_name}' sem colunas explícitas e alvo sem PK "
+                    f"conhecida — colunas de origem indeterminadas."
+                )
+
+        relationships.append(
+            ExtractedRelationship(
+                parent_schema=resolved_schema,
+                parent_entity=fk.parent_name,
+                parent_columns=parent_cols,
+                child_schema=fk.child_schema,
+                child_entity=fk.child_table,
+                child_columns=fk.child_cols,
+                rel_type="1:N",
+            )
+        )
+
+    return relationships, warnings
 
 
 def _quote_id(value: str) -> str:
@@ -541,24 +686,166 @@ def _ddl_literal_str(node: Any) -> str | None:
     return None
 
 
-def _ddl_search_path_schema(stmt, dialect) -> str | None:
-    """Extrai o schema de um `SET search_path TO <schema>` (Postgres).
+def _ddl_search_path_schemas(stmt, dialect) -> list[str]:
+    """Extrai a LISTA de schemas de um `SET search_path TO a, b, c` (Postgres).
 
     O sqlglot ora devolve exp.Set (`SET search_path = streaming`), ora exp.Command
     (`SET search_path TO a, b` — sintaxe não suportada cai em Command), então
-    detectamos via regex no SQL renderizado — robusto para os dois casos. Pega o
-    PRIMEIRO schema da lista. Retorna None se não for um SET de search_path.
+    detectamos via regex no SQL renderizado — robusto para os dois casos.
+
+    Semântica Postgres (por que devolvemos a lista inteira, e não só o 1º):
+    - CRIAÇÃO de objeto não-qualificado usa SEMPRE o PRIMEIRO schema do
+      search_path (por isso o schema default das tabelas continua sendo o [0]).
+    - RESOLUÇÃO de referência (ex.: FK `REFERENCES foo` sem schema) percorre a
+      lista NA ORDEM. Guardar a lista permite casar a tabela-alvo do FK no schema
+      certo quando o DDL usa múltiplos schemas.
+
+    Retorna `[]` quando o statement não é um SET de search_path (o chamador
+    então preserva o search_path corrente). Tokens `$user`/`public` implícitos e
+    identificadores inválidos são filtrados.
     """
     try:
         txt = stmt.sql(dialect=dialect)
     except Exception:  # noqa: BLE001
-        return None
+        return []
     m = re.search(
-        r"search_path\s*(?:=|to)\s*[\"']?([A-Za-z_][A-Za-z0-9_$]*)",
+        r"search_path\s*(?:=|to)\s+(.+)$",
         txt,
         re.IGNORECASE,
     )
-    return m.group(1) if m else None
+    if not m:
+        return []
+    raw_list = m.group(1)
+    schemas: list[str] = []
+    for token in raw_list.split(","):
+        t = token.strip().strip('"').strip("'").strip()
+        # `$user` é resolvido em runtime pelo Postgres — sem valor no parse.
+        if not t or t.startswith("$"):
+            continue
+        mt = re.match(r"^([A-Za-z_][A-Za-z0-9_$]*)", t)
+        if mt:
+            schemas.append(mt.group(1))
+    return schemas
+
+
+def _ddl_index_from_create(
+    stmt, current_schema_default: str
+) -> tuple[str, str, ExtractedIndex] | None:
+    """Converte um `CREATE [UNIQUE] INDEX ... ON tabela (cols)` (sqlglot
+    exp.Create kind=INDEX) em `(schema, tabela, ExtractedIndex)`.
+
+    Espelha a paridade com o DM1: hoje o parser só olhava CREATE TABLE/VIEW e
+    ignorava índices. Aqui reconhecemos o índice e o mapeamos para o mesmo shape
+    que o DM1 persiste em `entity_indexes` (name, index_type, columns, is_unique,
+    include, partial where quando o dialeto suportar).
+
+    Robustez: a AST de índice varia por versão do sqlglot — usamos acessos
+    defensivos (`args.get`) e caímos em `find_all`/regno SQL quando um caminho
+    não existe. Retorna None quando não há nome de tabela ou de colunas.
+
+    O casamento com a entity (por schema/nome) acontece no chamador, porque o
+    índice pode aparecer ANTES ou DEPOIS do CREATE TABLE — a ordem não importa.
+    """
+    from sqlglot import expressions as exp
+
+    # Nome do índice: `stmt.this` costuma ser um exp.Index cujo `.this` é o nome.
+    index_node = stmt.this
+    index_name = ""
+    table_node = None
+    col_nodes: list[Any] = []
+    if isinstance(index_node, exp.Index):
+        # Nome do índice (exp.Identifier / Table).
+        name_node = index_node.this
+        index_name = getattr(name_node, "name", "") or ""
+        # Alvo: exp.IndexParameters em args['params'] ou o próprio 'table'.
+        params = index_node.args.get("params")
+        table_node = index_node.args.get("table")
+        if isinstance(params, exp.IndexParameters):
+            if not table_node:
+                table_node = params.args.get("table")
+            col_nodes = list(params.args.get("columns") or [])
+        if not col_nodes:
+            # Fallback: algumas versões guardam colunas direto no Index.
+            col_nodes = list(index_node.args.get("columns") or [])
+    else:
+        # Layout alternativo: nome em `this`, tabela/colunas em args.
+        index_name = getattr(index_node, "name", "") or ""
+        table_node = stmt.args.get("table") or stmt.args.get("this")
+
+    # Resolve schema + nome da tabela-alvo.
+    tbl_name = getattr(table_node, "name", "") if table_node is not None else ""
+    if not tbl_name and isinstance(table_node, exp.Table):
+        tbl_name = table_node.name
+    if not tbl_name:
+        return None
+    tbl_schema = (
+        getattr(table_node, "db", "") if table_node is not None else ""
+    ) or current_schema_default
+
+    # Colunas do índice (ordem importa). Cada nó pode ser Column, Ordered
+    # (com direção) ou Identifier. Direção: exp.Ordered com desc=True → DESC.
+    columns: list[ExtractedIndexColumn] = []
+    for cn in col_nodes:
+        direction = "ASC"
+        target = cn
+        if isinstance(cn, exp.Ordered):
+            if cn.args.get("desc"):
+                direction = "DESC"
+            target = cn.this
+        col_name = getattr(target, "name", "") or ""
+        if col_name:
+            columns.append(ExtractedIndexColumn(name=col_name, direction=direction))
+    if not columns:
+        return None
+
+    # UNIQUE: a flag `unique` pode viver no Create, no exp.Index ou no
+    # IndexParameters — varia por versão do sqlglot. Checamos os três; se todos
+    # forem None/ausentes, caímos no SQL renderizado (barato e determinístico).
+    is_unique = bool(
+        stmt.args.get("unique")
+        or (isinstance(index_node, exp.Index) and index_node.args.get("unique"))
+    )
+    if not is_unique:
+        try:
+            rendered = stmt.sql()
+            is_unique = bool(re.search(r"\bUNIQUE\b", rendered, re.IGNORECASE))
+        except Exception:  # noqa: BLE001
+            pass
+
+    # INCLUDE (covering) e partial WHERE — só quando o dialeto expõe na AST.
+    include_columns: list[str] = []
+    partial_where: str | None = None
+    try:
+        params = index_node.args.get("params") if isinstance(index_node, exp.Index) else None
+        if isinstance(params, exp.IndexParameters):
+            for inc in (params.args.get("include") or []):
+                nm = getattr(inc, "name", "") or ""
+                if nm:
+                    include_columns.append(nm)
+            where_node = params.args.get("where")
+            if where_node is not None:
+                # exp.Where.this é a condição — renderiza sem a keyword WHERE.
+                cond = getattr(where_node, "this", where_node)
+                try:
+                    partial_where = cond.sql()
+                except Exception:  # noqa: BLE001
+                    partial_where = None
+    except Exception:  # noqa: BLE001 — metadados extras são best-effort
+        pass
+
+    index_type = "UNIQUE" if is_unique else "BTREE"
+    return (
+        tbl_schema,
+        tbl_name,
+        ExtractedIndex(
+            index_name=index_name or f"ix_{tbl_name}_{'_'.join(c.name for c in columns)}",
+            index_type=index_type,
+            is_unique=is_unique,
+            columns=columns,
+            include_columns=include_columns,
+            partial_where=partial_where,
+        ),
+    )
 
 
 def run_ddl_import(
@@ -598,25 +885,44 @@ def run_ddl_import(
         )
 
     entities: list[ExtractedEntity] = []
-    relationships: list[ExtractedRelationship] = []
     errors: list[str] = []
+    warnings: list[str] = []
+    # FKs coletadas CRUAS na 1ª passe; resolvidas por nome na 2ª passe (ver
+    # `_resolve_pending_fks`). Assim a ORDEM dos CREATE TABLE deixa de importar:
+    # uma FK declarada antes da tabela-alvo passa a ser resolvida corretamente.
+    pending_fks: list[_PendingFK] = []
+    # Índices de `CREATE INDEX` coletados na 1ª passe — casados às entities na
+    # 2ª passe (o índice pode vir antes OU depois do CREATE TABLE).
+    pending_indexes: list[tuple[str, str, ExtractedIndex]] = []
     # Comentários de `COMMENT ON TABLE/COLUMN ... IS '...'` costumam vir DEPOIS
     # do CREATE — guardamos e aplicamos no fim (chave = schema/tabela[/coluna]).
     deferred_table_comments: dict[tuple[str, str], str] = {}
     deferred_col_comments: dict[tuple[str, str, str], str] = {}
-    # Schema default para tabelas NÃO-qualificadas. Honra `SET search_path TO x`
-    # (dumps Postgres): sem isso, tudo caía em "public" mesmo quando o DDL declara
-    # `CREATE SCHEMA streaming; SET search_path TO streaming;`. Rastreado em ordem.
-    current_schema_default = "public"
+    # search_path corrente (lista, na ordem). O 1º item é o schema default de
+    # objetos não-qualificados (semântica Postgres: CREATE usa sempre o 1º).
+    # A lista completa é usada na resolução de FKs multi-schema. Honra
+    # `SET search_path TO a, b, c` (dumps Postgres): sem isso, tudo caía em
+    # "public" mesmo quando o DDL declara `SET search_path TO streaming, public`.
+    current_search_path: list[str] = ["public"]
     for stmt in parsed:
         if stmt is None:
             continue
-        # SET search_path muda o schema default das próximas tabelas.
+        # SET search_path muda o schema default (e a ordem de resolução).
         if isinstance(stmt, (exp.Set, exp.Command)):
-            sp = _ddl_search_path_schema(stmt, sg_dialect)
+            sp = _ddl_search_path_schemas(stmt, sg_dialect)
             if sp:
-                current_schema_default = sp
+                current_search_path = sp
             continue
+        # CREATE [UNIQUE] INDEX — coletado cru e casado à entity na 2ª passe.
+        if isinstance(stmt, exp.Create) and stmt.kind and stmt.kind.upper() == "INDEX":
+            try:
+                extracted = _ddl_index_from_create(stmt, current_search_path[0])
+                if extracted:
+                    pending_indexes.append(extracted)
+            except Exception as exc:  # noqa: BLE001 — índice best-effort
+                errors.append(f"CREATE INDEX ignorado: {exc}")
+            continue
+        current_schema_default = current_search_path[0]
         try:
             if isinstance(stmt, exp.Create) and stmt.kind and stmt.kind.upper() in ("TABLE", "VIEW"):
                 # stmt.this é um exp.Schema (Table + ColumnDefs + Constraints).
@@ -647,11 +953,12 @@ def run_ddl_import(
                             pk_cols.add(name)
                         if isinstance(kind, exp.NotNullColumnConstraint):
                             is_nullable = False
-                        # FK inline: `col INT REFERENCES outra(col)`
+                        # FK inline: `col INT REFERENCES outra(col)` — coletada
+                        # crua e resolvida por nome na 2ª passe.
                         if isinstance(kind, exp.Reference):
-                            rel = _ddl_reference_to_rel(kind, schema_name, tbl_name, [name])
-                            if rel:
-                                relationships.append(rel)
+                            pfk = _ddl_reference_raw(kind, schema_name, tbl_name, [name])
+                            if pfk:
+                                pending_fks.append(pfk)
                         # Comentário inline: `col INT COMMENT 'texto'`
                         if isinstance(kind, exp.CommentColumnConstraint):
                             col_comment = _ddl_literal_str(kind.this)
@@ -665,6 +972,14 @@ def run_ddl_import(
                             native_comment=col_comment,
                         )
                     )
+                # PK table-level: `PRIMARY KEY (a, b)` (chave composta). Sem
+                # isso, PK composta ficava sem marcação e a inferência de
+                # parent_columns de FK (que usa a PK da alvo) falhava.
+                for pk_node in schema_obj.find_all(exp.PrimaryKey):
+                    for c in (pk_node.expressions or []):
+                        cname = getattr(c, "name", "") or ""
+                        if cname:
+                            pk_cols.add(cname)
                 # Mark PKs
                 for attr in attributes:
                     if attr.technical_name in pk_cols:
@@ -674,9 +989,9 @@ def run_ddl_import(
                     local_cols = [c.name for c in fk.expressions if hasattr(c, "name")]
                     ref = fk.args.get("reference")
                     if ref is not None:
-                        rel = _ddl_reference_to_rel(ref, schema_name, tbl_name, local_cols)
-                        if rel:
-                            relationships.append(rel)
+                        pfk = _ddl_reference_raw(ref, schema_name, tbl_name, local_cols)
+                        if pfk:
+                            pending_fks.append(pfk)
                 # Comentário de tabela: `... COMMENT 'texto'` / `COMMENT = '...'`
                 # aparece como exp.SchemaCommentProperty dentro de properties.
                 # Best-effort: um erro aqui não pode derrubar a extração da tabela.
@@ -779,6 +1094,53 @@ def run_ddl_import(
             errors=errors or [msg],
         )
 
+    # 2ª passe — casa os `CREATE INDEX` às entities (por schema+nome, ou só por
+    # nome quando o índice não qualificou o schema). Feito aqui, depois de TODAS
+    # as tabelas parseadas, para não depender da ordem CREATE TABLE vs INDEX.
+    entity_by_key: dict[tuple[str, str], ExtractedEntity] = {
+        (e.schema_name, e.technical_name): e for e in entities
+    }
+    entity_by_name: dict[str, list[ExtractedEntity]] = {}
+    for e in entities:
+        entity_by_name.setdefault(e.technical_name, []).append(e)
+    for ix_schema, ix_table, ix in pending_indexes:
+        target = entity_by_key.get((ix_schema, ix_table))
+        if target is None:
+            same_name = entity_by_name.get(ix_table, [])
+            if len(same_name) == 1:
+                target = same_name[0]
+        if target is None:
+            warnings.append(
+                f"Índice '{ix.index_name}' referencia tabela "
+                f"'{ix_schema}.{ix_table}' não encontrada no DDL — ignorado."
+            )
+            continue
+        # Dedup por nome (não duplica se o mesmo índice aparecer 2x).
+        if any(existing.index_name == ix.index_name for existing in target.indexes):
+            continue
+        target.indexes.append(ix)
+
+    # 2ª passe — resolve as FKs coletadas cruas. Precisa das chaves do catálogo
+    # para decidir órfã (existe só no catálogo → não é órfã). Query enxuta,
+    # espelhando o que o diff já faz, mas só das chaves.
+    catalog_keys: set[tuple[str, str]] = set()
+    try:
+        s = get_settings()
+        cat_rows = delta.fetch_all_params(
+            sql,
+            f"SELECT schema_name, technical_name FROM {s.fq_table('entities')} "
+            f"WHERE system_id = :system_id",
+            [delta.param("system_id", system_id)],
+        )
+        catalog_keys = {(r[0], r[1]) for r in cat_rows}
+    except Exception as exc:  # noqa: BLE001 — sem catálogo, resolvemos só pelo DDL
+        log.warning("run_ddl_import: falha ao ler chaves do catálogo: %s", exc)
+
+    relationships, fk_warnings = _resolve_pending_fks(
+        pending_fks, entities, current_search_path, catalog_keys
+    )
+    warnings.extend(fk_warnings)
+
     snapshot = ExtractionSnapshot(
         source_kind="DDL_FILE",
         system_id=system_id,
@@ -791,8 +1153,16 @@ def run_ddl_import(
     ended = datetime.utcnow()
     duration_ms = int((time.monotonic() - start_clock) * 1000)
     has_changes = summary["new"] + summary["changed"] + summary["removed"] + summary.get("relationships", 0) > 0
+    # Total de índices casados às entities (métrica para o log/ticket).
+    idx_count = sum(len(e.indexes) for e in entities)
     ticket_id: str | None = None
     if has_changes and open_ticket_on_diff:
+        warnings_block = (
+            "\n\n**Avisos do parser:**\n"
+            + "\n".join(f"- {w}" for w in warnings[:20])
+            if warnings
+            else ""
+        )
         ticket_id = open_ticket(
             sql,
             title=(
@@ -802,21 +1172,32 @@ def run_ddl_import(
             system_id=system_id,
             source_type="DDL_IMPORT",
             diff=diff,
-            summary_md=f"Dialeto: {dialect}\n{len(entities)} CREATE statements parseados.\nErros de parse: {len(errors)}",
+            summary_md=(
+                f"Dialeto: {dialect}\n"
+                f"{len(entities)} CREATE statements parseados.\n"
+                f"{summary.get('relationships', 0)} relacionamento(s), "
+                f"{idx_count} índice(s).\n"
+                f"Erros de parse: {len(errors)}"
+                f"{warnings_block}"
+            ),
             created_by=actor,
         )
-    status = "SUCCESS" if not errors else "PARTIAL"
+    # PARTIAL quando houve erro de parse OU aviso (FK órfã / índice sem tabela):
+    # o usuário precisa revisar. Espelha o DM1, que marca PARTIAL com problemas.
+    status = "SUCCESS" if not (errors or warnings) else "PARTIAL"
     rel_note = (
         f" {summary.get('relationships', 0)} relacionamento(s)."
         if summary.get("relationships")
         else ""
     )
+    idx_note = f" {idx_count} índice(s)." if idx_count else ""
     base_summary = (
         f"Parseado {summary['found']} objetos. "
         f"+{summary['new']} novos, ~{summary['changed']} alterados, "
-        f"-{summary['removed']} removidos.{rel_note}"
+        f"-{summary['removed']} removidos.{rel_note}{idx_note}"
     )
-    import_log = format_import_log(errors, [])
+    # `errors` = problemas de parse; `warnings` = avisos informativos (órfãs etc).
+    import_log = format_import_log(errors, warnings)
     summary_md = base_summary + (f"\n\n{import_log}" if import_log else "")
 
     ext_id = persist_extraction(
@@ -837,7 +1218,7 @@ def run_ddl_import(
         objects_removed=summary["removed"],
         snapshot=snapshot,
         diff_summary=summary,
-        error_summary=("\n".join(errors)[:4000]) if errors else None,
+        error_summary=("\n".join(errors + warnings)[:4000]) if (errors or warnings) else None,
         ticket_id=ticket_id,
     )
     return ExtractionResult(
@@ -850,7 +1231,8 @@ def run_ddl_import(
         duration_ms=duration_ms,
         ticket_id=ticket_id,
         summary_md=summary_md,
-        errors=errors,
+        # errors do resultado = parse errors + avisos (ambos merecem atenção).
+        errors=errors + warnings,
     )
 
 
