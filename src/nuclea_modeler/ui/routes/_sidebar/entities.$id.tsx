@@ -10,18 +10,22 @@ import {
   useDeleteAttribute,
   useDeleteEntity,
   useListEntityFlagsSuspense,
-  useApplyEntityFlag,
+  useBatchApplyEntityFlags,
   useRemoveEntityFlag,
   useListAttributeFlagsSuspense,
-  useApplyAttributeFlag,
+  useBatchApplyAttributeFlags,
+  useBatchRemoveAttributeFlags,
   useRemoveAttributeFlag,
   useListSystemsSuspense,
+  type BatchFlagSpec,
 } from "@/lib/api";
 import selector from "@/lib/selector";
 import { TypePicker } from "@/components/diagram/type-picker";
 import { IndexesSection } from "@/components/diagram/indexes-section";
 import { PartitioningSection } from "@/components/diagram/partitioning-section";
 import { AttachmentsPanel } from "@/components/attachments/attachments-panel";
+import { FlagBatchBar, toastBatchFlagResult } from "@/components/flags/flag-batch-bar";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -185,7 +189,8 @@ function EntityDetail() {
 function EntityFlagsSection({ entityId }: { entityId: string }) {
   const qc = useQueryClient();
   const { data: appliedFlags } = useListEntityFlagsSuspense(entityId, selector());
-  const { mutate: apply, isPending: applying } = useApplyEntityFlag({
+  // Multi-select: uma única chamada batch aplica todas as flags escolhidas.
+  const { mutate: applyBatch, isPending: applying } = useBatchApplyEntityFlags({
     mutation: {
       onSuccess: () => {
         qc.invalidateQueries({ queryKey: ["listEntityFlags", entityId] });
@@ -230,8 +235,8 @@ function EntityFlagsSection({ entityId }: { entityId: string }) {
         <FlagPicker
           applied={applied}
           applying={applying}
-          onApply={({ flag_id, justification }) =>
-            apply({ entityId, data: { flag_id, justification } })
+          onApply={(specs) =>
+            applyBatch({ data: { target_ids: [entityId], flags: specs } })
           }
           onRemove={(efid) =>
             remove({ entityId, entityFlagId: efid })
@@ -250,7 +255,7 @@ function AttributeFlagsCell({ attributeId }: { attributeId: string }) {
   );
   const params = Route.useParams();
   const entityId = params.id;
-  const { mutate: apply, isPending: applying } = useApplyAttributeFlag({
+  const { mutate: applyBatch, isPending: applying } = useBatchApplyAttributeFlags({
     mutation: {
       onSuccess: () => {
         qc.invalidateQueries({ queryKey: ["listAttributeFlags", attributeId] });
@@ -281,9 +286,9 @@ function AttributeFlagsCell({ attributeId }: { attributeId: string }) {
       applied={applied}
       applying={applying}
       size="small"
-      label="Flag"
-      onApply={({ flag_id, justification }) =>
-        apply({ attributeId, data: { flag_id, justification } })
+      label="Flags"
+      onApply={(specs) =>
+        applyBatch({ data: { target_ids: [attributeId], flags: specs } })
       }
       onRemove={(afid) =>
         remove({ attributeId, attributeFlagId: afid })
@@ -309,6 +314,62 @@ function AttributesSection({
   const { data: attrs } = useListAttributesSuspense(entityId, selector());
   const qc = useQueryClient();
   const [showForm, setShowForm] = useState(false);
+
+  // Seleção múltipla de atributos p/ flags em lote (mata os ~250 cliques).
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const toggle = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const clearSelection = () => setSelected(new Set());
+  const allSelected = attrs.length > 0 && selected.size === attrs.length;
+  const toggleAll = () =>
+    setSelected((prev) =>
+      prev.size === attrs.length
+        ? new Set()
+        : new Set(attrs.map((a) => a.attribute_id)),
+    );
+
+  const invalidateAttrFlags = () => {
+    qc.invalidateQueries({ queryKey: ["listAttributeFlags"] });
+    qc.invalidateQueries({ queryKey: ["listEntityFlags", entityId] });
+  };
+  const { mutate: applyFlags, isPending: applyingFlags } =
+    useBatchApplyAttributeFlags({
+      mutation: {
+        onSuccess: (r) => {
+          invalidateAttrFlags();
+          clearSelection();
+          toastBatchFlagResult(r);
+        },
+        onError: (e) =>
+          toast.error("Falha ao aplicar flags", {
+            description: extractErrorMessage(e),
+          }),
+      },
+    });
+  const { mutate: removeFlags, isPending: removingFlags } =
+    useBatchRemoveAttributeFlags({
+      mutation: {
+        onSuccess: (r) => {
+          invalidateAttrFlags();
+          clearSelection();
+          toastBatchFlagResult(r);
+        },
+        onError: (e) =>
+          toast.error("Falha ao remover flags", {
+            description: extractErrorMessage(e),
+          }),
+      },
+    });
+  const selectedIds = Array.from(selected);
+  const onApplyFlags = (specs: BatchFlagSpec[]) =>
+    applyFlags({ data: { target_ids: selectedIds, flags: specs } });
+  const onRemoveFlags = (flagIds: string[]) =>
+    removeFlags({ data: { target_ids: selectedIds, flag_ids: flagIds } });
 
   const { mutate: createAttr, isPending } = useCreateAttribute({
     mutation: {
@@ -398,6 +459,19 @@ function AttributesSection({
           </form>
         )}
 
+        {selected.size > 0 && (
+          <div className="mb-3">
+            <FlagBatchBar
+              count={selected.size}
+              busy={applyingFlags || removingFlags}
+              noun="atributo"
+              onClear={clearSelection}
+              onApply={onApplyFlags}
+              onRemove={onRemoveFlags}
+            />
+          </div>
+        )}
+
         {attrs.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-6">
             Sem atributos cadastrados.
@@ -407,6 +481,15 @@ function AttributesSection({
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-left text-muted-foreground">
+                  <th className="py-2 pr-3 font-medium w-8">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 cursor-pointer accent-nuclea-primary"
+                      checked={allSelected}
+                      onChange={toggleAll}
+                      aria-label="Selecionar todos os atributos"
+                    />
+                  </th>
                   <th className="py-2 pr-3 font-medium w-8"></th>
                   <th className="py-2 pr-3 font-medium">Nome técnico</th>
                   <th className="py-2 pr-3 font-medium">Nome lógico</th>
@@ -419,7 +502,22 @@ function AttributesSection({
               </thead>
               <tbody>
                 {attrs.map((a) => (
-                  <tr key={a.attribute_id} className="border-b hover:bg-muted/40 align-top">
+                  <tr
+                    key={a.attribute_id}
+                    className={
+                      "border-b hover:bg-muted/40 align-top " +
+                      (selected.has(a.attribute_id) ? "bg-nuclea-primary/5" : "")
+                    }
+                  >
+                    <td className="py-2 pr-3">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 cursor-pointer accent-nuclea-primary"
+                        checked={selected.has(a.attribute_id)}
+                        onChange={() => toggle(a.attribute_id)}
+                        aria-label={`Selecionar ${a.technical_name}`}
+                      />
+                    </td>
                     <td className="py-2 pr-3">
                       {a.is_primary_key && <Key className="h-3.5 w-3.5 text-nuclea-primary" />}
                     </td>

@@ -1481,6 +1481,79 @@ export const useRemoveAttributeFlag = (
     ...opts?.mutation,
   });
 
+// ─── Flags em lote (Blocos 3 + 6) ─────────────────────────────────────────────
+//
+// Hooks escritos à mão (sem codegen) para os endpoints batch de flags. Permitem
+// aplicar/remover VÁRIAS flags a VÁRIOS alvos (entidades ou atributos) numa única
+// chamada, com erro parcial por item (mesmo contrato do BatchTicketResult).
+
+export interface BatchFlagSpec {
+  flag_id: string;
+  justification?: string | null;
+}
+
+export interface BatchFlagApplyIn {
+  target_ids: string[];
+  flags: BatchFlagSpec[];
+}
+
+export interface BatchFlagRemoveIn {
+  target_ids: string[];
+  flag_ids: string[];
+}
+
+export interface BatchFlagItemResult {
+  target_id: string;
+  flag_id: string;
+  ok: boolean;
+  applied_flag_id?: string | null;
+  error?: string | null;
+}
+
+export interface BatchFlagResult {
+  action: "apply" | "remove";
+  total: number;
+  succeeded: number;
+  failed: number;
+  results: BatchFlagItemResult[];
+}
+
+export const useBatchApplyEntityFlags = (
+  opts?: Opts<BatchFlagResult, { data: BatchFlagApplyIn }>,
+) =>
+  useMutation({
+    mutationFn: async ({ data }) =>
+      (await api.post<BatchFlagResult>("/entities/batch/flags", data)).data,
+    ...opts?.mutation,
+  });
+
+export const useBatchRemoveEntityFlags = (
+  opts?: Opts<BatchFlagResult, { data: BatchFlagRemoveIn }>,
+) =>
+  useMutation({
+    mutationFn: async ({ data }) =>
+      (await api.post<BatchFlagResult>("/entities/batch/flags/remove", data)).data,
+    ...opts?.mutation,
+  });
+
+export const useBatchApplyAttributeFlags = (
+  opts?: Opts<BatchFlagResult, { data: BatchFlagApplyIn }>,
+) =>
+  useMutation({
+    mutationFn: async ({ data }) =>
+      (await api.post<BatchFlagResult>("/attributes/batch/flags", data)).data,
+    ...opts?.mutation,
+  });
+
+export const useBatchRemoveAttributeFlags = (
+  opts?: Opts<BatchFlagResult, { data: BatchFlagRemoveIn }>,
+) =>
+  useMutation({
+    mutationFn: async ({ data }) =>
+      (await api.post<BatchFlagResult>("/attributes/batch/flags/remove", data)).data,
+    ...opts?.mutation,
+  });
+
 // ─── DDL Export (Módulo 10) ──────────────────────────────────────────────────
 
 export type DDLDialect =
