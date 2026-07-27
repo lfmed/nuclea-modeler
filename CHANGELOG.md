@@ -5,6 +5,16 @@ Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+### Added
+- **Paridade do import DDL com o DM1 (v1.0015)** — o parser DDL agora extrai
+  `CREATE [UNIQUE] INDEX` (colunas ordenadas, `INCLUDE`, `WHERE` parcial),
+  resolve FKs em **2 passes** (FK declarada antes da tabela-alvo passa a
+  funcionar), infere `parent_columns` a partir da(s) PK(s) da tabela referenciada
+  quando `REFERENCES` vem sem coluna, lê PK composta table-level e respeita
+  `SET search_path` com **múltiplos schemas**. FK/índice apontando para tabela
+  ausente vira **warning** (status `PARTIAL`) em vez de descarte silencioso —
+  igual ao fluxo Embarcadero (.DM1).
+
 ### Fixed 🐛
 - **Import DDL sem objetos falha explicitamente (#8)** — DDL sem nenhum
   `CREATE TABLE/VIEW` reconhecido devolvia `SUCCESS` com 0 objetos (falha
