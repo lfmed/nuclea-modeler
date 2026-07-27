@@ -234,6 +234,9 @@ export interface AttributeOut {
   created_by: string;
   updated_at: string;
   updated_by: string;
+  // Overlay editorial — só preenchido para atributos virtuais/pendentes
+  // (ex.: criados numa sessão OPEN ainda não aprovada). Committed reads = null.
+  pending_op?: "add" | "change" | "remove" | null;
 }
 
 export interface AttributeIn {

@@ -1,7 +1,8 @@
 import { memo } from "react";
 import { Handle, Position } from "@xyflow/react";
-import { Key, ShieldAlert, Hash, Zap, GitBranch } from "lucide-react";
+import { ShieldAlert, Hash, Zap, GitBranch } from "lucide-react";
 import type { DiagramEntity } from "@/lib/api";
+import { PkBadge, computePkOrdinals } from "@/components/attributes/pk-controls";
 
 interface EntityNodeData {
   entity: DiagramEntity;
@@ -46,6 +47,8 @@ export const EntityNode = memo(({ data, selected }: EntityNodeProps) => {
   const pendingOp = entity.pending_op ?? null;
   const hasPending = !!pendingOp;
   const isRemove = pendingOp === "remove";
+  // PK composta numerada (PK1, PK2…) na ordem de definição — legível de relance.
+  const pkOrdinals = computePkOrdinals(entity.attributes);
 
   return (
     <div
@@ -155,12 +158,17 @@ export const EntityNode = memo(({ data, selected }: EntityNodeProps) => {
                 }`}
               >
                 {attr.is_primary_key ? (
-                  <Key className="h-3 w-3 text-nuclea-primary shrink-0" />
+                  <PkBadge ordinal={pkOrdinals.get(attr.attribute_id)} />
                 ) : attr.is_indexed ? (
-                  <Zap
-                    className="h-3 w-3 text-sky-500 shrink-0"
-                    aria-label="Está em índice"
-                  />
+                  // Tooltip nativo (P2): o wrapper <span title> carrega o tooltip
+                  // porque o ícone lucide não aceita `title`. Explica o ícone no
+                  // canvas, onde não há TooltipProvider do Radix ao redor do ReactFlow.
+                  <span
+                    className="shrink-0"
+                    title="Coluna indexada (faz parte de um índice)"
+                  >
+                    <Zap className="h-3 w-3 text-sky-500" aria-label="Está em índice" />
+                  </span>
                 ) : (
                   <span className="h-3 w-3 shrink-0" />
                 )}

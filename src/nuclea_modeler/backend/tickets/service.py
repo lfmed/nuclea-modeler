@@ -973,6 +973,10 @@ def _dispatch_field_change(
                 "is_nullable": attr_payload.get("is_nullable"),
                 "default_value": attr_payload.get("default_value"),
                 "is_primary_key": attr_payload.get("is_primary_key"),
+                # ordinal_position entra no allowlist para persistir a
+                # REORDENAÇÃO de PK composta (drag na UI). Sem ele o novo
+                # número da PK não sobreviveria ao apply do ticket.
+                "ordinal_position": attr_payload.get("ordinal_position"),
                 "native_comment": attr_payload.get("native_comment"),
             }.items() if v is not None
         }

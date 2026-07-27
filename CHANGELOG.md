@@ -5,6 +5,17 @@ Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+### Changed
+- **Manipulação de PK unificada e intuitiva (v1.0019)** — a edição de chave
+  primária agora usa **o mesmo controle rotulado** (checkbox + ícone chave + "PK")
+  na tabela de atributos da entidade e no editor do DER (antes: read-only numa tela,
+  checkbox "nu" noutra). **PK composta é numerada** (PK1, PK2… por `ordinal_position`)
+  em todas as visões, com **reordenação por drag**. Avisos não bloqueantes quando a
+  coluna marcada como PK é nullable ou também é FK. Banner de **mudanças pendentes**
+  na tela da entidade (a edição de PK segue o fluxo editorial → ticket). Backend:
+  `ordinal_position` entrou na allowlist do apply de `attribute:*.update` para a
+  reordenação sobreviver à aplicação do ticket.
+
 ### Added
 - **Flagueamento em lote de entidades e atributos (v1.0018)** — aplicar/remover
   **várias flags a vários alvos numa única ação**, matando os ~250 cliques do
