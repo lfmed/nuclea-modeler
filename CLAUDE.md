@@ -33,6 +33,16 @@ documentado para quem mantém depois.** Cumprir em todo PR:
   deployado no cliente vs. a última versão.
 
 ### Realidades deste repo que agentes precisam saber (corrigem o boilerplate acima)
+- **NUNCA rode nada localmente (REGRA DURA).** npm **e** pypi estão bloqueados nesta
+  máquina — `bun install`, `uv sync`, `uv pip install`, `apx dev start`, `pytest`,
+  `ruff`, `tsc` e `vite build` **vão falhar** (connection refused). Não tente instalar
+  deps nem executar/servir o app localmente. O máximo permitido é `python -m py_compile`
+  para checar sintaxe. **Toda validação de teste é feita (1) pelo CI do GitHub
+  (`.github/workflows/ci.yml`: ruff+bandit+pytest 3.11/3.12 + build + tsc) e (2)
+  manualmente no app DEPLOYADO no Databricks Apps.** Escreva testes junto do código para
+  o CI exercê-los; o teste funcional real acontece no app deployado após o merge.
+  Ignore qualquer linha do boilerplate acima que mande rodar `apx dev check`, `bun`,
+  `uv`, etc. localmente.
 - **`ui/lib/api.ts` é ESCRITO À MÃO** — não há codegen no deploy (cliente sem npm/apx).
   Rota nova no backend ⇒ escreva o hook à mão em `api.ts` (padrão `use<Op>` /
   `use<Op>Suspense` / `selector()`). Ignore a linha do boilerplate que diz "auto-regenera".
