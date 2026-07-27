@@ -24,6 +24,8 @@ import {
   Activity,
   Gauge,
   Columns2,
+  Columns3,
+  ListTree,
 } from "lucide-react";
 import {
   SidebarGroup,
@@ -84,6 +86,18 @@ function Layout() {
           label: "Entidades",
           icon: <FileText size={16} />,
           match: (p) => p.startsWith("/entities"),
+        },
+        {
+          to: "/attributes",
+          label: "Atributos",
+          icon: <Columns3 size={16} />,
+          match: (p) => p.startsWith("/attributes"),
+        },
+        {
+          to: "/indexes",
+          label: "Índices",
+          icon: <ListTree size={16} />,
+          match: (p) => p.startsWith("/indexes"),
         },
         {
           to: "/relationships",

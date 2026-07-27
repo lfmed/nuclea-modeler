@@ -6,6 +6,10 @@ from .schemas.router import router as schemas_router
 from .diagrams.router import router as diagrams_router
 from .entities.router import router as entities_router
 from .entities.indexes_router import router as entities_indexes_router
+from .entities.global_listings_router import (
+    attributes_router as attributes_listing_router,
+    indexes_router as indexes_listing_router,
+)
 from .glossary.router import attr_glossary_router, router as glossary_router
 from .rbac.router import router as rbac_router
 from .tickets.router import router as tickets_router
@@ -57,6 +61,8 @@ app = create_app(
         connections_router,
         entities_router,
         entities_indexes_router,
+        attributes_listing_router,
+        indexes_listing_router,
         glossary_router,
         attr_glossary_router,
         rbac_router,

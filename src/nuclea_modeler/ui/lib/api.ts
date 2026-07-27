@@ -131,6 +131,15 @@ export interface ConnectionTestResult {
 export type EntityType = "TABLE" | "VIEW" | "MATERIALIZED_VIEW" | "EXTERNAL";
 export type Criticality = "HIGH" | "MEDIUM" | "LOW";
 
+// Resumo compacto de flag aplicada — usado na coluna de flags das listagens.
+export interface FlagBadge {
+  flag_id: string;
+  flag_key: string;
+  display_name: string;
+  color_hex?: string | null;
+  category?: string | null;
+}
+
 export interface EntityListOut {
   entity_id: string;
   system_id: string;
@@ -143,9 +152,35 @@ export interface EntityListOut {
   criticality?: Criticality | null;
   attributes_count?: number | null;
   updated_at: string;
+  // Coluna de flags — só preenchida no endpoint paginado (/entities/page).
+  flags?: FlagBadge[];
   // Editorial session — quando há mudança pendente no ticket de sessão
   pending_op?: "add" | "change" | "remove" | null;
   pending_ticket_id?: string | null;
+}
+
+// Envelope de paginação — comum a entidades, atributos e índices.
+export interface Paginated<T> {
+  items: T[];
+  total: number;
+  page: number;
+  page_size: number;
+  has_more: boolean;
+}
+
+// Filtros/ordenação da listagem paginada de entidades (todos opcionais).
+export interface EntitiesPageParams {
+  systemId?: string;
+  schemaName?: string;
+  entityType?: EntityType;
+  domain?: string;
+  criticality?: Criticality;
+  q?: string;
+  flagId?: string;
+  sortBy?: string;
+  sortDir?: "asc" | "desc";
+  page?: number;
+  pageSize?: number;
 }
 
 export interface EntityOut extends EntityListOut {
@@ -373,6 +408,36 @@ export const useListEntitiesSuspense = (
         params: {
           system_id: params.systemId,
           domain: params.domain,
+        },
+      }),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+// Listagem paginada de entidades — consome GET /entities/page com filtros,
+// busca textual, ordenação por coluna e coluna de flags. Preferida à
+// useListEntitiesSuspense (que carrega tudo, sem paginação) para telas de
+// listagem em nível de sistema.
+export const useListEntitiesPaginatedSuspense = (
+  params: EntitiesPageParams = {},
+  s?: Selector<Paginated<EntityListOut>>,
+) =>
+  useSuspenseQuery({
+    queryKey: ["listEntitiesPaginated", params],
+    queryFn: () =>
+      api.get<Paginated<EntityListOut>>("/entities/page", {
+        params: {
+          system_id: params.systemId,
+          schema_name: params.schemaName,
+          entity_type: params.entityType,
+          domain: params.domain,
+          criticality: params.criticality,
+          q: params.q,
+          flag_id: params.flagId,
+          sort_by: params.sortBy,
+          sort_dir: params.sortDir,
+          page: params.page,
+          page_size: params.pageSize,
         },
       }),
     select: (r) => r.data,
@@ -682,6 +747,119 @@ export const useSetEntityPartitioning = (
         data,
       )).data,
     ...opts?.mutation,
+  });
+
+// ─── Visões globais de atributos e índices ─────────────────────────────────────
+// Consomem GET /attributes/page e GET /indexes/page (varreduras horizontais de
+// todo o catálogo, paginadas). Cada linha traz o contexto da entity-host.
+
+export interface AttributeListOut {
+  attribute_id: string;
+  entity_id: string;
+  entity_technical_name?: string | null;
+  entity_logical_name?: string | null;
+  schema_name?: string | null;
+  system_id?: string | null;
+  system_name?: string | null;
+  technical_name: string;
+  logical_name?: string | null;
+  ordinal_position?: number | null;
+  native_data_type?: string | null;
+  is_nullable?: boolean | null;
+  is_primary_key: boolean;
+  updated_at?: string | null;
+  flags?: FlagBadge[];
+}
+
+export interface AttributesPageParams {
+  systemId?: string;
+  schemaName?: string;
+  entityId?: string;
+  isPrimaryKey?: boolean;
+  q?: string;
+  flagId?: string;
+  sortBy?: string;
+  sortDir?: "asc" | "desc";
+  page?: number;
+  pageSize?: number;
+}
+
+export const useListAttributesPaginatedSuspense = (
+  params: AttributesPageParams = {},
+  s?: Selector<Paginated<AttributeListOut>>,
+) =>
+  useSuspenseQuery({
+    queryKey: ["listAttributesPaginated", params],
+    queryFn: () =>
+      api.get<Paginated<AttributeListOut>>("/attributes/page", {
+        params: {
+          system_id: params.systemId,
+          schema_name: params.schemaName,
+          entity_id: params.entityId,
+          is_primary_key: params.isPrimaryKey,
+          q: params.q,
+          flag_id: params.flagId,
+          sort_by: params.sortBy,
+          sort_dir: params.sortDir,
+          page: params.page,
+          page_size: params.pageSize,
+        },
+      }),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export interface IndexListOut {
+  index_id: string;
+  entity_id: string;
+  entity_technical_name?: string | null;
+  schema_name?: string | null;
+  system_id?: string | null;
+  system_name?: string | null;
+  index_name: string;
+  index_type: IndexType;
+  columns: IndexColumn[];
+  is_unique: boolean;
+  origin?: "EXTRACTED" | "MANUAL" | null;
+  updated_at?: string | null;
+}
+
+export interface IndexesPageParams {
+  systemId?: string;
+  schemaName?: string;
+  entityId?: string;
+  indexType?: IndexType;
+  isUnique?: boolean;
+  q?: string;
+  sortBy?: string;
+  sortDir?: "asc" | "desc";
+  page?: number;
+  pageSize?: number;
+}
+
+export const useListIndexesPaginatedSuspense = (
+  params: IndexesPageParams = {},
+  s?: Selector<Paginated<IndexListOut>>,
+) =>
+  useSuspenseQuery({
+    queryKey: ["listIndexesPaginated", params],
+    queryFn: () =>
+      api.get<Paginated<IndexListOut>>("/indexes/page", {
+        params: {
+          system_id: params.systemId,
+          schema_name: params.schemaName,
+          entity_id: params.entityId,
+          index_type: params.indexType,
+          is_unique: params.isUnique,
+          q: params.q,
+          sort_by: params.sortBy,
+          sort_dir: params.sortDir,
+          page: params.page,
+          page_size: params.pageSize,
+        },
+      }),
+    select: (r) => r.data,
+    ...s?.query,
   });
 
 // ─── RBAC ─────────────────────────────────────────────────────────────────────
