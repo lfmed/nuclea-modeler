@@ -51,7 +51,6 @@ import {
   useRemoveEntityFlag,
   useListAttributeFlagsSuspense,
   useBatchApplyAttributeFlags,
-  useBatchRemoveAttributeFlags,
   useRemoveAttributeFlag,
   type Cardinality,
   type DiagramEntity,
@@ -59,7 +58,6 @@ import {
   type RelType,
   type SourceCheckResult,
   type SourceValidationOut,
-  type BatchFlagSpec,
 } from "@/lib/api";
 import selector from "@/lib/selector";
 

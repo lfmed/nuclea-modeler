@@ -12,14 +12,12 @@ import {
   useListSystemsSuspense,
   useListRelationshipFlagsSuspense,
   useBatchApplyRelationshipFlags,
-  useBatchRemoveRelationshipFlags,
   useRemoveRelationshipFlag,
   type Cardinality,
   type EntityListOut,
   type FKRule,
   type RelType,
   type RelationshipListOut,
-  type BatchFlagSpec,
 } from "@/lib/api";
 import { toast } from "sonner";
 import selector from "@/lib/selector";
@@ -34,7 +32,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertCircle, Link2, Plus, RefreshCw, Trash2, X, ShieldCheck } from "lucide-react";
+import { AlertCircle, Link2, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { EmptyState } from "@/components/apx/empty-state";
 import { FlagPicker } from "@/components/flags/flag-picker";
 
