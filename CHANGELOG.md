@@ -6,6 +6,13 @@ Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 ## [Unreleased]
 
 ### Fixed 🐛
+- **Edições do mesmo modelo se sobrescreviam na aprovação (v1.0021)** — ao editar
+  2+ campos/colunas do mesmo modelo antes de aprovar, a 2ª edição **apagava** a 1ª do
+  ticket (o staging deduplicava por `schema.tech.op` substituindo a entry inteira).
+  Agora o staging **acumula (merge) os `field_changes`** no mesmo ticket: campos
+  diferentes coexistem, o mesmo campo editado 2x mantém a última intenção, e o apply
+  aplica todas as mudanças. Novo painel **"Campos em aprovação"** na tela da entidade
+  mostra, em seção separada, o que já está pendente de aprovação.
 - **Import DDL Postgres não subia (streaming.sql) (v1.0020)** — DDL Postgres puro
   (`SERIAL`, `SET search_path`, `CHECK`, `DEFAULT CURRENT_TIMESTAMP`, PK composta)
   extraía **0 objetos** e **não gerava ticket** de aprovação, porque o dialeto
