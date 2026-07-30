@@ -5,6 +5,22 @@ Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+### Fixed 🐛
+- **Import DDL Postgres não subia (streaming.sql) (v1.0020)** — DDL Postgres puro
+  (`SERIAL`, `SET search_path`, `CHECK`, `DEFAULT CURRENT_TIMESTAMP`, PK composta)
+  extraía **0 objetos** e **não gerava ticket** de aprovação, porque o dialeto
+  default do front era `ANSI`. Correções: dialeto default do seletor de import passa
+  a **POSTGRES**; o backend **auto-detecta o dialeto** pelo conteúdo do DDL quando
+  vier vazio/ANSI; e o parser ficou **resiliente** — `CREATE SCHEMA`/`SET` são
+  ignorados sem abortar o lote, e um statement problemático não derruba a extração
+  inteira. Agora o `streaming.sql` sobe ~40 tabelas + FKs + PKs e gera ticket.
+- **Reimportar o mesmo arquivo duplicava entidades (v1.0020)** — a resolução
+  inconsistente de `schema_name` (via `search_path`) fazia a mesma tabela cair em
+  schema diferente na 2ª importação → virava "add" duplicado (Delta não enforça
+  UNIQUE). Agora o schema não-qualificado é resolvido de forma **determinística** e
+  o apply tem **guard de dedup por nome** (case-insensitive, dentro do sistema): a
+  reimportação vira no-op em vez de duplicar.
+
 ### Changed
 - **Manipulação de PK unificada e intuitiva (v1.0019)** — a edição de chave
   primária agora usa **o mesmo controle rotulado** (checkbox + ícone chave + "PK")

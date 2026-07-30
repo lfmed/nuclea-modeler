@@ -716,47 +716,73 @@ def _apply_op_add(state: _ApplyState, ent_change: dict[str, Any]) -> None:
         eid = existing[0]
         new_entity = False
     else:
-        payload = ent_change.get("payload") or {}
-        eid = payload.get("pre_allocated_entity_id") or delta.new_id("ent-")
-        delta.insert(
+        # DEDUP GUARD: mesma technical_name no sistema, mas em schema diferente?
+        # Pode ocorrer em reimport com search_path divergente. Detecta e reutiliza
+        # a entity existente (actualiza schema para consistência, if needed).
+        # Razão: Delta NÃO enforça UNIQUE/PK → barreira tem que ser aplicação.
+        dedup_existing = delta.fetch_one_params(
             state.sql,
-            s.fq_table("entities"),
-            {
-                "entity_id": eid,
-                "system_id": state.system_id,
-                "schema_name": schema_name,
-                "technical_name": technical_name,
-                "logical_name": payload.get("logical_name"),
-                "description_md": payload.get("description_md") or payload.get("native_comment"),
-                "domain": payload.get("domain"),
-                "entity_type": ent_change.get("entity_type", "TABLE"),
-                "native_comment": payload.get("native_comment"),
-                "row_count_approx": payload.get("row_count_approx"),
-                "tags": payload.get("tags", []),
-                "is_shared": bool(payload.get("is_shared", False)),
-                "last_extracted_at": state.now,
-                "created_at": state.now, "created_by": state.applied_by,
-                "updated_at": state.now, "updated_by": state.applied_by,
-            },
+            f"SELECT entity_id, schema_name FROM {s.fq_table('entities')} "
+            f"WHERE system_id = :system_id "
+            f"AND LOWER(technical_name) = LOWER(:technical_name) "
+            f"LIMIT 1",
+            [
+                delta.param("system_id", state.system_id),
+                delta.param("technical_name", technical_name),
+            ],
         )
-        state.applied_entities += 1
-        new_entity = True
+        if dedup_existing:
+            # Reutiliza a entity existente (dedup)
+            eid = dedup_existing[0]
+            new_entity = False
+            if dedup_existing[1] != schema_name:
+                log.info(
+                    "_apply_op_add: dedup detectado — entidade '%s' existe em schema '%s', "
+                    "agora em schema '%s' (search_path divergente?). Reutilizando.",
+                    technical_name, dedup_existing[1], schema_name
+                )
+        else:
+            payload = ent_change.get("payload") or {}
+            eid = payload.get("pre_allocated_entity_id") or delta.new_id("ent-")
+            delta.insert(
+                state.sql,
+                s.fq_table("entities"),
+                {
+                    "entity_id": eid,
+                    "system_id": state.system_id,
+                    "schema_name": schema_name,
+                    "technical_name": technical_name,
+                    "logical_name": payload.get("logical_name"),
+                    "description_md": payload.get("description_md") or payload.get("native_comment"),
+                    "domain": payload.get("domain"),
+                    "entity_type": ent_change.get("entity_type", "TABLE"),
+                    "native_comment": payload.get("native_comment"),
+                    "row_count_approx": payload.get("row_count_approx"),
+                    "tags": payload.get("tags", []),
+                    "is_shared": bool(payload.get("is_shared", False)),
+                    "last_extracted_at": state.now,
+                    "created_at": state.now, "created_by": state.applied_by,
+                    "updated_at": state.now, "updated_by": state.applied_by,
+                },
+            )
+            state.applied_entities += 1
+            new_entity = True
 
-        # Índices (eng. reversa) — só na criação; origin=EXTRACTED diferencia
-        # da criação manual via UI.
-        for ix_payload in ent_change.get("indexes") or []:
-            try:
-                from ..entities.indexes import apply_index_add
-                apply_index_add(
-                    state.sql, entity_id=eid,
-                    payload={**ix_payload, "origin": "EXTRACTED"},
-                    now=state.now, actor=state.applied_by,
-                )
-            except Exception as exc:
-                state.errors.append(
-                    f"index {schema_name}.{technical_name}."
-                    f"{ix_payload.get('index_name')}: {exc}"
-                )
+            # Índices (eng. reversa) — só na criação; origin=EXTRACTED diferencia
+            # da criação manual via UI.
+            for ix_payload in ent_change.get("indexes") or []:
+                try:
+                    from ..entities.indexes import apply_index_add
+                    apply_index_add(
+                        state.sql, entity_id=eid,
+                        payload={**ix_payload, "origin": "EXTRACTED"},
+                        now=state.now, actor=state.applied_by,
+                    )
+                except Exception as exc:
+                    state.errors.append(
+                        f"index {schema_name}.{technical_name}."
+                        f"{ix_payload.get('index_name')}: {exc}"
+                    )
 
     # Atributos: insere só os que ainda não existem (reconcile/idempotência por
     # technical_name). Cada insert é resiliente — uma falha não derruba o resto.

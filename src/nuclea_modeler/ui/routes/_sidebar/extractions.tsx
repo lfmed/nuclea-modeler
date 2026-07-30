@@ -294,7 +294,7 @@ function DDLTab() {
   });
 
   const [systemId, setSystemId] = useState(systems[0]?.system_id || "");
-  const [dialect, setDialect] = useState("ANSI");
+  const [dialect, setDialect] = useState("POSTGRES");
   const [ddlText, setDdlText] = useState("");
 
   const submit = (e: React.FormEvent) => {
