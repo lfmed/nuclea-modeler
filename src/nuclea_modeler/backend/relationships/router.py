@@ -281,17 +281,23 @@ def list_relationships(
         RelationshipListOut(
             relationship_id=r[0],
             system_id=r[1],
-            system_name=r[17],
+            # Índices seguem _REL_COLS + os 5 joins (system_name, src/tgt schema+tech).
+            # relationship_name (r[13]) empurrou os timestamps: created_at=r[14],
+            # created_by=r[15], updated_at=r[16], updated_by=r[17]; e os joins começam
+            # em r[18]. (Antes lia r[15]/r[17] — pegava created_by/updated_by e
+            # estourava datetime_from_date_parsing.)
+            system_name=r[18],
             source_entity_id=r[2],
-            source_entity_label=_entity_label(r[18], r[19]),
+            source_entity_label=_entity_label(r[19], r[20]),
             target_entity_id=r[3],
-            target_entity_label=_entity_label(r[20], r[21]),
+            target_entity_label=_entity_label(r[21], r[22]),
             rel_type=r[6] or None,
             source_cardinality=r[7] or None,
             target_cardinality=r[8] or None,
             origin=r[10] or None,
             description=r[9],
-            updated_at=r[15],
+            relationship_name=r[13] or None,
+            updated_at=r[16],
         )
         for r in rows
     ]
