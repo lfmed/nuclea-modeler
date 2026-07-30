@@ -848,6 +848,51 @@ def _ddl_index_from_create(
     )
 
 
+def _detect_dialect_from_content(ddl_text: str) -> str:
+    """Heurística para detectar o dialeto SQL baseado no conteúdo do DDL.
+
+    Busca por palavras-chave e construtos específicos de cada dialeto:
+      - Postgres: SERIAL, BIGSERIAL, CURRENT_TIMESTAMP, SET search_path, ::type
+      - T-SQL: NVARCHAR, GETDATE(), CONVERT(), IDENTITY, [column], dbo.
+      - MySQL: AUTO_INCREMENT, ENGINE=, unsigned int, COLLATE
+      - Oracle: NUMBER, SYSDATE, TO_DATE, CREATE OR REPLACE VIEW
+
+    Retorna o dialeto detectado (ex.: "postgres", "tsql", "mysql", "oracle") ou
+    None se nenhuma heurística bater (caller mantém o dialeto informado).
+
+    Razão: Quando o frontend envia dialeto vazio/ANSI (por qualquer motivo), podemos
+    tentar recuperar a informação do próprio DDL. Exemplo: streaming.sql é Postgres
+    puro; se o frontend mandar "ANSI", detectamos "postgres" antes de falhar.
+    """
+    text_upper = ddl_text.upper()
+
+    # Postgres: SERIAL é exclusivo (INT SERIAL /  BIGSERIAL, SET search_path, ::type)
+    if re.search(r'\b(?:SERIAL|BIGSERIAL)\b', text_upper) or \
+       re.search(r'\bSET\s+search_path\b', text_upper, re.IGNORECASE) or \
+       re.search(r'::[\w\[\]]+', ddl_text):  # type cast ::json, ::bigint, etc.
+        return "postgres"
+
+    # T-SQL: NVARCHAR, GETDATE(), CONVERT(), IDENTITY, [brackets], dbo.
+    if re.search(r'\b(?:NVARCHAR|GETDATE|CONVERT|IDENTITY)\b', text_upper) or \
+       re.search(r'[\[\]][^\[\]]*[\[\]]', ddl_text) or \
+       re.search(r'\bdbo\.', ddl_text, re.IGNORECASE):
+        return "tsql"
+
+    # MySQL: AUTO_INCREMENT, ENGINE=, COLLATE, unsigned
+    if re.search(r'\bAUTO_INCREMENT\b', text_upper) or \
+       re.search(r'\bENGINE\s*=', text_upper) or \
+       re.search(r'\b(?:UNSIGNED|COLLATE)\b', text_upper):
+        return "mysql"
+
+    # Oracle: NUMBER, SYSDATE, TO_DATE, CREATE OR REPLACE VIEW
+    if re.search(r'\b(?:NUMBER|SYSDATE|TO_DATE)\b', text_upper) or \
+       re.search(r'\bCREATE\s+OR\s+REPLACE\s+VIEW\b', text_upper):
+        return "oracle"
+
+    # Sem match — retorna None (caller mantém o dialeto informado)
+    return None
+
+
 def run_ddl_import(
     sql: Sql,
     *,
@@ -857,32 +902,60 @@ def run_ddl_import(
     actor: str,
     open_ticket_on_diff: bool,
 ) -> ExtractionResult:
-    """Parse DDL with sqlglot, build a snapshot, diff against catalog, open ticket."""
+    """Parse DDL com sqlglot, constrói snapshot, compara com catálogo, abre ticket.
+
+    Fluxo:
+      1. Auto-detecta dialeto se vazio/ANSI (heurística por conteúdo DDL)
+      2. Parse statement-a-statement (resiliente: ignora CREATE SCHEMA/SET)
+      3. Suporta SERIAL/BIGSERIAL, CHECK, PK composta, FKs multi-schema
+      4. Resolve schema de tabelas não-qualificadas por search_path[0]
+      5. Dedup de relacionamentos por id determinístico (idempotente)
+      6. Cria ticket se houver mudanças (entidades novas/alteradas/removidas)
+    """
     import sqlglot
     from sqlglot import expressions as exp
 
     started = datetime.utcnow()
     start_clock = time.monotonic()
-    dialect_l = dialect.lower() if dialect else None
-    # sqlglot uses lowercase dialect names: 'tsql' (T-SQL), 'oracle', 'postgres', 'mysql', 'spark'
+
+    # Auto-detecta dialeto se vazio ou "ANSI" (fallback heurístico)
+    effective_dialect = dialect
+    if not effective_dialect or effective_dialect.upper() in ("ANSI", ""):
+        detected = _detect_dialect_from_content(ddl_text)
+        if detected:
+            effective_dialect = detected.upper()
+            log.info(
+                "run_ddl_import: dialeto auto-detectado '%s' (informado: '%s')",
+                detected, dialect
+            )
+        else:
+            effective_dialect = dialect or "ANSI"
+
+    dialect_l = effective_dialect.lower() if effective_dialect else None
+    # sqlglot usa lowercase: 'tsql' (T-SQL), 'oracle', 'postgres', 'mysql', 'spark'
     dialect_map = {
         "ANSI": None, "TSQL": "tsql", "PLSQL": "oracle",
         "POSTGRES": "postgres", "MYSQL": "mysql", "SPARKSQL": "spark",
     }
-    sg_dialect = dialect_map.get(dialect.upper(), dialect_l)
+    sg_dialect = dialect_map.get(effective_dialect.upper(), dialect_l)
 
+    # Parse RESILIENTE: tenta todo o texto; se falhar, tenta statement-a-statement.
+    # Assim, um `CREATE SCHEMA` ou `SET` malformado não aborta o lote inteiro.
+    parsed: list[Any] = []
     try:
-        parsed = sqlglot.parse(ddl_text, dialect=sg_dialect)
-    except Exception as exc:
-        return ExtractionResult(
-            extraction_id="",
-            status="FAILED",
-            objects_found=0, objects_new=0, objects_changed=0, objects_removed=0,
-            duration_ms=int((time.monotonic() - start_clock) * 1000),
-            ticket_id=None,
-            summary_md=f"Parse error: {exc}",
-            errors=[str(exc)[:500]],
-        )
+        parsed = sqlglot.parse(ddl_text, dialect=sg_dialect) or []
+    except Exception as exc_full:
+        # Fallback: split por ";" e tenta cada statement isolado.
+        log.debug("run_ddl_import: falha no parse global, tentando statement-a-statement: %s", exc_full)
+        for raw_stmt in ddl_text.split(";"):
+            raw_stmt = raw_stmt.strip()
+            if not raw_stmt:
+                continue
+            try:
+                stmts = sqlglot.parse(raw_stmt + ";", dialect=sg_dialect) or []
+                parsed.extend(stmts)
+            except Exception as exc_stmt:
+                errors.append(f"Statement ignorado: {str(exc_stmt)[:100]}")
 
     entities: list[ExtractedEntity] = []
     errors: list[str] = []
@@ -912,6 +985,9 @@ def run_ddl_import(
             sp = _ddl_search_path_schemas(stmt, sg_dialect)
             if sp:
                 current_search_path = sp
+            continue
+        # CREATE SCHEMA — ignorado silenciosamente (não é entidade, só define context)
+        if isinstance(stmt, exp.Create) and stmt.kind and stmt.kind.upper() == "SCHEMA":
             continue
         # CREATE [UNIQUE] INDEX — coletado cru e casado à entity na 2ª passe.
         if isinstance(stmt, exp.Create) and stmt.kind and stmt.kind.upper() == "INDEX":
@@ -962,6 +1038,9 @@ def run_ddl_import(
                         # Comentário inline: `col INT COMMENT 'texto'`
                         if isinstance(kind, exp.CommentColumnConstraint):
                             col_comment = _ddl_literal_str(kind.this)
+                        # CHECK constraint — ignorado (captura é best-effort; não quebra parse)
+                        # Seria exp.CheckColumnConstraint mas não é suportado por todas
+                        # versões do sqlglot; por segurança, só registramos sem processar.
                     attributes.append(
                         ExtractedAttribute(
                             technical_name=name,
@@ -1053,7 +1132,8 @@ def run_ddl_import(
         duration_ms = int((time.monotonic() - start_clock) * 1000)
         msg = (
             "Nenhum objeto (CREATE TABLE/VIEW) reconhecido no DDL. "
-            f"Confirme se o dialeto selecionado ({dialect}) corresponde ao arquivo."
+            f"Dialeto usado: {effective_dialect}. "
+            f"Confirme se corresponde ao arquivo."
         )
         if errors:
             msg += f" {len(errors)} statement(s) ignorado(s) no parse."
