@@ -46,12 +46,20 @@ import {
   useCreateAttribute,
   useUpdateAttribute,
   useDeleteAttribute,
+  useListEntityFlagsSuspense,
+  useBatchApplyEntityFlags,
+  useRemoveEntityFlag,
+  useListAttributeFlagsSuspense,
+  useBatchApplyAttributeFlags,
+  useBatchRemoveAttributeFlags,
+  useRemoveAttributeFlag,
   type Cardinality,
   type DiagramEntity,
   type DiagramRelationship,
   type RelType,
   type SourceCheckResult,
   type SourceValidationOut,
+  type BatchFlagSpec,
 } from "@/lib/api";
 import selector from "@/lib/selector";
 
@@ -85,6 +93,7 @@ import {
 } from "lucide-react";
 import { EmptyState } from "@/components/apx/empty-state";
 import { AttachmentsPanel } from "@/components/attachments/attachments-panel";
+import { FlagPicker } from "@/components/flags/flag-picker";
 import { NewSystemWizard } from "@/components/apx/new-system-wizard";
 
 import { EntityNode } from "@/components/diagram/entity-node";
@@ -2209,6 +2218,7 @@ function AttributesEditor({
   onChanged: () => void;
 }) {
   const { data: attrs } = useListAttributesSuspense(entityId, selector());
+  const { data: entityFlags } = useListEntityFlagsSuspense(entityId, selector());
   const qc = useQueryClient();
 
   // FKs desta entity → avisa (não bloqueia) ao marcar como PK.
@@ -2251,8 +2261,52 @@ function AttributesEditor({
     },
   });
 
+  // Flags: entity-level
+  const { mutate: applyEntityFlagBatch, isPending: applyingEntityFlags } = useBatchApplyEntityFlags({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: ["listEntityFlags", entityId] });
+      },
+      onError: (e) => {
+        toast.error("Erro ao aplicar flags na entidade: " + String(e));
+      },
+    },
+  });
+  const { mutate: removeEntityFlag } = useRemoveEntityFlag({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: ["listEntityFlags", entityId] });
+      },
+    },
+  });
+
   return (
-    <div className="space-y-2">
+    <div className="space-y-4">
+      {/* Entity-level flags section */}
+      <div className="border rounded-lg p-3 bg-muted/30">
+        <div className="text-xs font-semibold mb-2 flex items-center gap-1">
+          <ShieldCheck className="h-3 w-3" />
+          Flags da tabela
+        </div>
+        <FlagPicker
+          applied={entityFlags.map((ef) => ({
+            applied_flag_id: ef.entity_flag_id,
+            flag: ef.flag,
+            justification: ef.justification,
+            is_propagated: ef.is_propagated,
+          }))}
+          applying={applyingEntityFlags}
+          onApply={(specs) =>
+            applyEntityFlagBatch({ data: { target_ids: [entityId], flags: specs } })
+          }
+          onRemove={(efid) =>
+            removeEntityFlag({ entityId, entityFlagId: efid })
+          }
+          size="small"
+          label="+ Flags"
+        />
+      </div>
+
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
@@ -2260,6 +2314,7 @@ function AttributesEditor({
               <th className="py-1 pr-2 font-medium">Nome</th>
               <th className="py-1 pr-2 font-medium">Tipo</th>
               <th className="py-1 pr-2 font-medium w-20">PK</th>
+              <th className="py-1 pr-2 font-medium">Flags</th>
               <th className="py-1 pr-2 w-8"></th>
             </tr>
           </thead>
@@ -2300,6 +2355,14 @@ function AttributesEditor({
                         );
                       }}
                     />
+                  </td>
+                  <td className="py-1 pr-2">
+                    <Suspense fallback={<span className="text-[10px] text-muted-foreground">…</span>}>
+                      <AttributeFlagsCell
+                        attributeId={a.attribute_id}
+                        entityId={entityId}
+                      />
+                    </Suspense>
                   </td>
                   <td className="py-1 pr-2">
                     <button
@@ -2436,6 +2499,66 @@ function AttributesEditor({
         </div>
       </form>
     </div>
+  );
+}
+
+/**
+ * AttributeFlagsCell — Componente para aplicar flags a atributos dentro do editor do DER.
+ * Reusa FlagPicker com suspense para carregar flags do atributo.
+ * Integrado à tabela de atributos do AttributesEditor.
+ */
+function AttributeFlagsCell({
+  attributeId,
+  entityId,
+}: {
+  attributeId: string;
+  entityId: string;
+}) {
+  const qc = useQueryClient();
+  const { data: appliedFlags } = useListAttributeFlagsSuspense(
+    attributeId,
+    selector(),
+  );
+
+  const { mutate: applyBatch, isPending: applying } = useBatchApplyAttributeFlags({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: ["listAttributeFlags", attributeId] });
+        qc.invalidateQueries({ queryKey: ["listEntityFlags", entityId] });
+      },
+      onError: (e) => {
+        toast.error("Erro ao aplicar flags: " + String(e));
+      },
+    },
+  });
+
+  const { mutate: remove } = useRemoveAttributeFlag({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: ["listAttributeFlags", attributeId] });
+      },
+    },
+  });
+
+  const applied = appliedFlags.map((af) => ({
+    applied_flag_id: af.attribute_flag_id,
+    flag: af.flag,
+    justification: af.justification,
+  }));
+
+  return (
+    <FlagPicker
+      applied={applied}
+      applying={applying}
+      onApply={(specs) =>
+        applyBatch({ data: { target_ids: [attributeId], flags: specs } })
+      }
+      onRemove={(afid) =>
+        remove({ attributeId, attributeFlagId: afid })
+      }
+      size="small"
+      label="+ Flag"
+    />
   );
 }
 

@@ -34,12 +34,15 @@ from .models import (
     FlagIn,
     FlagOut,
     FlagPatch,
+    RelationshipFlagApplyIn,
+    RelationshipFlagOut,
 )
 
 
 router = APIRouter(prefix=f"{api_prefix}/flags", tags=["flags"])
 entity_router = APIRouter(prefix=f"{api_prefix}/entities", tags=["flags"])
 attribute_router = APIRouter(prefix=f"{api_prefix}/attributes", tags=["flags"])
+relationship_router = APIRouter(prefix=f"{api_prefix}/relationships", tags=["flags"])
 
 
 FLAG_ADMINS = (ROLE_DATA_ARCHITECT, ROLE_ADMIN)
@@ -868,5 +871,267 @@ def _remove_attribute_flag_by_flag(
             _cleanup_propagated_entity_flag(
                 sql, entity_id=entity_id, flag_id=flag_id
             )
+
+
+# ─── Relationship flags (Bloco 5, sem propagação LGPD) ────────────────────────
+
+_REL_FLAG_SELECT = (
+    "rf.relationship_flag_id, rf.relationship_id, rf.flag_id, rf.justification, "
+    "rf.applied_at, rf.applied_by, rf.applied_in_version, "
+    + ", ".join(f"f.{c}" for c in _FLAG_COLS)
+)
+
+
+def _relationship_flag_row_to_out(r: list) -> RelationshipFlagOut:
+    """Converte linha do SELECT para RelationshipFlagOut."""
+    flag_cols_start = 7
+    flag = _flag_row_to_out(r[flag_cols_start:flag_cols_start + len(_FLAG_COLS)])
+    return RelationshipFlagOut(
+        relationship_flag_id=r[0],
+        relationship_id=r[1],
+        flag_id=r[2],
+        justification=r[3],
+        applied_at=r[4],
+        applied_by=r[5],
+        applied_in_version=r[6],
+        flag=flag,
+    )
+
+
+def _relationship_flag_by_id(sql: Sql, relationship_flag_id: str) -> RelationshipFlagOut:
+    """Busca uma flag aplicada ao relacionamento pelo seu id."""
+    s = get_settings()
+    row = delta.fetch_one_params(
+        sql,
+        f"""
+        SELECT {_REL_FLAG_SELECT}
+        FROM {s.fq_table('relationship_flags')} rf
+        JOIN {s.fq_table('flags')} f ON f.flag_id = rf.flag_id
+        WHERE rf.relationship_flag_id = :relationship_flag_id
+        """,
+        [delta.param("relationship_flag_id", relationship_flag_id)],
+    )
+    if not row:
+        raise HTTPException(404, f"relationship_flag '{relationship_flag_id}' not found")
+    return _relationship_flag_row_to_out(row)
+
+
+def _apply_relationship_flag_core(
+    sql: Sql,
+    *,
+    relationship_id: str,
+    flag: FlagOut,
+    justification: str | None,
+    actor: str,
+) -> str:
+    """Insere (ou reaproveita) a flag no relacionamento e devolve o
+    relationship_flag_id.
+
+    Idempotente: se a mesma flag já está aplicada, retorna o id existente.
+    Sem propagação LGPD (não faz sentido para relacionamentos).
+    Extraído para o batch reutilizar.
+    """
+    s = get_settings()
+    existing = delta.fetch_one_params(
+        sql,
+        f"SELECT relationship_flag_id FROM {s.fq_table('relationship_flags')} "
+        f"WHERE relationship_id = :relationship_id AND flag_id = :flag_id",
+        [
+            delta.param("relationship_id", relationship_id),
+            delta.param("flag_id", flag.flag_id),
+        ],
+    )
+    if existing:
+        return existing[0]
+    rfid = delta.new_id("relflag-")
+    delta.insert(
+        sql,
+        s.fq_table("relationship_flags"),
+        {
+            "relationship_flag_id": rfid,
+            "relationship_id": relationship_id,
+            "flag_id": flag.flag_id,
+            "justification": justification,
+            "applied_at": datetime.utcnow(),
+            "applied_by": actor,
+            "applied_in_version": None,
+        },
+    )
+    return rfid
+
+
+# NOTA DE ROTEAMENTO: batch antes das rotas dinâmicas /{relationship_id}/flags,
+# pela mesma razão (evitar relationship_id="batch").
+
+@relationship_router.post(
+    "/batch/flags",
+    response_model=BatchFlagResult,
+    operation_id="batchApplyRelationshipFlags",
+)
+def batch_apply_relationship_flags(
+    payload: BatchFlagApplyIn,
+    sql: SqlDependency,
+    user_ws: Dependencies.UserClient,
+) -> BatchFlagResult:
+    """Aplica VÁRIAS flags a VÁRIOS relacionamentos numa única chamada.
+
+    Segue o mesmo padrão dos endpoints batch de entidades e atributos.
+    Sem propagação LGPD (relacionamento é uma abstração de ligação entre
+    entidades, não um "alvo" de regulação).
+    """
+    actor = _current_email(user_ws)
+    if not actor:
+        raise HTTPException(401, "authentication required")
+    flag_cache: dict[str, FlagOut] = {}
+    results: list[BatchFlagItemResult] = []
+    for spec in payload.flags:
+        try:
+            flag = flag_cache.get(spec.flag_id) or _fetch_flag(sql, spec.flag_id)
+            flag_cache[spec.flag_id] = flag
+            _validate_flag_applicable(flag, spec.justification)
+        except HTTPException as exc:
+            for tid in payload.target_ids:
+                results.append(BatchFlagItemResult(
+                    target_id=tid, flag_id=spec.flag_id, ok=False,
+                    error=str(exc.detail),
+                ))
+            continue
+        for tid in payload.target_ids:
+            try:
+                rfid = _apply_relationship_flag_core(
+                    sql, relationship_id=tid, flag=flag,
+                    justification=spec.justification, actor=actor,
+                )
+                results.append(BatchFlagItemResult(
+                    target_id=tid, flag_id=spec.flag_id, ok=True,
+                    applied_flag_id=rfid,
+                ))
+            except Exception as exc:  # noqa: BLE001
+                results.append(BatchFlagItemResult(
+                    target_id=tid, flag_id=spec.flag_id, ok=False,
+                    error=str(exc)[:300],
+                ))
+    return _summarize_batch("apply", results)
+
+
+@relationship_router.post(
+    "/batch/flags/remove",
+    response_model=BatchFlagResult,
+    operation_id="batchRemoveRelationshipFlags",
+)
+def batch_remove_relationship_flags(
+    payload: BatchFlagRemoveIn,
+    sql: SqlDependency,
+    user_ws: Dependencies.UserClient,
+) -> BatchFlagResult:
+    """Remove VÁRIAS flags de VÁRIOS relacionamentos numa única chamada.
+
+    Remove por `flag_id` (não pelo id da linha), pois o lote cobre muitos alvos.
+    Idempotente.
+    """
+    actor = _current_email(user_ws)
+    if not actor:
+        raise HTTPException(401, "authentication required")
+    s = get_settings()
+    results: list[BatchFlagItemResult] = []
+    for fid in payload.flag_ids:
+        for tid in payload.target_ids:
+            try:
+                delta.run_params(
+                    sql,
+                    f"DELETE FROM {s.fq_table('relationship_flags')} "
+                    f"WHERE relationship_id = :relationship_id AND flag_id = :flag_id",
+                    [
+                        delta.param("relationship_id", tid),
+                        delta.param("flag_id", fid),
+                    ],
+                )
+                results.append(BatchFlagItemResult(
+                    target_id=tid, flag_id=fid, ok=True,
+                ))
+            except Exception as exc:  # noqa: BLE001
+                results.append(BatchFlagItemResult(
+                    target_id=tid, flag_id=fid, ok=False, error=str(exc)[:300],
+                ))
+    return _summarize_batch("remove", results)
+
+
+@relationship_router.get(
+    "/{relationship_id}/flags",
+    response_model=list[RelationshipFlagOut],
+    operation_id="listRelationshipFlags",
+)
+def list_relationship_flags(
+    relationship_id: str, sql: SqlDependency
+) -> list[RelationshipFlagOut]:
+    """Lista todas as flags aplicadas a um relacionamento."""
+    s = get_settings()
+    rows = delta.fetch_all_params(
+        sql,
+        f"""
+        SELECT {_REL_FLAG_SELECT}
+        FROM {s.fq_table('relationship_flags')} rf
+        JOIN {s.fq_table('flags')} f ON f.flag_id = rf.flag_id
+        WHERE rf.relationship_id = :relationship_id
+        ORDER BY rf.applied_at DESC
+        """,
+        [delta.param("relationship_id", relationship_id)],
+    )
+    return [_relationship_flag_row_to_out(r) for r in rows]
+
+
+@relationship_router.post(
+    "/{relationship_id}/flags",
+    response_model=RelationshipFlagOut,
+    operation_id="applyRelationshipFlag",
+)
+def apply_relationship_flag(
+    relationship_id: str,
+    payload: RelationshipFlagApplyIn,
+    sql: SqlDependency,
+    user_ws: Dependencies.UserClient,
+) -> RelationshipFlagOut:
+    """Aplica uma flag a um relacionamento."""
+    actor = _current_email(user_ws)
+    if not actor:
+        raise HTTPException(401, "authentication required")
+    flag = _fetch_flag(sql, payload.flag_id)
+    _validate_flag_applicable(flag, payload.justification)
+    rfid = _apply_relationship_flag_core(
+        sql,
+        relationship_id=relationship_id,
+        flag=flag,
+        justification=payload.justification,
+        actor=actor,
+    )
+    return _relationship_flag_by_id(sql, rfid)
+
+
+@relationship_router.delete(
+    "/{relationship_id}/flags/{relationship_flag_id}",
+    operation_id="removeRelationshipFlag",
+)
+def remove_relationship_flag(
+    relationship_id: str,
+    relationship_flag_id: str,
+    sql: SqlDependency,
+    user_ws: Dependencies.UserClient,
+) -> dict:
+    """Remove uma flag de um relacionamento."""
+    actor = _current_email(user_ws)
+    if not actor:
+        raise HTTPException(401, "authentication required")
+    s = get_settings()
+    delta.run_params(
+        sql,
+        f"DELETE FROM {s.fq_table('relationship_flags')} "
+        f"WHERE relationship_flag_id = :relationship_flag_id "
+        f"AND relationship_id = :relationship_id",
+        [
+            delta.param("relationship_flag_id", relationship_flag_id),
+            delta.param("relationship_id", relationship_id),
+        ],
+    )
+    return {"deleted": relationship_flag_id}
 
 
