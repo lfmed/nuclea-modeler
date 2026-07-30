@@ -718,7 +718,7 @@ function Faq() {
           Vá em <Link to="/entities" className="text-nuclea-primary underline">/entities</Link>{" "}
           → <strong>Nova entidade</strong>. Em seguida, cadastre os atributos e
           relacionamentos. O DER aparece automaticamente em{" "}
-          <Link to="/diagram" className="text-nuclea-primary underline">/diagram</Link>.
+          <Link to="/diagram" search={{ system: undefined }} className="text-nuclea-primary underline">/diagram</Link>.
         </>
       ),
     },

@@ -25,6 +25,8 @@ SearchKind = Literal[
     "ticket",
     "connection",
     "system",
+    "index",
+    "relationship",
 ]
 
 
@@ -258,6 +260,65 @@ def global_search(
                     label=r[1] or "(sistema)",
                     sublabel=r[3] or (r[2] or "")[:120],
                     path="/entities",
+                )
+            )
+    except Exception:
+        pass
+
+    # Indexes -------------------------------------------------------
+    try:
+        rows = delta.fetch_all_params(
+            sql,
+            f"""
+            SELECT idx.index_id, idx.index_name, e.technical_name, idx.index_type, e.entity_id
+            FROM {s.fq_table('indexes')} idx
+            LEFT JOIN {s.fq_table('entities')} e ON e.entity_id = idx.entity_id
+            WHERE LOWER(COALESCE(idx.index_name, '')) LIKE :pat ESCAPE '\\\\'
+               OR LOWER(COALESCE(e.technical_name, '')) LIKE :pat ESCAPE '\\\\'
+            LIMIT {per_kind}
+            """,
+            pat_param,
+        )
+        for r in rows:
+            results.append(
+                SearchResult(
+                    kind="index",
+                    id=r[0],
+                    label=r[1] or "(índice)",
+                    sublabel=f"{r[2] or 'entidade'} · {r[3] or '?'}",
+                    path=f"/entities/{r[4]}",
+                )
+            )
+    except Exception:
+        pass
+
+    # Relationships -------------------------------------------------
+    try:
+        rows = delta.fetch_all_params(
+            sql,
+            f"""
+            SELECT r.relationship_id, r.relationship_name,
+                   src.technical_name, tgt.technical_name,
+                   r.rel_type, r.description, r.system_id
+            FROM {s.fq_table('relationships')} r
+            LEFT JOIN {s.fq_table('entities')} src ON src.entity_id = r.source_entity_id
+            LEFT JOIN {s.fq_table('entities')} tgt ON tgt.entity_id = r.target_entity_id
+            WHERE LOWER(COALESCE(r.relationship_name, '')) LIKE :pat ESCAPE '\\\\'
+               OR LOWER(COALESCE(r.description, '')) LIKE :pat ESCAPE '\\\\'
+               OR LOWER(COALESCE(src.technical_name, '')) LIKE :pat ESCAPE '\\\\'
+               OR LOWER(COALESCE(tgt.technical_name, '')) LIKE :pat ESCAPE '\\\\'
+            LIMIT {per_kind}
+            """,
+            pat_param,
+        )
+        for r in rows:
+            results.append(
+                SearchResult(
+                    kind="relationship",
+                    id=r[0],
+                    label=r[1] or f"{r[2] or '?'} → {r[3] or '?'}",
+                    sublabel=f"{r[2] or '?'} {r[4] or '?'} {r[3] or '?'} · {(r[5] or '')[:100]}",
+                    path="/relationships",
                 )
             )
     except Exception:

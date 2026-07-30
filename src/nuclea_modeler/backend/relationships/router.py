@@ -31,7 +31,7 @@ _REL_COLS = [
     "relationship_id", "system_id", "source_entity_id", "target_entity_id",
     "source_attr_ids", "target_attr_ids", "rel_type",
     "source_cardinality", "target_cardinality", "description", "origin",
-    "fk_update_rule", "fk_delete_rule",
+    "fk_update_rule", "fk_delete_rule", "relationship_name",
     "created_at", "created_by", "updated_at", "updated_by",
 ]
 
@@ -63,18 +63,19 @@ def _rel_row_to_out(r: list) -> RelationshipOut:
         origin=r[10] or None,
         fk_update_rule=r[11] or None,
         fk_delete_rule=r[12] or None,
-        created_at=r[13],
-        created_by=r[14],
-        updated_at=r[15],
-        updated_by=r[16],
-        system_name=r[17] if len(r) > 17 else None,
+        relationship_name=r[13] or None,  # Novo
+        created_at=r[14],
+        created_by=r[15],
+        updated_at=r[16],
+        updated_by=r[17],
+        system_name=r[18] if len(r) > 18 else None,
         source_entity_label=_entity_label(
-            r[18] if len(r) > 18 else None,
             r[19] if len(r) > 19 else None,
+            r[20] if len(r) > 20 else None,
         ),
         target_entity_label=_entity_label(
-            r[20] if len(r) > 20 else None,
             r[21] if len(r) > 21 else None,
+            r[22] if len(r) > 22 else None,
         ),
     )
 

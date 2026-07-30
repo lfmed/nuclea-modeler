@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { Suspense, useMemo, useState } from "react";
 import { QueryErrorResetBoundary, useQueryClient } from "@tanstack/react-query";
 import { ErrorBoundary } from "react-error-boundary";
@@ -243,7 +243,13 @@ function RelationshipsTable({ systemId }: { systemId: string }) {
                     </Suspense>
                   </td>
                   <td className="py-2 pr-3 text-xs text-muted-foreground">
-                    {r.system_name || r.system_id}
+                    <Link
+                      to="/diagram"
+                      search={{ system: r.system_id }}
+                      className="hover:text-nuclea-primary hover:underline"
+                    >
+                      {r.system_name || r.system_id}
+                    </Link>
                   </td>
                   <td className="py-2 pr-3 text-right">
                     <Button

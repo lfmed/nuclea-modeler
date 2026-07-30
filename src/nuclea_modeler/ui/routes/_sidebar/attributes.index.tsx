@@ -8,7 +8,7 @@
  *
  * Consome `GET /attributes/page` via useListAttributesPaginatedSuspense.
  */
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { Suspense, useMemo, useState } from "react";
 import { QueryErrorResetBoundary } from "@tanstack/react-query";
 import { ErrorBoundary } from "react-error-boundary";
@@ -244,7 +244,16 @@ function AttributesTable({
                 <td className="py-2 pr-3">{a.logical_name || "—"}</td>
                 <td className="py-2 pr-3 font-mono text-xs">{a.entity_technical_name || a.entity_id}</td>
                 <td className="py-2 pr-3 text-muted-foreground">{a.schema_name || "—"}</td>
-                <td className="py-2 pr-3 text-muted-foreground">{a.system_name || a.system_id || "—"}</td>
+                <td className="py-2 pr-3 text-muted-foreground">
+                  <Link
+                    to="/diagram"
+                    search={{ system: a.system_id ?? undefined }}
+                    className="hover:text-nuclea-primary hover:underline"
+                    onClick={(ev) => ev.stopPropagation()}
+                  >
+                    {a.system_name || a.system_id || "—"}
+                  </Link>
+                </td>
                 <td className="py-2 pr-3 font-mono text-xs">{a.native_data_type || "—"}</td>
                 <td className="py-2 pr-3">
                   {a.is_primary_key ? (
