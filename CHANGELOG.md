@@ -5,6 +5,15 @@ Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+### Fixed 🐛
+- **Tela de Relacionamentos dava "Erro ao carregar" (500) (v1.0025)** — regressão da
+  v1.0023: ao adicionar `relationship_name` em `_REL_COLS`, os índices posicionais de
+  `list_relationships` não foram atualizados, fazendo `system_name`/`updated_at` lerem
+  colunas erradas (`GET /api/relationships` estourava `datetime_from_date_parsing` →
+  500). Índices corrigidos, `relationship_name` agora aparece na listagem, e um teste
+  de regressão (`test_relationships_list_mapping.py`) fixa o contrato posicional
+  linha→modelo (que o CI não pegava por ser só índice, não tipo estático).
+
 ### Added
 - **Seletor de formato de layout no DER (v1.0024)** — inspirado no menu "Layout" do
   ER/Studio (Embarcadero), o diagrama ganhou um dropdown para escolher a
