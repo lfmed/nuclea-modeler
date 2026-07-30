@@ -6,6 +6,12 @@ Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 ## [Unreleased]
 
 ### Added
+- **Seletor de formato de layout no DER (v1.0024)** — inspirado no menu "Layout" do
+  ER/Studio (Embarcadero), o diagrama ganhou um dropdown para escolher a
+  autodistribuição: **Hierárquico**, **Árvore**, **Circular**, **Ortogonal** e
+  **Força/Simétrico**. Cada modo é aplicado ao clicar "Auto-layout"/"Auto-organizar
+  tudo" (que continua salvando as posições). Sem dependências novas — algoritmos
+  circular e de força implementados à mão em TS; os demais via Dagre.
 - **Listas navegáveis, busca ampla e nomear relacionamento (v1.0023)** — o nome do
   modelo/sistema nas listagens (entidades, atributos, índices, relacionamentos) vira
   **link para o DER** daquele sistema (rota `/diagram?system=<id>`). A **busca global**

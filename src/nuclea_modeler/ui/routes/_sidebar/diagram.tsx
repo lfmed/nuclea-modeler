@@ -96,10 +96,11 @@ import { NewSystemWizard } from "@/components/apx/new-system-wizard";
 
 import { EntityNode } from "@/components/diagram/entity-node";
 import {
-  applyDagreLayout,
   applyIncrementalLayout,
   layoutWithSavedPositions,
+  applyLayoutByMode,
   type LayoutDirection,
+  type LayoutMode,
 } from "@/components/diagram/layout";
 import { getTypesForTechnology } from "@/components/diagram/types-by-tech";
 import { TypePicker } from "@/components/diagram/type-picker";
@@ -289,6 +290,7 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
   const [filter, setFilter] = useState("");
   const [domainFilter, setDomainFilter] = useState<string>("");
   const [direction, setDirection] = useState<LayoutDirection>("LR");
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>("hierarchical");
 
   // M6 (fatia 4a): seletor de schema + diagrama. Schema restringe por
   // schema_name; diagrama restringe à membership (read-only nesta fatia).
@@ -532,8 +534,8 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
   const { fitView } = useReactFlow();
 
   const autoLayout = useCallback(() => {
-    setNodes((nds) => applyDagreLayout(nds, edges, direction, expanded));
-  }, [edges, direction, expanded]);
+    setNodes((nds) => applyLayoutByMode(nds, edges, layoutMode, direction, expanded));
+  }, [edges, direction, expanded, layoutMode]);
 
   // Persiste posições de uma lista EXPLÍCITA de nós. Recebe a lista por
   // parâmetro (em vez de ler `nodes` do closure) para poder salvar logo após um
@@ -569,7 +571,7 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
     [persistPositions, nodes],
   );
 
-  // "Auto-organizar tudo": reroda o Dagre no diagrama INTEIRO (sobrescreve
+  // "Auto-organizar tudo": reroda o layout escolhido no diagrama INTEIRO (sobrescreve
   // posições manuais — por isso pede confirmação) e persiste automaticamente,
   // para o usuário não perder a organização ao sair sem "Salvar layout".
   const autoOrganizeAll = useCallback(() => {
@@ -580,13 +582,13 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
         "salvo automaticamente.",
     );
     if (!ok) return;
-    const organized = applyDagreLayout(nodes, edges, direction, expanded);
+    const organized = applyLayoutByMode(nodes, edges, layoutMode, direction, expanded);
     setNodes(organized);
     // Salva o MESMO array recém-calculado (o state `nodes` só atualiza no
     // próximo render, então não dá pra reaproveitar saveCurrentLayout aqui).
     persistPositions(organized);
     fitView({ padding: 0.15, minZoom: 0.1, maxZoom: 1.5, duration: 300 });
-  }, [nodes, edges, direction, expanded, persistPositions, fitView]);
+  }, [nodes, edges, direction, expanded, layoutMode, persistPositions, fitView]);
 
   const onCreateDiagram = useCallback(() => {
     if (!schemaId) return;
@@ -912,11 +914,24 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
               value={direction}
               onChange={(e) => setDirection(e.target.value as LayoutDirection)}
               className="rounded-md border bg-background px-2 py-1 text-xs"
+              title="Direção do layout hierárquico"
             >
               <option value="LR">Esq → Dir</option>
               <option value="TB">Cima → Baixo</option>
               <option value="RL">Dir → Esq</option>
               <option value="BT">Baixo → Cima</option>
+            </select>
+            <select
+              value={layoutMode}
+              onChange={(e) => setLayoutMode(e.target.value as LayoutMode)}
+              className="rounded-md border bg-background px-2 py-1 text-xs"
+              title="Formato de layout automático"
+            >
+              <option value="hierarchical">Hierárquico</option>
+              <option value="tree">Árvore</option>
+              <option value="circular">Circular</option>
+              <option value="orthogonal">Ortogonal</option>
+              <option value="force">Força</option>
             </select>
             <Button
               variant="outline"
