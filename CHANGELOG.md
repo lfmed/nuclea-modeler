@@ -5,6 +5,15 @@ Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+### Added
+- **Flags no editor do DER + flags de relacionamento (v1.0022)** — no editor de
+  atributos do diagrama agora dá para aplicar flags **na tabela** (entidade) e **em
+  cada coluna**, reusando o multi-select do catálogo existente (a chave/PK é uma
+  coluna, então já é coberta). Relacionamentos passam a ter flags também: nova tabela
+  `relationship_flags` (migration 018), rotas single + batch (`applyRelationshipFlag`,
+  `batchApplyRelationshipFlags`, remove/list correspondentes) e coluna de Flags na
+  tela de relacionamentos. Múltiplas tags por objeto.
+
 ### Fixed 🐛
 - **Edições do mesmo modelo se sobrescreviam na aprovação (v1.0021)** — ao editar
   2+ campos/colunas do mesmo modelo antes de aprovar, a 2ª edição **apagava** a 1ª do

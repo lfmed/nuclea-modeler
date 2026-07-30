@@ -18,6 +18,7 @@ from .flags.router import (
     router as flags_router,
     entity_router as entity_flags_router,
     attribute_router as attribute_flags_router,
+    relationship_router as relationship_flags_router,
 )
 from .ddl.router import router as ddl_router
 from .versions.router import router as versions_router
@@ -71,6 +72,7 @@ app = create_app(
         flags_router,
         entity_flags_router,
         attribute_flags_router,
+        relationship_flags_router,
         ddl_router,
         versions_router,
         lakebase_router,

@@ -83,6 +83,24 @@ class AttributeFlagOut(BaseModel):
     applied_in_version: str | None = None
 
 
+# -------------------- Relationship flags (Bloco 5) --------------------
+
+class RelationshipFlagApplyIn(BaseModel):
+    flag_id: str
+    justification: str | None = None
+
+
+class RelationshipFlagOut(BaseModel):
+    relationship_flag_id: str
+    relationship_id: str
+    flag_id: str
+    flag: FlagOut
+    justification: str | None = None
+    applied_at: datetime
+    applied_by: str
+    applied_in_version: str | None = None
+
+
 # -------------------- Batch flag operations (Blocos 3 + 6) --------------------
 #
 # Motivação: o fluxo single-id (uma flag por alvo por request) exige ~250 cliques

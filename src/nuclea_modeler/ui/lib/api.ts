@@ -1557,6 +1557,88 @@ export const useBatchRemoveAttributeFlags = (
     ...opts?.mutation,
   });
 
+// ─── Relationship flags (Bloco 5) ───────────────────────────────────────────────
+//
+// Flags de relacionamento: aplicar/remover/listar flags em relacionamentos (1:N, etc.)
+// Sem propagação LGPD (não é conceitual). Reusa BatchFlagSpec para lote multi-target.
+
+export interface RelationshipFlagApplyIn {
+  flag_id: string;
+  justification?: string | null;
+}
+
+export interface RelationshipFlagOut {
+  relationship_flag_id: string;
+  relationship_id: string;
+  flag_id: string;
+  flag: FlagOut;
+  justification?: string | null;
+  applied_at: string;
+  applied_by: string;
+  applied_in_version?: string | null;
+}
+
+export const useListRelationshipFlagsSuspense = (
+  relationshipId: string,
+  s?: Selector<RelationshipFlagOut[]>,
+) =>
+  useSuspenseQuery({
+    queryKey: ["listRelationshipFlags", relationshipId],
+    queryFn: () =>
+      api.get<RelationshipFlagOut[]>(
+        `/relationships/${encodeURIComponent(relationshipId)}/flags`,
+      ),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+export const useApplyRelationshipFlag = (
+  opts?: Opts<
+    RelationshipFlagOut,
+    { relationshipId: string; data: RelationshipFlagApplyIn }
+  >,
+) =>
+  useMutation({
+    mutationFn: async ({ relationshipId, data }) =>
+      (await api.post<RelationshipFlagOut>(
+        `/relationships/${encodeURIComponent(relationshipId)}/flags`,
+        data,
+      )).data,
+    ...opts?.mutation,
+  });
+
+export const useRemoveRelationshipFlag = (
+  opts?: Opts<
+    { deleted: string },
+    { relationshipId: string; relationshipFlagId: string }
+  >,
+) =>
+  useMutation({
+    mutationFn: async ({ relationshipId, relationshipFlagId }) =>
+      (await api.delete<{ deleted: string }>(
+        `/relationships/${encodeURIComponent(relationshipId)}/flags/${encodeURIComponent(relationshipFlagId)}`,
+      )).data,
+    ...opts?.mutation,
+  });
+
+export const useBatchApplyRelationshipFlags = (
+  opts?: Opts<BatchFlagResult, { data: BatchFlagApplyIn }>,
+) =>
+  useMutation({
+    mutationFn: async ({ data }) =>
+      (await api.post<BatchFlagResult>("/relationships/batch/flags", data)).data,
+    ...opts?.mutation,
+  });
+
+export const useBatchRemoveRelationshipFlags = (
+  opts?: Opts<BatchFlagResult, { data: BatchFlagRemoveIn }>,
+) =>
+  useMutation({
+    mutationFn: async ({ data }) =>
+      (await api.post<BatchFlagResult>("/relationships/batch/flags/remove", data)).data,
+    ...opts?.mutation,
+  });
+
 // ─── DDL Export (Módulo 10) ──────────────────────────────────────────────────
 
 export type DDLDialect =

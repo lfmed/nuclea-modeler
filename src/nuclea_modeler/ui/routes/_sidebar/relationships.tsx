@@ -10,12 +10,16 @@ import {
   useListEntitiesSuspense,
   useListRelationshipsSuspense,
   useListSystemsSuspense,
+  useListRelationshipFlagsSuspense,
+  useBatchApplyRelationshipFlags,
+  useRemoveRelationshipFlag,
   type Cardinality,
   type EntityListOut,
   type FKRule,
   type RelType,
   type RelationshipListOut,
 } from "@/lib/api";
+import { toast } from "sonner";
 import selector from "@/lib/selector";
 
 import { Button } from "@/components/ui/button";
@@ -30,6 +34,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertCircle, Link2, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { EmptyState } from "@/components/apx/empty-state";
+import { FlagPicker } from "@/components/flags/flag-picker";
 
 export const Route = createFileRoute("/_sidebar/relationships")({
   component: RelationshipsPage,
@@ -199,6 +204,7 @@ function RelationshipsTable({ systemId }: { systemId: string }) {
                 <th className="py-2 pr-3 font-medium">Cardinalidades</th>
                 <th className="py-2 pr-3 font-medium">Origem</th>
                 <th className="py-2 pr-3 font-medium">Descrição</th>
+                <th className="py-2 pr-3 font-medium">Flags</th>
                 <th className="py-2 pr-3 font-medium">Sistema</th>
                 <th className="py-2 pr-3 font-medium text-right">Ações</th>
               </tr>
@@ -230,6 +236,11 @@ function RelationshipsTable({ systemId }: { systemId: string }) {
                     {r.description || (
                       <span className="text-muted-foreground">—</span>
                     )}
+                  </td>
+                  <td className="py-2 pr-3">
+                    <Suspense fallback={<span className="text-[10px] text-muted-foreground">…</span>}>
+                      <RelationshipFlagsCell relationshipId={r.relationship_id} />
+                    </Suspense>
                   </td>
                   <td className="py-2 pr-3 text-xs text-muted-foreground">
                     {r.system_name || r.system_id}
@@ -685,6 +696,59 @@ function Field({
       </label>
       {children}
     </div>
+  );
+}
+
+/**
+ * RelationshipFlagsCell — Componente para aplicar flags a relacionamentos.
+ * Reusa FlagPicker com suspense para carregar flags do relacionamento.
+ * Integrado à tabela de relacionamentos.
+ */
+function RelationshipFlagsCell({ relationshipId }: { relationshipId: string }) {
+  const qc = useQueryClient();
+  const { data: appliedFlags } = useListRelationshipFlagsSuspense(
+    relationshipId,
+    selector(),
+  );
+
+  const { mutate: applyBatch, isPending: applying } = useBatchApplyRelationshipFlags({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: ["listRelationshipFlags", relationshipId] });
+      },
+      onError: (e) => {
+        toast.error("Erro ao aplicar flags: " + String(e));
+      },
+    },
+  });
+
+  const { mutate: remove } = useRemoveRelationshipFlag({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: ["listRelationshipFlags", relationshipId] });
+      },
+    },
+  });
+
+  const applied = appliedFlags.map((rf) => ({
+    applied_flag_id: rf.relationship_flag_id,
+    flag: rf.flag,
+    justification: rf.justification,
+  }));
+
+  return (
+    <FlagPicker
+      applied={applied}
+      applying={applying}
+      onApply={(specs) =>
+        applyBatch({ data: { target_ids: [relationshipId], flags: specs } })
+      }
+      onRemove={(rfid) =>
+        remove({ relationshipId, relationshipFlagId: rfid })
+      }
+      size="small"
+      label="+ Flag"
+    />
   );
 }
 
