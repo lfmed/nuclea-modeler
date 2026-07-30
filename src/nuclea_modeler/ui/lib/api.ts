@@ -2954,7 +2954,9 @@ export type SearchKind =
   | "flag"
   | "ticket"
   | "connection"
-  | "system";
+  | "system"
+  | "index"
+  | "relationship";
 
 export interface SearchResult {
   kind: SearchKind;

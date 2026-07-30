@@ -8,7 +8,7 @@
  *
  * Consome `GET /indexes/page` via useListIndexesPaginatedSuspense.
  */
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { Suspense, useMemo, useState } from "react";
 import { QueryErrorResetBoundary } from "@tanstack/react-query";
 import { ErrorBoundary } from "react-error-boundary";
@@ -253,7 +253,16 @@ function IndexesTable({
                 </td>
                 <td className="py-2 pr-3 font-mono text-xs">{ix.entity_technical_name || ix.entity_id}</td>
                 <td className="py-2 pr-3 text-muted-foreground">{ix.schema_name || "—"}</td>
-                <td className="py-2 pr-3 text-muted-foreground">{ix.system_name || ix.system_id || "—"}</td>
+                <td className="py-2 pr-3 text-muted-foreground">
+                  <Link
+                    to="/diagram"
+                    search={{ system: ix.system_id }}
+                    className="hover:text-nuclea-primary hover:underline"
+                    onClick={(ev) => ev.stopPropagation()}
+                  >
+                    {ix.system_name || ix.system_id || "—"}
+                  </Link>
+                </td>
               </tr>
             ))}
           </tbody>

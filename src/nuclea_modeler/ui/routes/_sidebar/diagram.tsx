@@ -113,6 +113,9 @@ const nodeTypes: NodeTypes = { entity: EntityNode };
 
 export const Route = createFileRoute("/_sidebar/diagram")({
   component: DiagramPage,
+  validateSearch: (search: Record<string, unknown>) => ({
+    system: (search.system as string) || undefined,
+  }),
 });
 
 function DiagramPage() {
@@ -168,7 +171,13 @@ function Header() {
 
 function DiagramBody() {
   const { data: systems } = useListSystemsSuspense(selector());
-  const [systemId, setSystemId] = useState(systems[0]?.system_id || "");
+  const { system: systemFromUrl } = Route.useSearch();
+  // Se houver 'system' na query string, use-a. Caso contrário, use o primeiro sistema.
+  const initialSystem =
+    systemFromUrl && systems.some((s) => s.system_id === systemFromUrl)
+      ? systemFromUrl
+      : systems[0]?.system_id || "";
+  const [systemId, setSystemId] = useState(initialSystem);
   const [showNewSystem, setShowNewSystem] = useState(false);
 
   if (systems.length === 0) {

@@ -10,6 +10,8 @@ import {
   Network,
   ChevronRight,
   Loader2,
+  Grid3x3,
+  Link2,
 } from "lucide-react";
 
 import {
@@ -33,11 +35,15 @@ const KIND_LABELS: Record<SearchKind, string> = {
   ticket: "Tickets",
   connection: "Conexões",
   system: "Sistemas",
+  index: "Índices",
+  relationship: "Relacionamentos",
 };
 
 const KIND_ORDER: SearchKind[] = [
   "entity",
   "attribute",
+  "index",
+  "relationship",
   "term",
   "flag",
   "ticket",
@@ -52,6 +58,10 @@ function KindIcon({ kind }: { kind: SearchKind }) {
       return <FileText className={className} />;
     case "attribute":
       return <ChevronRight className={className} />;
+    case "index":
+      return <Grid3x3 className={className} />;
+    case "relationship":
+      return <Link2 className={className} />;
     case "term":
       return <BookOpenText className={className} />;
     case "flag":
@@ -132,7 +142,7 @@ export function GlobalSearch() {
           <SheetHeader>
             <SheetTitle>Busca global</SheetTitle>
             <SheetDescription>
-              Procure entidades, atributos, termos, flags, tickets, conexões e sistemas.
+              Procure entidades, atributos, índices, relacionamentos, termos, flags, tickets, conexões e sistemas.
             </SheetDescription>
           </SheetHeader>
 

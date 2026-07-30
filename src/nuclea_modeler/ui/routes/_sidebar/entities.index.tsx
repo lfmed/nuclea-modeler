@@ -463,7 +463,15 @@ function EntitiesTable({
                 </td>
                 <td className="py-2 pr-3">{e.logical_name || "—"}</td>
                 <td className="py-2 pr-3 text-muted-foreground">
-                  {e.system_name || e.system_id} <span className="opacity-60">·</span> {e.schema_name}
+                  <Link
+                    to="/diagram"
+                    search={{ system: e.system_id }}
+                    className="hover:text-nuclea-primary hover:underline"
+                    onClick={(ev) => ev.stopPropagation()}
+                  >
+                    {e.system_name || e.system_id}
+                  </Link>
+                  <span className="opacity-60">·</span> {e.schema_name}
                 </td>
                 <td className="py-2 pr-3">
                   <Badge variant="outline">{e.entity_type}</Badge>

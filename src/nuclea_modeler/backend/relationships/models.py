@@ -24,6 +24,7 @@ class RelationshipIn(BaseModel):
     description: str | None = None
     fk_update_rule: FKRule | None = None
     fk_delete_rule: FKRule | None = None
+    relationship_name: str | None = None  # Novo: nome/rótulo do relacionamento
 
 
 class RelationshipOut(BaseModel):
@@ -43,6 +44,7 @@ class RelationshipOut(BaseModel):
     origin: Origin | None = None
     fk_update_rule: FKRule | None = None
     fk_delete_rule: FKRule | None = None
+    relationship_name: str | None = None  # Novo: nome/rótulo do relacionamento
     created_at: datetime
     created_by: str
     updated_at: datetime
@@ -62,4 +64,5 @@ class RelationshipListOut(BaseModel):
     target_cardinality: Cardinality | None = None
     origin: Origin | None = None
     description: str | None = None
+    relationship_name: str | None = None  # Novo: nome/rótulo do relacionamento
     updated_at: datetime
