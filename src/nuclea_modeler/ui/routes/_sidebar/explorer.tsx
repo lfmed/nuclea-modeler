@@ -345,7 +345,7 @@ function DiagramsLevel({ schemaId }: { schemaId: string }) {
         <li key={d.diagram_id}>
           <Link
             to="/diagram"
-            search={{}}
+            search={{ system: undefined }}
             className="flex items-center gap-2 rounded px-2 py-1 text-sm hover:bg-muted/50"
           >
             <span className="w-4" />
