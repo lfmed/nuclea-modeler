@@ -25,7 +25,6 @@ import {
   useGetSessionStateSuspense,
   type BatchFlagSpec,
   type AttributeOut,
-  type SessionStateOut,
 } from "@/lib/api";
 import selector from "@/lib/selector";
 import { TypePicker } from "@/components/diagram/type-picker";
@@ -191,7 +190,6 @@ function EntityDetail() {
       <Suspense fallback={<Skeleton className="h-32 w-full" />}>
         <PendingChangesSection
           entityId={id}
-          entityTechName={entity.technical_name}
           systemId={entity.system_id}
         />
       </Suspense>
@@ -758,11 +756,9 @@ function AttributesSection({
  */
 function PendingChangesSection({
   entityId,
-  entityTechName,
   systemId,
 }: {
   entityId: string;
-  entityTechName: string;
   systemId: string;
 }) {
   const { data: session } = useGetSessionStateSuspense(systemId, selector());
