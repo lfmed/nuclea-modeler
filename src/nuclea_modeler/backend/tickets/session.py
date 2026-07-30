@@ -121,19 +121,62 @@ def stage_entity_change(
 ) -> dict[str, Any]:
     """Adiciona/atualiza um DiffEntity-like entry no diff_json do ticket.
 
-    Se já há um entry com a mesma chave (schema.tech.op), substitui — última
-    edição vence (granularidade de "última intenção do user").
+    MERGE em vez de overwrite: quando já existe entry com a mesma chave
+    (schema.tech.op), mescla os field_changes e payload em vez de remover
+    tudo e recriar. Garante que edições de CAMPOS DIFERENTES acumulem.
 
-    Para mesma entity com ops diferentes (ex: add depois change), considera:
-    - se vier add e já existe change → trata como ADD com payload mesclado
-    - se vier remove e existe add → remove o add (cancela)
-    Para simplificar nessa primeira versão, fazemos: dedup por chave exata.
+    Regra de merge:
+    - field_changes: por "field", a ÚLTIMA intenção do MESMO campo vence,
+      mas campos DIFERENTES coexistem (ex: 2 colunas diferentes numa entity).
+    - payload: mescla shallow — novos campos sobrescrevem antigos, mas campos
+      não tocados na edição atual são preservados.
+
+    Nota técnica: o match é pela chave (schema_name, technical_name, op).
+    Se o user edita Coluna A, depois Coluna B da mesma entidade, ambas
+    aparecem no field_changes final do mesmo entry (formato "attribute_add:A"
+    e "attribute_add:B"). Na aplicação do ticket, o apply itera todos os
+    field_changes e aplica cada um — com o merge, nenhuma edição é perdida.
+
+    Para ops distintos (add→change, change→remove, etc), existe lógica
+    separada em tickets/service.py; aqui mantemos a mesma entidade e op.
     """
     s = get_settings()
     entities = list(diff.get("entities", []))
     new_key = _entity_key(entry)
-    entities = [e for e in entities if _entity_key(e) != new_key]
-    entities.append(entry)
+
+    # Procura se já existe entry com mesma chave (schema.tech.op)
+    existing_entry = None
+    existing_idx = None
+    for i, e in enumerate(entities):
+        if _entity_key(e) == new_key:
+            existing_entry = e
+            existing_idx = i
+            break
+
+    if existing_entry:
+        # MERGE: mesclar field_changes e payload
+        merged_entry = dict(existing_entry)  # cópia rasa
+
+        # 1. Mesclar field_changes por "field"
+        #    Mantém entry antigos, sobrescreve por field novo
+        old_changes = {fc.get("field"): fc for fc in existing_entry.get("field_changes", [])}
+        for fc in entry.get("field_changes", []):
+            field_name = fc.get("field")
+            if field_name:
+                old_changes[field_name] = fc  # última intenção vence
+        merged_entry["field_changes"] = list(old_changes.values())
+
+        # 2. Mesclar payload: sobrescrever chaves novas/atualizadas
+        merged_payload = dict(existing_entry.get("payload", {}))
+        merged_payload.update(entry.get("payload", {}))
+        merged_entry["payload"] = merged_payload
+
+        # Substituir no vetor
+        entities[existing_idx] = merged_entry
+    else:
+        # Novo entry: apenas adicionar
+        entities.append(entry)
+
     new_diff = {
         "entities": entities,
         "additions": 0, "removals": 0, "changes": 0,

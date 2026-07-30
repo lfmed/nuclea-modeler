@@ -2457,6 +2457,24 @@ export const useDeleteDownstream = (
 // ─── Editorial Sessions (modelo "ticket de sessão") ──────────────────────────
 
 /**
+ * SessionStateOut: estado completo da sessão editorial OPEN do usuário para um
+ * sistema. Inclui entries brutos (com field_changes) para a UI poder listar
+ * "campos em aprovação" no detalhe da entidade.
+ *
+ * Backend retorna `null` quando não há sessão ativa.
+ */
+export interface SessionStateOut {
+  ticket_id: string;
+  system_id: string;
+  additions: number;
+  changes: number;
+  removals: number;
+  entities_added: Array<Record<string, unknown>>;
+  entities_changed: Array<Record<string, unknown>>;
+  entities_removed: Array<Record<string, unknown>>;
+}
+
+/**
  * SessionStatusOut: resumo do ticket aberto da sessão atual do usuário em um
  * dado sistema. Backend retorna `null` quando não há sessão ativa — o select
  * normaliza pra `SessionStatusOut | null` no consumidor.
@@ -2509,6 +2527,27 @@ export const useDashboardSummarySuspense = (s?: Selector<DashboardSummary>) =>
     queryKey: ["dashboardSummary"],
     queryFn: () => api.get<DashboardSummary>("/dashboard/summary"),
     select: (r) => r.data,
+    ...s?.query,
+  });
+
+/**
+ * Lê o estado completo do ticket de sessão atual para um sistema. Inclui entries
+ * brutos com field_changes (para mostrar "campos em aprovação" na UI detalhada).
+ * Retorna `null` quando o backend responder sem sessão ativa — não dispara erro nesse caso.
+ */
+export const useGetSessionStateSuspense = (
+  systemId: string,
+  s?: Selector<SessionStateOut | null>,
+) =>
+  useSuspenseQuery({
+    queryKey: ["getSessionState", systemId],
+    queryFn: () =>
+      api.get<SessionStateOut | null>("/sessions/current", {
+        params: { system_id: systemId },
+        // 404 ou null body — devolve null em vez de jogar erro.
+        validateStatus: (st) => (st >= 200 && st < 300) || st === 404,
+      }),
+    select: (r) => (r.status === 404 ? null : (r.data ?? null)),
     ...s?.query,
   });
 

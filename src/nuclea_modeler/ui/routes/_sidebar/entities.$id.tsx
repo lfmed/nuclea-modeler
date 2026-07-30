@@ -22,6 +22,7 @@ import {
   useListSystemsSuspense,
   useGetDiagramSuspense,
   useGetSessionStatusSuspense,
+  useGetSessionStateSuspense,
   type BatchFlagSpec,
   type AttributeOut,
 } from "@/lib/api";
@@ -184,6 +185,13 @@ function EntityDetail() {
 
       <Suspense fallback={<Skeleton className="h-24 w-full" />}>
         <EntityFlagsSection entityId={id} />
+      </Suspense>
+
+      <Suspense fallback={<Skeleton className="h-32 w-full" />}>
+        <PendingChangesSection
+          entityId={id}
+          systemId={entity.system_id}
+        />
       </Suspense>
 
       <Suspense fallback={<Skeleton className="h-40 w-full" />}>
@@ -736,6 +744,93 @@ function AttributesSection({
             </table>
           </div>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Seção "Campos em aprovação": mostra edições pendentes (staged) dessa entidade
+ * no ticket OPEN da sessão. Extrai do diff as mudanças (op=change) que afetam
+ * esta entidade e lista os field_changes.
+ */
+function PendingChangesSection({
+  entityId,
+  systemId,
+}: {
+  entityId: string;
+  systemId: string;
+}) {
+  const { data: session } = useGetSessionStateSuspense(systemId, selector());
+
+  if (!session || !session.entities_changed) {
+    return null;
+  }
+
+  // Encontra mudanças para esta entidade (batemos pelo target_entity_id no payload)
+  const relevantChanges = session.entities_changed.filter((e: Record<string, unknown>) => {
+    const payload = e.payload as Record<string, unknown> | undefined;
+    return payload?.target_entity_id === entityId;
+  });
+
+  if (relevantChanges.length === 0) {
+    return null;
+  }
+
+  // Extrai os field_changes de todas as mudanças relevantes
+  const allFieldChanges: Array<{ field: string; before: unknown; after: unknown }> = [];
+  for (const change of relevantChanges) {
+    const fc = (change.field_changes as Array<{ field: string; before: unknown; after: unknown }> | undefined) || [];
+    allFieldChanges.push(...fc);
+  }
+
+  if (allFieldChanges.length === 0) {
+    return null;
+  }
+
+  return (
+    <Card className="border-blue-200 dark:border-blue-900/50">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
+          <ClipboardList className="h-5 w-5" />
+          Campos em aprovação ({allFieldChanges.length})
+        </CardTitle>
+        <CardDescription>
+          Edições staged (pendentes) desta tabela no ticket da sessão
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-3">
+          {allFieldChanges.map((fc, idx) => {
+            const fieldName = fc.field || "?";
+            // Decodifica nomes de campos especiais (attribute_add:name, attribute:name.update)
+            let displayName = fieldName;
+            if (fieldName.startsWith("attribute_add:")) {
+              displayName = `Nova coluna: ${fieldName.slice("attribute_add:".length)}`;
+            } else if (fieldName.startsWith("attribute:") && fieldName.endsWith(".update")) {
+              const attrName = fieldName.slice("attribute:".length, -".update".length);
+              displayName = `Editar coluna: ${attrName}`;
+            }
+            return (
+              <div key={idx} className="text-sm border-l-2 border-blue-300 pl-3">
+                <div className="font-medium text-foreground">{displayName}</div>
+                {fc.before !== undefined && fc.before !== null && (
+                  <div className="text-xs text-muted-foreground">
+                    antes: <span className="font-mono">{String(fc.before).slice(0, 50)}</span>
+                  </div>
+                )}
+                {fc.after !== undefined && fc.after !== null && (
+                  <div className="text-xs text-muted-foreground">
+                    depois: <span className="font-mono">{String(fc.after).slice(0, 50)}</span>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-950/30 rounded-md text-sm text-blue-700 dark:text-blue-300">
+          <p>Essas mudanças estão aguardando aprovação. Após aprovação, serão aplicadas ao catálogo.</p>
+        </div>
       </CardContent>
     </Card>
   );
