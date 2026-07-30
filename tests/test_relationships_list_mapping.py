@@ -39,7 +39,7 @@ def _rel_row() -> list:
         "OPTIONAL",              # 7 source_cardinality
         "MANDATORY",             # 8 target_cardinality
         "descr",                 # 9 description
-        "DDL",                   # 10 origin
+        "EXTRACTED",             # 10 origin (Literal: EXTRACTED | MANUAL)
         None,                    # 11 fk_update_rule
         None,                    # 12 fk_delete_rule
         "Pedido → Cliente",      # 13 relationship_name
