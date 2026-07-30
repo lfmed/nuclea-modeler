@@ -6,7 +6,8 @@
 -- (ex: "Pedido → Cliente", "Fornecedor → Contato").
 --
 -- Migration: aditiva, não-destrutiva. Sem constraint ENFORCED.
--- Sem relacionamento lógico com "flags de relacionamento" (018 — nome vs. 019 — flags).
+-- Independente da migration 018 (relationship_flags) — esta (019) só adiciona o
+-- nome/rótulo do relacionamento.
 -- ============================================================================
 
 USE CATALOG ${CATALOG};

@@ -6,6 +6,13 @@ Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 ## [Unreleased]
 
 ### Added
+- **Listas navegáveis, busca ampla e nomear relacionamento (v1.0023)** — o nome do
+  modelo/sistema nas listagens (entidades, atributos, índices, relacionamentos) vira
+  **link para o DER** daquele sistema (rota `/diagram?system=<id>`). A **busca global**
+  (Cmd/Ctrl+K) passa a cobrir também **índices** e **relacionamentos** (além de
+  entidades, atributos, termos, flags…). Relacionamentos ganham um campo de **nome/
+  rótulo** editável (`relationship_name`, migration 019). Edição de objetos das
+  listagens segue o fluxo de aprovação por ticket já existente.
 - **Flags no editor do DER + flags de relacionamento (v1.0022)** — no editor de
   atributos do diagrama agora dá para aplicar flags **na tabela** (entidade) e **em
   cada coluna**, reusando o multi-select do catálogo existente (a chave/PK é uma
