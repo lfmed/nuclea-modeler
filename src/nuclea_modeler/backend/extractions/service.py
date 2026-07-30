@@ -939,8 +939,13 @@ def run_ddl_import(
     }
     sg_dialect = dialect_map.get(effective_dialect.upper(), dialect_l)
 
+    entities: list[ExtractedEntity] = []
+    errors: list[str] = []
+    warnings: list[str] = []
+
     # Parse RESILIENTE: tenta todo o texto; se falhar, tenta statement-a-statement.
     # Assim, um `CREATE SCHEMA` ou `SET` malformado não aborta o lote inteiro.
+    # (errors/warnings já inicializados acima para o fallback poder registrar.)
     parsed: list[Any] = []
     try:
         parsed = sqlglot.parse(ddl_text, dialect=sg_dialect) or []
@@ -956,10 +961,6 @@ def run_ddl_import(
                 parsed.extend(stmts)
             except Exception as exc_stmt:
                 errors.append(f"Statement ignorado: {str(exc_stmt)[:100]}")
-
-    entities: list[ExtractedEntity] = []
-    errors: list[str] = []
-    warnings: list[str] = []
     # FKs coletadas CRUAS na 1ª passe; resolvidas por nome na 2ª passe (ver
     # `_resolve_pending_fks`). Assim a ORDEM dos CREATE TABLE deixa de importar:
     # uma FK declarada antes da tabela-alvo passa a ser resolvida corretamente.
