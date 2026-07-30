@@ -8,6 +8,16 @@ const NODE_HEIGHT_EXPANDED = (attrs: number) => 80 + attrs * 24;
 export type LayoutDirection = "LR" | "TB" | "RL" | "BT";
 
 /**
+ * Modo de layout automático do DER.
+ * - hierarchical: disposição hierárquica por níveis (Dagre rankdir TB/LR)
+ * - tree: variante de hierárquico com ranker "tight-tree" (para árvores reais)
+ * - circular: nós dispostos num círculo, ordem estável por ID
+ * - orthogonal: arestas em ângulos retos (Dagre com configuração ortogonal)
+ * - force: algoritmo simples de forças (repulsão + atração por arestas)
+ */
+export type LayoutMode = "hierarchical" | "tree" | "circular" | "orthogonal" | "force";
+
+/**
  * Altura estimada de um node do DER. Precisa bater com a lógica usada no dagre
  * (nós expandidos crescem com o nº de atributos) para o bounding box do layout
  * incremental ficar correto — senão os nós novos poderiam sobrepor os já
@@ -172,4 +182,329 @@ export function layoutWithSavedPositions(
   const positioned = nodes.filter((n) => positionedIds.has(n.id));
   const unpositioned = nodes.filter((n) => !positionedIds.has(n.id));
   return applyIncrementalLayout(positioned, unpositioned, edges, direction, expanded);
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Algoritmos de layout alternativos para suporte a múltiplos formatos.
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * Layout circular — posiciona nós em círculo com ordem estável por ID.
+ *
+ * Algoritmo:
+ * 1. Ordena nós por ID para garantir determinismo
+ * 2. Calcula raio do círculo proporcional ao sqrt(N) para evitar aglomeração
+ * 3. Distribui nós uniformemente em ângulos (2π / N) ao redor do centro
+ * 4. Centraliza o layout na origem para padronização
+ *
+ * Decisões:
+ * - Raio base = 100 + (N-1) * 40 para acomodar mais nós sem sobreposição
+ * - Ordem por ID garante layout determinístico entre rerenders
+ */
+export function applyCircularLayout(nodes: Node[]): Node[] {
+  if (nodes.length === 0) return nodes;
+
+  // Ordena por ID para determinismo
+  const sorted = [...nodes].sort((a, b) => a.id.localeCompare(b.id));
+  const n = sorted.length;
+
+  // Raio adaptativo: quanto mais nós, mais distante para evitar sobreposição
+  const radius = Math.max(100, 100 + (n - 1) * 40);
+
+  // Calcula posições ao longo do círculo
+  const positioned = sorted.map((node, i) => {
+    // Ângulo uniforme: começa no topo (3π/2 = -90°) e gira em sentido horário
+    const angle = (i * 2 * Math.PI) / n - Math.PI / 2;
+    const x = radius * Math.cos(angle);
+    const y = radius * Math.sin(angle);
+
+    return {
+      ...node,
+      position: {
+        x: x - NODE_WIDTH / 2,
+        y: y - NODE_HEIGHT_COMPACT / 2,
+      },
+    };
+  });
+
+  // Centraliza: calcula bbox e desloca para origem
+  const bbox = boundingBox(positioned, false);
+  if (!bbox) return positioned;
+
+  const offsetX = -bbox.minX + 50;
+  const offsetY = -bbox.minY + 50;
+
+  return positioned.map((n) => ({
+    ...n,
+    position: {
+      x: n.position.x + offsetX,
+      y: n.position.y + offsetY,
+    },
+  }));
+}
+
+/**
+ * Layout com ranker "tight-tree" do Dagre — variante de hierárquico para árvores.
+ *
+ * Diferença vs hierarchical: usa ranker "tight-tree" que produz layouts
+ * mais compactos e alinhados à estrutura de árvore, reduzindo espaço vazio
+ * desnecessário em grafos com alta conectividade hierárquica.
+ */
+export function applyTreeLayout(
+  nodes: Node[],
+  edges: Edge[],
+  direction: LayoutDirection = "LR",
+  expanded: boolean = true,
+): Node[] {
+  const g = new dagre.graphlib.Graph();
+  g.setGraph({
+    rankdir: direction,
+    ranker: "tight-tree", // Ranker específico para árvores
+    nodesep: 80,
+    ranksep: 150,
+    edgesep: 20,
+    marginx: 40,
+    marginy: 40,
+  });
+  g.setDefaultEdgeLabel(() => ({}));
+
+  for (const node of nodes) {
+    const height = nodeHeight(node, expanded);
+    g.setNode(node.id, { width: NODE_WIDTH, height });
+  }
+
+  for (const edge of edges) {
+    if (g.hasNode(edge.source) && g.hasNode(edge.target)) {
+      g.setEdge(edge.source, edge.target);
+    }
+  }
+
+  dagre.layout(g);
+
+  return nodes.map((node) => {
+    const meta = g.node(node.id);
+    if (!meta) return node;
+    return {
+      ...node,
+      position: { x: meta.x - meta.width / 2, y: meta.y - meta.height / 2 },
+    };
+  });
+}
+
+/**
+ * Layout ortogonal — similiar a hierárquico mas com espaçamento adaptado
+ * para arestas em ângulos retos (0°, 90°, 180°, 270°).
+ *
+ * Usa Dagre com rankdir TB (vertical) + espaçamento aumentado para dar
+ * espaço às arestas ortogonais se dobrarem. Não há ranker específico;
+ * a configuração de spacing é o que diferencia.
+ */
+export function applyOrthogonalLayout(
+  nodes: Node[],
+  edges: Edge[],
+  expanded: boolean = true,
+): Node[] {
+  const g = new dagre.graphlib.Graph();
+  // rankdir TB força layout vertical (mais comum em ER). Espaçamento aumentado
+  // para acomodar curvas das arestas ortogonais.
+  g.setGraph({
+    rankdir: "TB",
+    nodesep: 120,    // Maior afastamento horizontal
+    ranksep: 200,    // Maior afastamento vertical
+    edgesep: 50,     // Mais espaço entre arestas para evitar sobreposição
+    marginx: 60,
+    marginy: 60,
+  });
+  g.setDefaultEdgeLabel(() => ({}));
+
+  for (const node of nodes) {
+    const height = nodeHeight(node, expanded);
+    g.setNode(node.id, { width: NODE_WIDTH, height });
+  }
+
+  for (const edge of edges) {
+    if (g.hasNode(edge.source) && g.hasNode(edge.target)) {
+      g.setEdge(edge.source, edge.target);
+    }
+  }
+
+  dagre.layout(g);
+
+  return nodes.map((node) => {
+    const meta = g.node(node.id);
+    if (!meta) return node;
+    return {
+      ...node,
+      position: { x: meta.x - meta.width / 2, y: meta.y - meta.height / 2 },
+    };
+  });
+}
+
+/**
+ * Layout com forças simples — algoritmo iterativo de repulsão + atração.
+ *
+ * Algoritmo (n iterações):
+ * 1. Cada nó repele outros nós (força proporcional ao inverso da distância)
+ * 2. Nós conectados por arestas se atraem (força proporcional à distância atual)
+ * 3. Força de amortecimento reduz movimento a cada iteração
+ * 4. Todas as forças são acumuladas e aplicadas em paralelo
+ *
+ * Decisões de implementação:
+ * - N = 100 iterações (balanço entre qualidade e performance)
+ * - K_rep = 50000 (constante de repulsão — aumentar afasta mais)
+ * - K_attr = 0.1 (constante de atração — reduzir enfraquece a ligação)
+ * - Damping = 0.95 (amortecimento — valores próximos a 1 suavizam mais)
+ * - Distância mínima = 100px para evitar divisão por zero
+ * - Ordem inicial aleatória para explorar o espaço
+ */
+export function applyForceLayout(nodes: Node[], edges: Edge[]): Node[] {
+  if (nodes.length === 0) return nodes;
+
+  // Cópia mutável com posições iniciais aleatórias
+  const positions: Map<string, { x: number; y: number; vx: number; vy: number }> = new Map();
+  const random = (seed: string) => {
+    // Hash simples do ID para pseudoaleatoriedade determinística
+    let hash = 0;
+    for (let i = 0; i < seed.length; i++) {
+      hash = ((hash << 5) - hash) + seed.charCodeAt(i);
+      hash = hash & hash; // Converte para 32-bit
+    }
+    return (Math.sin(hash) + 1) / 2; // Normaliza para [0,1]
+  };
+
+  for (const node of nodes) {
+    const r1 = random(node.id + "_x");
+    const r2 = random(node.id + "_y");
+    positions.set(node.id, {
+      x: r1 * 800 - 400,
+      y: r2 * 600 - 300,
+      vx: 0,
+      vy: 0,
+    });
+  }
+
+  // Parâmetros do algoritmo
+  const K_REP = 50000;     // Constante de repulsão
+  const K_ATTR = 0.1;      // Constante de atração
+  const DAMPING = 0.95;    // Amortecimento de velocidade
+  const MIN_DIST = 100;    // Distância mínima para evitar singularidade
+  const ITERATIONS = 100;  // Iterações de simulação
+
+  // Simulação de forças
+  for (let iter = 0; iter < ITERATIONS; iter++) {
+    // Zera acumulador de forças
+    const forces: Map<string, { fx: number; fy: number }> = new Map();
+    for (const node of nodes) {
+      forces.set(node.id, { fx: 0, fy: 0 });
+    }
+
+    // Repulsão: cada par de nós se repele
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const nodeA = nodes[i];
+        const nodeB = nodes[j];
+        const posA = positions.get(nodeA.id)!;
+        const posB = positions.get(nodeB.id)!;
+
+        const dx = posB.x - posA.x;
+        const dy = posB.y - posA.y;
+        const dist = Math.max(Math.sqrt(dx * dx + dy * dy), MIN_DIST);
+
+        // Força de repulsão (inverso da distância)
+        const force = K_REP / (dist * dist);
+        const fx = (force * dx) / dist;
+        const fy = (force * dy) / dist;
+
+        // Aplica força em sentidos opostos
+        forces.get(nodeA.id)!.fx -= fx;
+        forces.get(nodeA.id)!.fy -= fy;
+        forces.get(nodeB.id)!.fx += fx;
+        forces.get(nodeB.id)!.fy += fy;
+      }
+    }
+
+    // Atração: nós conectados se atraem
+    for (const edge of edges) {
+      const posA = positions.get(edge.source);
+      const posB = positions.get(edge.target);
+      if (!posA || !posB) continue;
+
+      const dx = posB.x - posA.x;
+      const dy = posB.y - posA.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      // Força de atração (proporcional à distância)
+      const force = K_ATTR * dist;
+      const fx = (force * dx) / Math.max(dist, 1);
+      const fy = (force * dy) / Math.max(dist, 1);
+
+      forces.get(edge.source)!.fx += fx;
+      forces.get(edge.source)!.fy += fy;
+      forces.get(edge.target)!.fx -= fx;
+      forces.get(edge.target)!.fy -= fy;
+    }
+
+    // Atualiza velocidades e posições
+    for (const node of nodes) {
+      const pos = positions.get(node.id)!;
+      const force = forces.get(node.id)!;
+
+      pos.vx = (pos.vx + force.fx) * DAMPING;
+      pos.vy = (pos.vy + force.fy) * DAMPING;
+      pos.x += pos.vx;
+      pos.y += pos.vy;
+    }
+  }
+
+  // Centraliza e normaliza posições para o canvas
+  const bbox = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+  for (const pos of positions.values()) {
+    bbox.minX = Math.min(bbox.minX, pos.x);
+    bbox.minY = Math.min(bbox.minY, pos.y);
+    bbox.maxX = Math.max(bbox.maxX, pos.x);
+    bbox.maxY = Math.max(bbox.maxY, pos.y);
+  }
+
+  const offsetX = -bbox.minX + 50;
+  const offsetY = -bbox.minY + 50;
+
+  return nodes.map((node) => {
+    const pos = positions.get(node.id)!;
+    return {
+      ...node,
+      position: {
+        x: pos.x + offsetX - NODE_WIDTH / 2,
+        y: pos.y + offsetY - NODE_HEIGHT_COMPACT / 2,
+      },
+    };
+  });
+}
+
+/**
+ * Aplica um layout de acordo com o modo escolhido.
+ *
+ * Esta é a função pública principal para aplicar diferentes formatos.
+ * Centraliza a lógica de seleção de algoritmo.
+ */
+export function applyLayoutByMode(
+  nodes: Node[],
+  edges: Edge[],
+  mode: LayoutMode,
+  direction: LayoutDirection = "LR",
+  expanded: boolean = true,
+): Node[] {
+  switch (mode) {
+    case "hierarchical":
+      return applyDagreLayout(nodes, edges, direction, expanded);
+    case "tree":
+      return applyTreeLayout(nodes, edges, direction, expanded);
+    case "circular":
+      return applyCircularLayout(nodes);
+    case "orthogonal":
+      return applyOrthogonalLayout(nodes, edges, expanded);
+    case "force":
+      return applyForceLayout(nodes, edges);
+    default:
+      return applyDagreLayout(nodes, edges, direction, expanded);
+  }
 }
