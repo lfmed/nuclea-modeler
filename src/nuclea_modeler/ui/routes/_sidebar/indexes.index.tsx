@@ -256,7 +256,7 @@ function IndexesTable({
                 <td className="py-2 pr-3 text-muted-foreground">
                   <Link
                     to="/diagram"
-                    search={{ system: ix.system_id }}
+                    search={{ system: ix.system_id ?? undefined }}
                     className="hover:text-nuclea-primary hover:underline"
                     onClick={(ev) => ev.stopPropagation()}
                   >

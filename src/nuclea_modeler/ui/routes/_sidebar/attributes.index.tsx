@@ -247,7 +247,7 @@ function AttributesTable({
                 <td className="py-2 pr-3 text-muted-foreground">
                   <Link
                     to="/diagram"
-                    search={{ system: a.system_id }}
+                    search={{ system: a.system_id ?? undefined }}
                     className="hover:text-nuclea-primary hover:underline"
                     onClick={(ev) => ev.stopPropagation()}
                   >
