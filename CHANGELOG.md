@@ -5,6 +5,15 @@ Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+### Added
+- **Estado das telas persiste na navegação (v1.0028)** — antes, ao sair do DER (ou
+  das listagens) e voltar, o modelo/filtros zeravam (tudo era `useState` local). Agora
+  o sistema selecionado e os filtros/ordenação/página vivem na **URL** (search params
+  do TanStack Router) — a seleção sobrevive a sair-e-voltar, ao back/forward do
+  navegador e vira **link compartilhável**. Além disso, o **último sistema** usado é
+  lembrado (sessionStorage) e vira o default ao abrir uma tela sem `?system=`. Cobre
+  DER + Entidades + Atributos + Índices + Relacionamentos.
+
 ### Fixed 🐛
 - **Linhas de relacionamento se perdiam na navegação do DER (v1.0027)** — as arestas
   (FK) ficavam desconectadas das tabelas, com setas apontando pro vazio, ao dar
