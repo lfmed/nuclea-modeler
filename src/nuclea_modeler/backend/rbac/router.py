@@ -72,7 +72,7 @@ def list_roles(
     return [
         UserRoleOut(
             user_role_id=r[0], user_email=r[1], role_name=r[2],
-            granted_at=r[3], granted_by=r[4], is_active=bool(r[5]),
+            granted_at=r[3], granted_by=r[4], is_active=delta.as_bool(r[5]),
         )
         for r in rows
     ]

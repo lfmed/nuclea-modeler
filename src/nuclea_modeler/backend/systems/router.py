@@ -32,7 +32,7 @@ _COLS = ["system_id", "system_name", "description", "domain", "owner_team",
 def _row_to_out(r: list) -> SystemOut:
     return SystemOut(
         system_id=r[0], system_name=r[1], description=r[2], domain=r[3],
-        owner_team=r[4], technology=r[5], is_active=bool(r[6]),
+        owner_team=r[4], technology=r[5], is_active=delta.as_bool(r[6]),
         created_at=r[7], created_by=r[8], updated_at=r[9], updated_by=r[10],
         environment=r[11] if len(r) > 11 else None,
     )
@@ -65,7 +65,7 @@ def _list_systems(sql, archived: bool) -> list[SystemListOut]:
     return [
         SystemListOut(
             system_id=r[0], system_name=r[1], domain=r[2],
-            technology=r[3], is_active=bool(r[4]),
+            technology=r[3], is_active=delta.as_bool(r[4]),
             environment=r[5] if len(r) > 5 else None,
         )
         for r in rows

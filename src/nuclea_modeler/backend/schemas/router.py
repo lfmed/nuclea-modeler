@@ -30,7 +30,7 @@ _COLS = [
 def _row_to_out(r: list) -> SchemaOut:
     return SchemaOut(
         schema_id=r[0], system_id=r[1], schema_name=r[2], logical_name=r[3],
-        domain=r[4], owner_team=r[5], description_md=r[6], is_active=bool(r[7]),
+        domain=r[4], owner_team=r[5], description_md=r[6], is_active=delta.as_bool(r[7]),
         created_at=r[8], created_by=r[9], updated_at=r[10], updated_by=r[11],
     )
 
@@ -66,7 +66,7 @@ def list_schemas(
     return [
         SchemaListOut(
             schema_id=r[0], system_id=r[1], schema_name=r[2], logical_name=r[3],
-            domain=r[4], is_active=bool(r[5]),
+            domain=r[4], is_active=delta.as_bool(r[5]),
             entity_count=int(r[6] or 0), diagram_count=int(r[7] or 0),
         )
         for r in rows

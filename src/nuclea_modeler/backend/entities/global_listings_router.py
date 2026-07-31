@@ -169,8 +169,8 @@ def list_attributes_paginated(
             technical_name=r[7], logical_name=r[8],
             ordinal_position=int(r[9]) if r[9] is not None else None,
             native_data_type=r[10],
-            is_nullable=bool(r[11]) if r[11] is not None else None,
-            is_primary_key=bool(r[12]),
+            is_nullable=delta.as_bool(r[11]) if r[11] is not None else None,
+            is_primary_key=delta.as_bool(r[12]),
             updated_at=r[13],
         )
         for r in rows
@@ -274,7 +274,7 @@ def list_indexes_paginated(
             schema_name=r[3], system_id=r[4], system_name=r[5],
             index_name=r[6], index_type=r[7] or "BTREE",
             columns=_columns_from_json(r[8]),
-            is_unique=bool(r[9]) if r[9] is not None else False,
+            is_unique=delta.as_bool(r[9]) if r[9] is not None else False,
             origin=r[10], updated_at=r[11],
         )
         for r in rows

@@ -73,7 +73,7 @@ def _ent_row_to_out(r: list, system_name: str | None = None, attr_count: int | N
         notes=r[11], entity_type=r[12] or "TABLE",
         native_comment=r[13], row_count_approx=r[14], last_extracted_at=r[15],
         created_at=r[16], created_by=r[17], updated_at=r[18], updated_by=r[19],
-        is_shared=bool(r[20]) if len(r) > 20 and r[20] is not None else False,
+        is_shared=delta.as_bool(r[20]) if len(r) > 20 and r[20] is not None else False,
         attributes_count=attr_count,
     )
 
@@ -82,8 +82,8 @@ def _attr_row_to_out(r: list) -> AttributeOut:
     return AttributeOut(
         attribute_id=r[0], entity_id=r[1], technical_name=r[2], logical_name=r[3],
         ordinal_position=r[4], native_data_type=r[5],
-        is_nullable=bool(r[6]) if r[6] is not None else None,
-        default_value=r[7], is_primary_key=bool(r[8]),
+        is_nullable=delta.as_bool(r[6]) if r[6] is not None else None,
+        default_value=r[7], is_primary_key=delta.as_bool(r[8]),
         description_md=r[9], business_rule=r[10], sample_value=r[11],
         glossary_term_id=r[12], native_comment=r[13],
         created_at=r[14], created_by=r[15], updated_at=r[16], updated_by=r[17],

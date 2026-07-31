@@ -39,7 +39,7 @@ def _row_to_out(r: list) -> SandboxOut:
         database_name=r[4] or "databricks_postgres", default_schema=r[5] or "public",
         description=r[6], read_write_dns=r[7], pg_version=r[8],
         last_test_status=r[9], last_test_at=r[10], last_test_error=r[11],
-        is_active=bool(r[12]),
+        is_active=delta.as_bool(r[12]),
         created_at=r[13], created_by=r[14],
         updated_at=r[15], updated_by=r[16],
     )
@@ -86,7 +86,7 @@ def list_sandboxes(sql: SqlDependency) -> list[SandboxListOut]:
             default_schema=r[4] or "public",
             pg_version=r[5],
             last_test_status=r[6], last_test_at=r[7],
-            is_active=bool(r[8]),
+            is_active=delta.as_bool(r[8]),
         )
         for r in rows
     ]

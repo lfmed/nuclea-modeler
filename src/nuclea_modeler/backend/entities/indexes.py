@@ -80,7 +80,7 @@ def _idx_row_to_out(r: list) -> EntityIndexOut:
         columns=_columns_from_json(r[4]),
         include_columns=list(r[5]) if r[5] else [],
         partial_where=r[6],
-        is_unique=bool(r[7]) if r[7] is not None else False,
+        is_unique=delta.as_bool(r[7]) if r[7] is not None else False,
         native_comment=r[8],
         description_md=r[9],
         origin=r[10],

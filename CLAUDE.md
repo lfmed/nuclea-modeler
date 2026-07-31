@@ -43,6 +43,11 @@ documentado para quem mantém depois.** Cumprir em todo PR:
   o CI exercê-los; o teste funcional real acontece no app deployado após o merge.
   Ignore qualquer linha do boilerplate acima que mande rodar `apx dev check`, `bun`,
   `uv`, etc. localmente.
+- **BOOLEANOS de query vêm como STRING (GOTCHA).** A Databricks SQL Statement
+  Execution API devolve TODAS as células do `data_array` como string — colunas
+  BOOLEAN voltam como `"true"`/`"false"`. **NUNCA** use `bool(r[n])` direto (em Python
+  `bool("false")` é `True`!). Use `delta.as_bool(r[n])` para todo campo booleano lido
+  de resultado de query. (Causou o bug "todas as colunas viram PK" — v1.0026.)
 - **`ui/lib/api.ts` é ESCRITO À MÃO** — não há codegen no deploy (cliente sem npm/apx).
   Rota nova no backend ⇒ escreva o hook à mão em `api.ts` (padrão `use<Op>` /
   `use<Op>Suspense` / `selector()`). Ignore a linha do boilerplate que diz "auto-regenera".

@@ -154,7 +154,7 @@ def _validate_entities(
         ],
     )
     found: dict[str, dict] = {
-        r[0]: {"system_id": r[1], "is_shared": bool(r[2]), "virtual": False}
+        r[0]: {"system_id": r[1], "is_shared": delta.as_bool(r[2]), "virtual": False}
         for r in rows
     }
     # Fallback: source/target podem estar virtuais na sessão OPEN do user
