@@ -1,8 +1,14 @@
 import { memo } from "react";
 import { Handle, Position } from "@xyflow/react";
-import { ShieldAlert, Hash, Zap, GitBranch } from "lucide-react";
+import { ShieldAlert, Hash, Zap, GitBranch, Info } from "lucide-react";
 import type { DiagramEntity } from "@/lib/api";
 import { PkBadge, computePkOrdinals } from "@/components/attributes/pk-controls";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface EntityNodeData {
   entity: DiagramEntity;
@@ -79,13 +85,34 @@ export const EntityNode = memo(({ data, selected }: EntityNodeProps) => {
                 {entity.entity_type}
               </span>
             </div>
-            <h3
-              className={`font-mono text-sm font-semibold truncate ${
-                isRemove ? "line-through" : ""
-              }`}
-            >
-              {entity.technical_name}
-            </h3>
+            <div className="flex items-center gap-2">
+              <h3
+                className={`font-mono text-sm font-semibold truncate ${
+                  isRemove ? "line-through" : ""
+                }`}
+              >
+                {entity.technical_name}
+              </h3>
+              {(entity.description_md || entity.native_comment) && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Info className="h-3.5 w-3.5 text-muted-foreground shrink-0 cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent side="right" className="max-w-xs">
+                      {entity.description_md && (
+                        <div className="text-sm">{entity.description_md}</div>
+                      )}
+                      {entity.native_comment && (
+                        <div className={`text-xs ${entity.description_md ? "mt-1 pt-1 border-t" : ""} text-muted-foreground`}>
+                          {entity.native_comment}
+                        </div>
+                      )}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+            </div>
             {entity.logical_name && (
               <p
                 className={`text-xs text-muted-foreground truncate ${
@@ -172,13 +199,44 @@ export const EntityNode = memo(({ data, selected }: EntityNodeProps) => {
                 ) : (
                   <span className="h-3 w-3 shrink-0" />
                 )}
-                <span
-                  className={`font-mono flex-1 truncate ${
-                    attrRemove ? "line-through" : ""
-                  }`}
-                >
-                  {attr.technical_name}
-                </span>
+                {attr.description_md || attr.native_comment || attr.business_rule ? (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span
+                          className={`font-mono flex-1 truncate cursor-help ${
+                            attrRemove ? "line-through" : ""
+                          }`}
+                        >
+                          {attr.technical_name}
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent side="right" className="max-w-xs">
+                        {attr.description_md && (
+                          <div className="text-sm">{attr.description_md}</div>
+                        )}
+                        {attr.native_comment && (
+                          <div className={`text-xs ${attr.description_md ? "mt-1 pt-1 border-t" : ""} text-muted-foreground`}>
+                            {attr.native_comment}
+                          </div>
+                        )}
+                        {attr.business_rule && (
+                          <div className={`text-xs ${attr.description_md || attr.native_comment ? "mt-1 pt-1 border-t" : ""} text-yellow-700 dark:text-yellow-300`}>
+                            <strong>Regra:</strong> {attr.business_rule}
+                          </div>
+                        )}
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                ) : (
+                  <span
+                    className={`font-mono flex-1 truncate ${
+                      attrRemove ? "line-through" : ""
+                    }`}
+                  >
+                    {attr.technical_name}
+                  </span>
+                )}
                 {attr.has_lgpd_flag && (
                   <ShieldAlert
                     className="h-3 w-3 text-nuclea-primary shrink-0"

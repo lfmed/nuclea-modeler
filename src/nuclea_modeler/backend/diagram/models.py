@@ -21,6 +21,12 @@ class DiagramAttribute(BaseModel):
     has_lgpd_flag: bool = False
     # F9: true se a coluna aparece em pelo menos um índice (não-PK)
     is_indexed: bool = False
+    # Descrição: campo markdown/texto da coluna (p/ exibir no tooltip do DER)
+    description_md: str | None = None
+    # Comentário nativo: extraído do DDL (COMMENT ON COLUMN no Postgres, etc.)
+    native_comment: str | None = None
+    # Regra de negócio: validações/constraints não-DDL aplicadas à coluna
+    business_rule: str | None = None
     # Editorial overlay — set quando o atributo tem mudança pendente na
     # sessão atual do usuário. NÃO é estado committed.
     pending_op: PendingOp | None = None
@@ -46,6 +52,10 @@ class DiagramEntity(BaseModel):
     criticality: str | None = None
     attributes: list[DiagramAttribute] = Field(default_factory=list)
     has_lgpd_flag: bool = False  # propagated from columns or applied at entity level
+    # Descrição: campo markdown/texto da tabela (p/ exibir no tooltip do DER)
+    description_md: str | None = None
+    # Comentário nativo: extraído do DDL (COMMENT ON TABLE no Postgres, etc.)
+    native_comment: str | None = None
     # Storage badges no DER — agregados a partir de entity_indexes /
     # entity_partitioning. Mantemos compactos (só contagem + estratégia)
     # pra não inflar o payload do diagrama.
