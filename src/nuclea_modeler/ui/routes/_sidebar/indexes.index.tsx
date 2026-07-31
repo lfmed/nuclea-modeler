@@ -81,8 +81,7 @@ function IndexesPage() {
   useEffect(() => {
     if (systemId) saveLastSystemId(systemId);
     navigate({
-      search: (prev) => ({
-        ...prev,
+      search: {
         q: q || undefined,
         system: systemId || undefined,
         indexType: indexType || undefined,
@@ -90,7 +89,7 @@ function IndexesPage() {
         sortBy: sortBy !== "index_name" ? sortBy : undefined,
         sortDir: sortDir !== "asc" ? sortDir : undefined,
         page: page !== 1 ? page : undefined,
-      }),
+      },
     });
   }, [q, systemId, indexType, unique, sortBy, sortDir, page, navigate]);
 

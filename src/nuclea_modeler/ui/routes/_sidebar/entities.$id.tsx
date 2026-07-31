@@ -59,7 +59,7 @@ function EntityDetailPage() {
   return (
     <div className="space-y-6">
       <Button variant="ghost" size="sm" asChild>
-        <Link to="/entities">
+        <Link to="/entities" search={{}}>
           <ArrowLeft className="mr-1 h-4 w-4" />
           Entidades
         </Link>
@@ -106,7 +106,7 @@ function EntityDetail() {
     mutation: {
       onSuccess: () => {
         qc.invalidateQueries({ queryKey: ["listEntities"] });
-        navigate({ to: "/entities" });
+        navigate({ to: "/entities", search: {} });
       },
     },
   });

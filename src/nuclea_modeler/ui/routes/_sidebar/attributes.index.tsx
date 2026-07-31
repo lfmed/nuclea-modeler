@@ -78,8 +78,7 @@ function AttributesPage() {
   useEffect(() => {
     if (systemId) saveLastSystemId(systemId);
     navigate({
-      search: (prev) => ({
-        ...prev,
+      search: {
         q: q || undefined,
         system: systemId || undefined,
         pk: pk || undefined,
@@ -87,7 +86,7 @@ function AttributesPage() {
         sortBy: sortBy !== "technical_name" ? sortBy : undefined,
         sortDir: sortDir !== "asc" ? sortDir : undefined,
         page: page !== 1 ? page : undefined,
-      }),
+      },
     });
   }, [q, systemId, pk, flagId, sortBy, sortDir, page, navigate]);
 

@@ -111,10 +111,9 @@ function RelationshipsBody() {
   useEffect(() => {
     if (systemId) saveLastSystemId(systemId);
     navigate({
-      search: (prev) => ({
-        ...prev,
+      search: {
         system: systemId || undefined,
-      }),
+      },
     });
   }, [systemId, navigate]);
 

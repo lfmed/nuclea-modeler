@@ -4,7 +4,6 @@ import { QueryErrorResetBoundary, useQueryClient } from "@tanstack/react-query";
 import { ErrorBoundary } from "react-error-boundary";
 import { toast } from "sonner";
 import {
-  getLastSystemId,
   saveLastSystemId,
   selectDefaultSystemId,
 } from "@/lib/persist-search";
@@ -189,8 +188,8 @@ function DiagramBody() {
   useEffect(() => {
     if (systemId) {
       saveLastSystemId(systemId);
-      // Atualiza a URL com merge (preserva outros search params)
-      navigate({ search: (prev) => ({ ...prev, system: systemId }) });
+      // Atualiza a URL (espelha o novo sistema no search param)
+      navigate({ search: { system: systemId } });
     }
   }, [systemId, navigate]);
 

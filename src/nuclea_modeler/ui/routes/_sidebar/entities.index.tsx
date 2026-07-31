@@ -102,8 +102,7 @@ function EntitiesPage() {
   useEffect(() => {
     if (systemId) saveLastSystemId(systemId);
     navigate({
-      search: (prev) => ({
-        ...prev,
+      search: {
         q: q || undefined,
         system: systemId || undefined,
         entityType: entityType || undefined,
@@ -112,7 +111,7 @@ function EntitiesPage() {
         sortBy: sortBy !== "updated_at" ? sortBy : undefined,
         sortDir: sortDir !== "desc" ? sortDir : undefined,
         page: page !== 1 ? page : undefined,
-      }),
+      },
     });
   }, [q, systemId, entityType, criticality, flagId, sortBy, sortDir, page, navigate]);
 
