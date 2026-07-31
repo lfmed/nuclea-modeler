@@ -1,7 +1,8 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { Suspense, useMemo, useState } from "react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { QueryErrorResetBoundary, useQueryClient } from "@tanstack/react-query";
 import { ErrorBoundary } from "react-error-boundary";
+import { saveLastSystemId } from "@/lib/persist-search";
 
 import {
   useCreateRelationship,
@@ -38,6 +39,9 @@ import { FlagPicker } from "@/components/flags/flag-picker";
 
 export const Route = createFileRoute("/_sidebar/relationships")({
   component: RelationshipsPage,
+  validateSearch: (search: Record<string, unknown>) => ({
+    system: (search.system as string) || undefined,
+  }),
 });
 
 function RelationshipsPage() {
@@ -95,10 +99,24 @@ function Header() {
 
 function RelationshipsBody() {
   const { data: systems } = useListSystemsSuspense(selector());
-  const [systemId, setSystemId] = useState<string>(
-    systems[0]?.system_id || "",
-  );
+  const { system: systemFromUrl } = Route.useSearch();
+  const navigate = useNavigate();
+
+  // Inicializa systemId: URL → último salvo → primeiro da lista
+  const initialSystem = systemFromUrl || "";
+  const [systemId, setSystemId] = useState<string>(initialSystem);
   const [openDialog, setOpenDialog] = useState(false);
+
+  // Sincroniza estado na URL e sessionStorage
+  useEffect(() => {
+    if (systemId) saveLastSystemId(systemId);
+    navigate({
+      search: (prev) => ({
+        ...prev,
+        system: systemId || undefined,
+      }),
+    });
+  }, [systemId, navigate]);
 
   return (
     <div className="space-y-4">

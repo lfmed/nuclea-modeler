@@ -9,9 +9,10 @@
  * Consome `GET /indexes/page` via useListIndexesPaginatedSuspense.
  */
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { QueryErrorResetBoundary } from "@tanstack/react-query";
 import { ErrorBoundary } from "react-error-boundary";
+import { saveLastSystemId, coerceNumber } from "@/lib/persist-search";
 
 import {
   useListIndexesPaginatedSuspense,
@@ -39,6 +40,15 @@ import {
 
 export const Route = createFileRoute("/_sidebar/indexes/")({
   component: IndexesPage,
+  validateSearch: (search: Record<string, unknown>) => ({
+    q: (search.q as string) || undefined,
+    system: (search.system as string) || undefined,
+    indexType: (search.indexType as string) || undefined,
+    unique: (search.unique as string) || undefined,
+    sortBy: (search.sortBy as string) || "index_name",
+    sortDir: ((search.sortDir as string) || "asc") as "asc" | "desc",
+    page: coerceNumber(search.page as string) || 1,
+  }),
 });
 
 const PAGE_SIZE = 50;
@@ -54,13 +64,35 @@ const UNIQUE_OPTIONS = [
 ];
 
 function IndexesPage() {
-  const [q, setQ] = useState("");
-  const [systemId, setSystemId] = useState("");
-  const [indexType, setIndexType] = useState("");
-  const [unique, setUnique] = useState("");
-  const [sortBy, setSortBy] = useState("index_name");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
-  const [page, setPage] = useState(1);
+  // Lê os search params da URL (fonte primária de estado para persistência)
+  const search = Route.useSearch();
+  const navigate = useNavigate();
+
+  // Inicializa estado a partir da URL (search params)
+  const [q, setQ] = useState(search.q || "");
+  const [systemId, setSystemId] = useState(search.system || "");
+  const [indexType, setIndexType] = useState(search.indexType || "");
+  const [unique, setUnique] = useState(search.unique || "");
+  const [sortBy, setSortBy] = useState(search.sortBy);
+  const [sortDir, setSortDir] = useState(search.sortDir);
+  const [page, setPage] = useState(search.page);
+
+  // Sincroniza estado no URL e sessionStorage sempre que muda
+  useEffect(() => {
+    if (systemId) saveLastSystemId(systemId);
+    navigate({
+      search: (prev) => ({
+        ...prev,
+        q: q || undefined,
+        system: systemId || undefined,
+        indexType: indexType || undefined,
+        unique: unique || undefined,
+        sortBy: sortBy !== "index_name" ? sortBy : undefined,
+        sortDir: sortDir !== "asc" ? sortDir : undefined,
+        page: page !== 1 ? page : undefined,
+      }),
+    });
+  }, [q, systemId, indexType, unique, sortBy, sortDir, page, navigate]);
 
   const onSort = (col: string) => {
     if (sortBy === col) setSortDir((d) => (d === "asc" ? "desc" : "asc"));

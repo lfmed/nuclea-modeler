@@ -1,8 +1,13 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QueryErrorResetBoundary, useQueryClient } from "@tanstack/react-query";
 import { ErrorBoundary } from "react-error-boundary";
 import { toast } from "sonner";
+import {
+  getLastSystemId,
+  saveLastSystemId,
+  selectDefaultSystemId,
+} from "@/lib/persist-search";
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -173,13 +178,21 @@ function Header() {
 function DiagramBody() {
   const { data: systems } = useListSystemsSuspense(selector());
   const { system: systemFromUrl } = Route.useSearch();
-  // Se houver 'system' na query string, use-a. Caso contrário, use o primeiro sistema.
-  const initialSystem =
-    systemFromUrl && systems.some((s) => s.system_id === systemFromUrl)
-      ? systemFromUrl
-      : systems[0]?.system_id || "";
+  const navigate = useNavigate();
+
+  // Inicialização: usa URL (fonte primária) → último sistema salvo → primeiro da lista
+  const initialSystem = selectDefaultSystemId(systemFromUrl, systems);
   const [systemId, setSystemId] = useState(initialSystem);
   const [showNewSystem, setShowNewSystem] = useState(false);
+
+  // Sincroniza o sistema atual na URL e no sessionStorage sempre que muda
+  useEffect(() => {
+    if (systemId) {
+      saveLastSystemId(systemId);
+      // Atualiza a URL com merge (preserva outros search params)
+      navigate({ search: (prev) => ({ ...prev, system: systemId }) });
+    }
+  }, [systemId, navigate]);
 
   if (systems.length === 0) {
     return (

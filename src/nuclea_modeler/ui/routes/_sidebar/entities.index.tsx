@@ -15,10 +15,11 @@
  * só a tabela suspende — assim mudar um filtro não pisca a página inteira.
  */
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { QueryErrorResetBoundary, useQueryClient } from "@tanstack/react-query";
 import { ErrorBoundary } from "react-error-boundary";
 import { toast } from "sonner";
+import { saveLastSystemId, coerceNumber } from "@/lib/persist-search";
 
 import {
   useListEntitiesPaginatedSuspense,
@@ -53,6 +54,16 @@ import { FlagBatchBar, toastBatchFlagResult } from "@/components/flags/flag-batc
 
 export const Route = createFileRoute("/_sidebar/entities/")({
   component: EntitiesPage,
+  validateSearch: (search: Record<string, unknown>) => ({
+    q: (search.q as string) || undefined,
+    system: (search.system as string) || undefined,
+    entityType: (search.entityType as string) || undefined,
+    criticality: (search.criticality as string) || undefined,
+    flagId: (search.flagId as string) || undefined,
+    sortBy: (search.sortBy as string) || "updated_at",
+    sortDir: ((search.sortDir as string) || "desc") as "asc" | "desc",
+    page: coerceNumber(search.page as string) || 1,
+  }),
 });
 
 const PAGE_SIZE = 50;
@@ -71,16 +82,39 @@ const CRITICALITIES: { value: string; label: string }[] = [
 ];
 
 function EntitiesPage() {
-  // Estado dos filtros vive no topo (fora do Suspense) para não resetar quando
-  // a tabela suspende. Ao mudar qualquer filtro, voltamos para a página 1.
-  const [q, setQ] = useState("");
-  const [systemId, setSystemId] = useState("");
-  const [entityType, setEntityType] = useState("");
-  const [criticality, setCriticality] = useState("");
-  const [flagId, setFlagId] = useState("");
-  const [sortBy, setSortBy] = useState("updated_at");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
-  const [page, setPage] = useState(1);
+  // Lê os search params da URL (fonte primária de estado para persistência)
+  const search = Route.useSearch();
+  const navigate = useNavigate();
+
+  // Inicializa estado a partir da URL (search params)
+  // Nota: no bootstrap, não podemos validar contra a lista de systems (o hook suspende).
+  // Por isso, a sincronização com URL acontece no efeito abaixo.
+  const [q, setQ] = useState(search.q || "");
+  const [systemId, setSystemId] = useState(search.system || "");
+  const [entityType, setEntityType] = useState(search.entityType || "");
+  const [criticality, setCriticality] = useState(search.criticality || "");
+  const [flagId, setFlagId] = useState(search.flagId || "");
+  const [sortBy, setSortBy] = useState(search.sortBy);
+  const [sortDir, setSortDir] = useState(search.sortDir);
+  const [page, setPage] = useState(search.page);
+
+  // Sincroniza estado no URL e sessionStorage sempre que muda
+  useEffect(() => {
+    if (systemId) saveLastSystemId(systemId);
+    navigate({
+      search: (prev) => ({
+        ...prev,
+        q: q || undefined,
+        system: systemId || undefined,
+        entityType: entityType || undefined,
+        criticality: criticality || undefined,
+        flagId: flagId || undefined,
+        sortBy: sortBy !== "updated_at" ? sortBy : undefined,
+        sortDir: sortDir !== "desc" ? sortDir : undefined,
+        page: page !== 1 ? page : undefined,
+      }),
+    });
+  }, [q, systemId, entityType, criticality, flagId, sortBy, sortDir, page, navigate]);
 
   const onSort = (col: string) => {
     if (sortBy === col) {
