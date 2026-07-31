@@ -23,7 +23,7 @@ function NewEntityPage() {
   return (
     <div className="space-y-6 max-w-3xl">
       <Button variant="ghost" size="sm" asChild>
-        <Link to="/entities">
+        <Link to="/entities" search={{}}>
           <ArrowLeft className="mr-1 h-4 w-4" />
           Entidades
         </Link>
@@ -203,7 +203,7 @@ function EntityForm() {
 
       <div className="flex justify-end gap-2">
         <Button type="button" variant="outline" asChild>
-          <Link to="/entities">Cancelar</Link>
+          <Link to="/entities" search={{}}>Cancelar</Link>
         </Button>
         <Button type="submit" disabled={isPending || !systemId || !schemaName || !technicalName}>
           {isPending ? "Salvando..." : "Salvar entidade"}

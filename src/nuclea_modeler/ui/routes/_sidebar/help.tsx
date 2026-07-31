@@ -715,7 +715,7 @@ function Faq() {
       q: "Como crio um modelo do zero, sem extração?",
       a: (
         <>
-          Vá em <Link to="/entities" className="text-nuclea-primary underline">/entities</Link>{" "}
+          Vá em <Link to="/entities" search={{}} className="text-nuclea-primary underline">/entities</Link>{" "}
           → <strong>Nova entidade</strong>. Em seguida, cadastre os atributos e
           relacionamentos. O DER aparece automaticamente em{" "}
           <Link to="/diagram" search={{ system: undefined }} className="text-nuclea-primary underline">/diagram</Link>.
