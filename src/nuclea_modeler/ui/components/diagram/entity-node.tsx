@@ -262,14 +262,45 @@ export const EntityNode = memo(({ data, selected }: EntityNodeProps) => {
         </div>
       )}
 
+      {/*
+        Handles em ambos os lados (left + right) para suportar relacionamentos em
+        qualquer direção (LR, RL, TB, BT). Cada handle tem ID explícito + estável:
+        - "source-left" / "target-left": FK chega/sai pela esquerda
+        - "source-right" / "target-right": FK sai/chega pela direita
+
+        Quando temos handles em ambos os lados, o React Flow seleciona automaticamente
+        o mais próximo para uma conexão. Sem IDs, o RF ambiguamente conectava todas
+        as edges ao mesmo ponto, causando overlay em relacionamentos complexos e
+        perda visual em navegação.
+
+        Com handles ID'd, cada edge aponta para um handle específico (via
+        sourceHandle/targetHandle em relationshipToEdge). Isso garante que:
+        1. Linhas sempre tocam uma borda real do nó (não flutuam pro vazio).
+        2. A topologia sobrevive a pan/zoom/refetch (posições dos handles são relativas).
+        3. Navegação/filtro/layout não desconecta as arestas.
+      */}
       <Handle
-        type="target"
+        type="source"
         position={Position.Left}
+        id="source-left"
         className="!bg-nuclea-primary !w-2 !h-2 !border-2 !border-background"
       />
       <Handle
         type="source"
         position={Position.Right}
+        id="source-right"
+        className="!bg-nuclea-primary !w-2 !h-2 !border-2 !border-background"
+      />
+      <Handle
+        type="target"
+        position={Position.Left}
+        id="target-left"
+        className="!bg-nuclea-primary !w-2 !h-2 !border-2 !border-background"
+      />
+      <Handle
+        type="target"
+        position={Position.Right}
+        id="target-right"
         className="!bg-nuclea-primary !w-2 !h-2 !border-2 !border-background"
       />
     </div>
