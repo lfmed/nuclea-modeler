@@ -53,7 +53,7 @@ documentado para quem mantém depois.** Cumprir em todo PR:
   ambiguidade — quando posições relativas mudavam (pan/zoom/refetch), as arestas
   "flutuavam" e apontavam pro vazio. FIX: renderize 4 handles (source-left, source-right,
   target-left, target-right) com IDs explícitos; em relationshipToEdge(), especifique
-  sourceHandle="source-right" e targetHandle="target-right". Isso garante que as linhas
+  sourceHandle="source-right" e targetHandle="target-left". Isso garante que as linhas
   sempre tocam uma borda real da tabela, independente da navegação. Veja entity-node.tsx
   linhas 265+ e relationshipToEdge() no diagram.tsx ~2040-2075.
 - **`ui/lib/api.ts` é ESCRITO À MÃO** — não há codegen no deploy (cliente sem npm/apx).

@@ -2042,7 +2042,7 @@ function CreateRelationshipDialog({
  *
  * FIX (v1.0027): Arestas não se perdiam na navegação.
  * - Agora usa sourceHandle/targetHandle explícitos apontando para handles ID'd.
- * - Source sempre sai por "source-right"; target chega por "target-right".
+ * - Source sai por "source-right"; target chega por "target-left" (Esq→Dir).
  * - Isso garante que a linha sempre toca uma borda real, não flutua pro vazio
  *   mesmo durante navegação, filtro, refetch ou mudança de layout.
  *
@@ -2062,9 +2062,13 @@ function relationshipToEdge(r: DiagramRelationship): Edge {
     id: r.relationship_id,
     source: r.source_entity_id,
     target: r.target_entity_id,
-    // Handles explícitos: garantem que a aresta sempre conecta nos pontos certos
+    // Handles explícitos: no layout padrão Esq→Dir a aresta SAI pela direita da
+    // origem e ENTRA pela esquerda do destino — assim a linha não precisa
+    // contornar o nó destino (o que causava a "seta apontando pro vazio à
+    // direita" do bug reportado). Os 4 handles existem nos dois lados, então
+    // isto continua válido em qualquer posição relativa (o smoothstep curva).
     sourceHandle: "source-right",
-    targetHandle: "target-right",
+    targetHandle: "target-left",
     label,
     labelStyle: { fontSize: 10, fill: "#6b7280" },
     labelBgPadding: [4, 2],

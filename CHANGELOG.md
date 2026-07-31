@@ -6,6 +6,14 @@ Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 ## [Unreleased]
 
 ### Fixed 🐛
+- **Linhas de relacionamento se perdiam na navegação do DER (v1.0027)** — as arestas
+  (FK) ficavam desconectadas das tabelas, com setas apontando pro vazio, ao dar
+  pan/zoom/filtrar. Causa: o nó do DER tinha handles do React Flow **sem id** (um
+  `target` à esquerda, um `source` à direita); sem id, o RF não ancorava a linha de
+  forma estável quando as posições relativas mudavam. Fix: 4 handles com id
+  (`source-left/right`, `target-left/right`) no `EntityNode` e edges com
+  `sourceHandle="source-right"` + `targetHandle="target-left"` (Esq→Dir, sem contornar
+  o nó). As linhas passam a tocar sempre a borda real da tabela.
 - **Todas as colunas apareciam como PK após aprovação (v1.0026)** — bug sistêmico de
   coerção de booleano. A Databricks SQL Statement Execution API devolve as células do
   `data_array` como **string**, então colunas BOOLEAN voltam como `"true"`/`"false"`.
