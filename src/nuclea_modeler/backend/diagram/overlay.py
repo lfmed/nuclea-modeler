@@ -75,7 +75,8 @@ def apply_session_overlay(
 def _apply_change_to_entity(ent: DiagramEntity, entry: dict[str, Any]) -> None:
     """Mescla field_changes do entry no DiagramEntity in-place."""
     ent_updates, attr_changes, attr_adds, attr_removes = field_changes_by_target(entry)
-    for fld in ("logical_name", "domain", "criticality", "entity_type"):
+    # Propaga mudanças de entidade, incluindo campos de descrição
+    for fld in ("logical_name", "domain", "criticality", "entity_type", "description_md", "native_comment"):
         if fld in ent_updates and ent_updates[fld] is not None:
             setattr(ent, fld, ent_updates[fld])
 
@@ -100,6 +101,12 @@ def _apply_change_to_entity(ent: DiagramEntity, entry: dict[str, Any]) -> None:
                     target.ordinal_position = int(after) if after is not None else None
                 except (TypeError, ValueError):
                     pass
+            elif sub == "description_md":
+                target.description_md = after
+            elif sub == "native_comment":
+                target.native_comment = after
+            elif sub == "business_rule":
+                target.business_rule = after
         target.pending_op = "change"
 
     for raw in attr_adds:
@@ -115,6 +122,9 @@ def _apply_change_to_entity(ent: DiagramEntity, entry: dict[str, Any]) -> None:
                 is_primary_key=bool(raw.get("is_primary_key", False)),
                 is_nullable=raw.get("is_nullable"),
                 ordinal_position=raw.get("ordinal_position"),
+                description_md=raw.get("description_md"),
+                native_comment=raw.get("native_comment"),
+                business_rule=raw.get("business_rule"),
                 has_lgpd_flag=False,
                 pending_op="add",
             )
@@ -155,6 +165,9 @@ def _build_virtual_entity(
                 is_primary_key=bool(a.get("is_primary_key", False)),
                 is_nullable=a.get("is_nullable"),
                 ordinal_position=a.get("ordinal_position", idx + 1),
+                description_md=a.get("description_md"),
+                native_comment=a.get("native_comment"),
+                business_rule=a.get("business_rule"),
                 has_lgpd_flag=False,
                 pending_op="add",
             )

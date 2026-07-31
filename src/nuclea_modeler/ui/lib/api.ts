@@ -2686,6 +2686,10 @@ export interface DiagramAttribute {
   is_primary_key: boolean;
   is_nullable?: boolean | null;
   ordinal_position?: number | null;
+  // Descrições (v1.0029): carregadas do catálogo pro DER (tooltip no hover).
+  description_md?: string | null;
+  native_comment?: string | null;
+  business_rule?: string | null;
   has_lgpd_flag: boolean;
   is_indexed?: boolean;
   // Editorial session — atributo com mudança pendente
@@ -2709,6 +2713,9 @@ export interface DiagramEntity {
   entity_type: "TABLE" | "VIEW" | "MATERIALIZED_VIEW" | "EXTERNAL";
   domain?: string | null;
   criticality?: string | null;
+  // Descrições (v1.0029): carregadas do catálogo pro DER (tooltip no hover).
+  description_md?: string | null;
+  native_comment?: string | null;
   attributes: DiagramAttribute[];
   has_lgpd_flag: boolean;
   // Storage badges (F5): contagem de índices + estratégia de partição

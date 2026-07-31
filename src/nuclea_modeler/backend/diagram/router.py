@@ -78,7 +78,7 @@ def _build_diagram(
         sql,
         f"""
         SELECT entity_id, schema_name, technical_name, logical_name,
-               entity_type, domain, criticality
+               entity_type, domain, criticality, description_md, native_comment
         FROM {s.fq_table('entities')}
         WHERE system_id = :system_id
         ORDER BY schema_name, technical_name
@@ -92,6 +92,7 @@ def _build_diagram(
             entity_id=eid, system_id=system_id,
             schema_name=r[1], technical_name=r[2], logical_name=r[3],
             entity_type=r[4] or "TABLE", domain=r[5], criticality=r[6],
+            description_md=r[7], native_comment=r[8],
         )
 
     if entities_by_id:
@@ -103,7 +104,8 @@ def _build_diagram(
             sql,
             f"""
             SELECT attribute_id, entity_id, technical_name, logical_name,
-                   native_data_type, is_primary_key, is_nullable, ordinal_position
+                   native_data_type, is_primary_key, is_nullable, ordinal_position,
+                   description_md, native_comment, business_rule
             FROM {s.fq_table('attributes')}
             WHERE entity_id IN ({ids_csv})
             ORDER BY entity_id, COALESCE(ordinal_position, 999999), technical_name
@@ -138,6 +140,9 @@ def _build_diagram(
                 is_primary_key=delta.as_bool(r[5]),
                 is_nullable=delta.as_bool(r[6]) if r[6] is not None else None,
                 ordinal_position=int(r[7]) if r[7] is not None else None,
+                description_md=r[8],
+                native_comment=r[9],
+                business_rule=r[10],
                 has_lgpd_flag=attr_id in lgpd_attr_ids,
             )
             ent.attributes.append(attr)

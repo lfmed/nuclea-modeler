@@ -6,6 +6,14 @@ Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 ## [Unreleased]
 
 ### Added
+- **Descrições de tabela/coluna no DER (v1.0029)** — as descrições (`description_md`),
+  comentários nativos (`native_comment`) e regra de negócio (`business_rule`) já
+  existiam no catálogo mas **não chegavam ao diagrama**. Agora o endpoint do DER carrega
+  esses campos (entities e attributes) e o `EntityNode` os exibe via **tooltip no hover**
+  (ícone info no header da tabela; hover na coluna) — canvas continua limpo. Base para
+  editar descrição por coluna no modal e exportar no CSV (próximos incrementos).
+  Mapeamento posicional coberto por teste (`test_diagram_router_descriptions.py`) para
+  não repetir o bug de índice do v1.0025.
 - **Estado das telas persiste na navegação (v1.0028)** — antes, ao sair do DER (ou
   das listagens) e voltar, o modelo/filtros zeravam (tudo era `useState` local). Agora
   o sistema selecionado e os filtros/ordenação/página vivem na **URL** (search params
