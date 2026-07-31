@@ -48,6 +48,14 @@ documentado para quem mantém depois.** Cumprir em todo PR:
   BOOLEAN voltam como `"true"`/`"false"`. **NUNCA** use `bool(r[n])` direto (em Python
   `bool("false")` é `True`!). Use `delta.as_bool(r[n])` para todo campo booleano lido
   de resultado de query. (Causou o bug "todas as colunas viram PK" — v1.0026.)
+- **React Flow v12 Handles com IDs explícitos (v1.0027).** O DER usa `@xyflow/react`
+  v12.10.2 + `@dagrejs/dagre`. Antes, o EntityNode tinha handles SEM id, causando
+  ambiguidade — quando posições relativas mudavam (pan/zoom/refetch), as arestas
+  "flutuavam" e apontavam pro vazio. FIX: renderize 4 handles (source-left, source-right,
+  target-left, target-right) com IDs explícitos; em relationshipToEdge(), especifique
+  sourceHandle="source-right" e targetHandle="target-right". Isso garante que as linhas
+  sempre tocam uma borda real da tabela, independente da navegação. Veja entity-node.tsx
+  linhas 265+ e relationshipToEdge() no diagram.tsx ~2040-2075.
 - **`ui/lib/api.ts` é ESCRITO À MÃO** — não há codegen no deploy (cliente sem npm/apx).
   Rota nova no backend ⇒ escreva o hook à mão em `api.ts` (padrão `use<Op>` /
   `use<Op>Suspense` / `selector()`). Ignore a linha do boilerplate que diz "auto-regenera".

@@ -2037,6 +2037,21 @@ function CreateRelationshipDialog({
   );
 }
 
+/**
+ * Converte um relacionamento do backend (FK, constraints) em uma edge do React Flow.
+ *
+ * FIX (v1.0027): Arestas não se perdiam na navegação.
+ * - Agora usa sourceHandle/targetHandle explícitos apontando para handles ID'd.
+ * - Source sempre sai por "source-right"; target chega por "target-right".
+ * - Isso garante que a linha sempre toca uma borda real, não flutua pro vazio
+ *   mesmo durante navegação, filtro, refetch ou mudança de layout.
+ *
+ * Por que funciona:
+ * - Sem handles ID'd, o RF ambiguamente selecionava o handle mais próximo,
+ *   causando overlay quando posições mudavam.
+ * - Com handles explícitos nos dois lados, sabemos exatamente qual usar.
+ * - smoothstep curva a linha elegantemente entre os pontos de entrada/saída.
+ */
 function relationshipToEdge(r: DiagramRelationship): Edge {
   const label = r.rel_type
     ? r.rel_type
@@ -2047,6 +2062,9 @@ function relationshipToEdge(r: DiagramRelationship): Edge {
     id: r.relationship_id,
     source: r.source_entity_id,
     target: r.target_entity_id,
+    // Handles explícitos: garantem que a aresta sempre conecta nos pontos certos
+    sourceHandle: "source-right",
+    targetHandle: "target-right",
     label,
     labelStyle: { fontSize: 10, fill: "#6b7280" },
     labelBgPadding: [4, 2],
