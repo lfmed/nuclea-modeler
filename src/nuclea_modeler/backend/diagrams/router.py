@@ -47,7 +47,7 @@ def _count_members(sql, s, diagram_id: str) -> int:
 def _row_to_out(r: list, entity_count: int = 0) -> DiagramOut:
     return DiagramOut(
         diagram_id=r[0], system_id=r[1], schema_id=r[2], diagram_name=r[3],
-        description=r[4], is_default=bool(r[5]),
+        description=r[4], is_default=delta.as_bool(r[5]),
         created_at=r[6], created_by=r[7], updated_at=r[8], updated_by=r[9],
         entity_count=entity_count,
     )
@@ -84,7 +84,7 @@ def list_diagrams(
     return [
         DiagramListOut(
             diagram_id=r[0], system_id=r[1], schema_id=r[2], diagram_name=r[3],
-            is_default=bool(r[4]), entity_count=int(r[5] or 0),
+            is_default=delta.as_bool(r[4]), entity_count=int(r[5] or 0),
         )
         for r in rows
     ]

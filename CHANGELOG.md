@@ -6,6 +6,16 @@ Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 ## [Unreleased]
 
 ### Fixed 🐛
+- **Todas as colunas apareciam como PK após aprovação (v1.0026)** — bug sistêmico de
+  coerção de booleano. A Databricks SQL Statement Execution API devolve as células do
+  `data_array` como **string**, então colunas BOOLEAN voltam como `"true"`/`"false"`.
+  O código fazia `bool(r[n])` direto e, como `bool("false")` é `True` em Python
+  (string não-vazia é truthy), **todo booleano lido de query virava `True`** — daí
+  todas as colunas viravam PK no DER (só após aprovação, quando o dado passa a vir da
+  query e não do diff JSON). Corrigido com o helper `delta.as_bool()` aplicado a
+  **todos** os campos booleanos lidos de resultado de query (is_primary_key,
+  is_nullable, is_unique, is_active, is_default, is_shared, flags, etc.). Teste de
+  regressão `test_delta_as_bool.py` fixa `as_bool("false") is False`.
 - **Tela de Relacionamentos dava "Erro ao carregar" (500) (v1.0025)** — regressão da
   v1.0023: ao adicionar `relationship_name` em `_REL_COLS`, os índices posicionais de
   `list_relationships` não foram atualizados, fazendo `system_name`/`updated_at` lerem

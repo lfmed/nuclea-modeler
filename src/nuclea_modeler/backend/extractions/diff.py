@@ -145,7 +145,7 @@ def compute_diff_against_catalog(
         attrs_by_entity.setdefault(eid, []).append({
             "technical_name": r[1], "native_data_type": r[2],
             "is_nullable": r[3], "default_value": r[4],
-            "is_primary_key": bool(r[5]),
+            "is_primary_key": delta.as_bool(r[5]),
             "native_comment": r[6],
             "ordinal_position": r[7],
         })

@@ -218,8 +218,8 @@ def validate_entity_indexes(
     attributes = [
         {
             "technical_name": r[0],
-            "is_primary_key": bool(r[1]),
-            "is_nullable": bool(r[2]) if r[2] is not None else None,
+            "is_primary_key": delta.as_bool(r[1]),
+            "is_nullable": delta.as_bool(r[2]) if r[2] is not None else None,
         }
         for r in attr_rows
     ]

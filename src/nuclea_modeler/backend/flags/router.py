@@ -63,9 +63,9 @@ def _flag_row_to_out(r: list) -> FlagOut:
         display_name=r[3],
         description=r[4],
         color_hex=r[5],
-        requires_justification=bool(r[6]),
-        is_system=bool(r[7]),
-        is_active=bool(r[8]),
+        requires_justification=delta.as_bool(r[6]),
+        is_system=delta.as_bool(r[7]),
+        is_active=delta.as_bool(r[8]),
         uc_tag_key=r[9],
     )
 
@@ -202,7 +202,7 @@ def _entity_flag_row_to_out(r: list) -> EntityFlagOut:
         applied_at=r[4],
         applied_by=r[5],
         applied_in_version=r[6],
-        is_propagated=bool(r[7]),
+        is_propagated=delta.as_bool(r[7]),
         flag=flag,
     )
 

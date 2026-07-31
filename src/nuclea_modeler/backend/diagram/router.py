@@ -135,8 +135,8 @@ def _build_diagram(
                 technical_name=r[2],
                 logical_name=r[3],
                 native_data_type=r[4],
-                is_primary_key=bool(r[5]),
-                is_nullable=bool(r[6]) if r[6] is not None else None,
+                is_primary_key=delta.as_bool(r[5]),
+                is_nullable=delta.as_bool(r[6]) if r[6] is not None else None,
                 ordinal_position=int(r[7]) if r[7] is not None else None,
                 has_lgpd_flag=attr_id in lgpd_attr_ids,
             )

@@ -31,6 +31,31 @@ def new_id(prefix: str = "") -> str:
     return f"{prefix}{uid}" if prefix else uid
 
 
+def as_bool(value: Any) -> bool:
+    """Coage um valor booleano vindo do `data_array` do SQL para `bool`.
+
+    GOTCHA CRÍTICO: a Databricks SQL Statement Execution API devolve TODAS as
+    células do `data_array` como **string** — inclusive colunas BOOLEAN, que
+    voltam como `"true"`/`"false"`. Fazer `bool(r[n])` direto está ERRADO porque
+    em Python `bool("false")` é `True` (qualquer string não-vazia é truthy).
+    Isso fazia, por exemplo, TODAS as colunas aparecerem como PK no DER
+    (`is_primary_key` = `"false"` → `True`). Use SEMPRE este helper para colunas
+    booleanas lidas de resultado de query.
+
+    Aceita: bool nativo, string ("true"/"false"/"1"/"0"/"t"/"f"/"yes"/"no",
+    case-insensitive), int (0/1) e None (→ False).
+    """
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        return value.strip().lower() in ("true", "t", "1", "yes", "y")
+    return bool(value)
+
+
 def _format_ts(value: datetime) -> str:
     """Format a datetime as a Spark-friendly ISO-8601 timestamp literal body.
 
