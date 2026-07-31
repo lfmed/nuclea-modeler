@@ -108,7 +108,7 @@ def test_attribute_row_to_diagram_attribute_maps_positions():
     r = _attribute_row()
 
     # Simula a chamada em _build_diagram (linhas 135-147 do router.py)
-    attr_id, entity_id = r[0], r[1]
+    attr_id = r[0]
 
     attr = DiagramAttribute(
         attribute_id=attr_id,
