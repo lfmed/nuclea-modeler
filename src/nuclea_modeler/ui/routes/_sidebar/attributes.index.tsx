@@ -42,14 +42,24 @@ import {
 
 export const Route = createFileRoute("/_sidebar/attributes/")({
   component: AttributesPage,
-  validateSearch: (search: Record<string, unknown>) => ({
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): {
+    q?: string;
+    system?: string;
+    pk?: string;
+    flagId?: string;
+    sortBy?: string;
+    sortDir?: "asc" | "desc";
+    page?: number;
+  } => ({
     q: (search.q as string) || undefined,
     system: (search.system as string) || undefined,
     pk: (search.pk as string) || undefined,
     flagId: (search.flagId as string) || undefined,
-    sortBy: (search.sortBy as string) || "technical_name",
-    sortDir: ((search.sortDir as string) || "asc") as "asc" | "desc",
-    page: coerceNumber(search.page as string) || 1,
+    sortBy: (search.sortBy as string) || undefined,
+    sortDir: (search.sortDir as string as "asc" | "desc") || undefined,
+    page: coerceNumber(search.page as string) || undefined,
   }),
 });
 
@@ -70,14 +80,15 @@ function AttributesPage() {
   const [systemId, setSystemId] = useState(search.system || "");
   const [pk, setPk] = useState(search.pk || "");
   const [flagId, setFlagId] = useState(search.flagId || "");
-  const [sortBy, setSortBy] = useState(search.sortBy);
-  const [sortDir, setSortDir] = useState(search.sortDir);
-  const [page, setPage] = useState(search.page);
+  const [sortBy, setSortBy] = useState(search.sortBy || "technical_name");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">(search.sortDir || "asc");
+  const [page, setPage] = useState(search.page || 1);
 
-  // Sincroniza estado no URL e sessionStorage sempre que muda
+  // Sincroniza estado no URL e sessionStorage sempre que muda (to: "." fixa a rota).
   useEffect(() => {
     if (systemId) saveLastSystemId(systemId);
     navigate({
+      to: ".",
       search: {
         q: q || undefined,
         system: systemId || undefined,

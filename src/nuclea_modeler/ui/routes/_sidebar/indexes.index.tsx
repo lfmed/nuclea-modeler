@@ -40,14 +40,24 @@ import {
 
 export const Route = createFileRoute("/_sidebar/indexes/")({
   component: IndexesPage,
-  validateSearch: (search: Record<string, unknown>) => ({
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): {
+    q?: string;
+    system?: string;
+    indexType?: string;
+    unique?: string;
+    sortBy?: string;
+    sortDir?: "asc" | "desc";
+    page?: number;
+  } => ({
     q: (search.q as string) || undefined,
     system: (search.system as string) || undefined,
     indexType: (search.indexType as string) || undefined,
     unique: (search.unique as string) || undefined,
-    sortBy: (search.sortBy as string) || "index_name",
-    sortDir: ((search.sortDir as string) || "asc") as "asc" | "desc",
-    page: coerceNumber(search.page as string) || 1,
+    sortBy: (search.sortBy as string) || undefined,
+    sortDir: (search.sortDir as string as "asc" | "desc") || undefined,
+    page: coerceNumber(search.page as string) || undefined,
   }),
 });
 
@@ -73,14 +83,15 @@ function IndexesPage() {
   const [systemId, setSystemId] = useState(search.system || "");
   const [indexType, setIndexType] = useState(search.indexType || "");
   const [unique, setUnique] = useState(search.unique || "");
-  const [sortBy, setSortBy] = useState(search.sortBy);
-  const [sortDir, setSortDir] = useState(search.sortDir);
-  const [page, setPage] = useState(search.page);
+  const [sortBy, setSortBy] = useState(search.sortBy || "index_name");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">(search.sortDir || "asc");
+  const [page, setPage] = useState(search.page || 1);
 
-  // Sincroniza estado no URL e sessionStorage sempre que muda
+  // Sincroniza estado no URL e sessionStorage sempre que muda (to: "." fixa a rota).
   useEffect(() => {
     if (systemId) saveLastSystemId(systemId);
     navigate({
+      to: ".",
       search: {
         q: q || undefined,
         system: systemId || undefined,

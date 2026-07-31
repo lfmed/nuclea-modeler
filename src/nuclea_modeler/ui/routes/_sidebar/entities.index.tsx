@@ -54,15 +54,29 @@ import { FlagBatchBar, toastBatchFlagResult } from "@/components/flags/flag-batc
 
 export const Route = createFileRoute("/_sidebar/entities/")({
   component: EntitiesPage,
-  validateSearch: (search: Record<string, unknown>) => ({
+  // Todos os campos OPCIONAIS (| undefined) para que Links cross-route
+  // (`<Link to="/entities" search={{}}>`) continuem válidos sem forçar todos os
+  // params. Os defaults (updated_at/desc/1) são aplicados no useState, não aqui.
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): {
+    q?: string;
+    system?: string;
+    entityType?: string;
+    criticality?: string;
+    flagId?: string;
+    sortBy?: string;
+    sortDir?: "asc" | "desc";
+    page?: number;
+  } => ({
     q: (search.q as string) || undefined,
     system: (search.system as string) || undefined,
     entityType: (search.entityType as string) || undefined,
     criticality: (search.criticality as string) || undefined,
     flagId: (search.flagId as string) || undefined,
-    sortBy: (search.sortBy as string) || "updated_at",
-    sortDir: ((search.sortDir as string) || "desc") as "asc" | "desc",
-    page: coerceNumber(search.page as string) || 1,
+    sortBy: (search.sortBy as string) || undefined,
+    sortDir: (search.sortDir as string as "asc" | "desc") || undefined,
+    page: coerceNumber(search.page as string) || undefined,
   }),
 });
 
@@ -94,14 +108,17 @@ function EntitiesPage() {
   const [entityType, setEntityType] = useState(search.entityType || "");
   const [criticality, setCriticality] = useState(search.criticality || "");
   const [flagId, setFlagId] = useState(search.flagId || "");
-  const [sortBy, setSortBy] = useState(search.sortBy);
-  const [sortDir, setSortDir] = useState(search.sortDir);
-  const [page, setPage] = useState(search.page);
+  const [sortBy, setSortBy] = useState(search.sortBy || "updated_at");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">(search.sortDir || "desc");
+  const [page, setPage] = useState(search.page || 1);
 
-  // Sincroniza estado no URL e sessionStorage sempre que muda
+  // Sincroniza estado no URL e sessionStorage sempre que muda.
+  // `to: "."` fixa a rota atual para o TanStack inferir o tipo do search
+  // (sem `to`, o updater não casa com o tipo e o tsc reprova).
   useEffect(() => {
     if (systemId) saveLastSystemId(systemId);
     navigate({
+      to: ".",
       search: {
         q: q || undefined,
         system: systemId || undefined,

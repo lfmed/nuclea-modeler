@@ -188,8 +188,9 @@ function DiagramBody() {
   useEffect(() => {
     if (systemId) {
       saveLastSystemId(systemId);
-      // Atualiza a URL (espelha o novo sistema no search param)
-      navigate({ search: { system: systemId } });
+      // Atualiza a URL (espelha o novo sistema no search param).
+      // `to: "."` fixa a rota atual p/ o TanStack inferir o tipo do search.
+      navigate({ to: ".", search: { system: systemId } });
     }
   }, [systemId, navigate]);
 
