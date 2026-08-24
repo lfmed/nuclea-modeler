@@ -105,6 +105,14 @@ def default_opts() -> DDLExportRequest:
         ("text", "TSQL", "NVARCHAR(MAX)"),
         ("text", "PLSQL", "CLOB"),
         ("date", "PLSQL", "DATE"),
+        # DB2 (v1.0034)
+        ("varchar(120)", "DB2", "VARCHAR(120)"),
+        ("int", "DB2", "INTEGER"),
+        ("bigint", "DB2", "BIGINT"),
+        ("decimal(18,4)", "DB2", "DECIMAL(18,4)"),
+        ("text", "DB2", "CLOB"),
+        ("timestamp", "DB2", "TIMESTAMP"),
+        ("boolean", "DB2", "BOOLEAN"),
     ],
 )
 def test_map_type(native, dialect, expected_substr):
@@ -125,7 +133,7 @@ def test_map_type_none_defaults_to_varchar():
 
 @pytest.mark.parametrize(
     "dialect",
-    ["ANSI", "TSQL", "PLSQL", "POSTGRES", "MYSQL", "SPARKSQL"],
+    ["ANSI", "TSQL", "PLSQL", "POSTGRES", "MYSQL", "SPARKSQL", "DB2"],
 )
 def test_generator_emits_create_table(dialect, cliente_entity, cliente_attrs, default_opts):
     default_opts.dialect = dialect
@@ -137,7 +145,7 @@ def test_generator_emits_create_table(dialect, cliente_entity, cliente_attrs, de
 
 
 @pytest.mark.parametrize(
-    "dialect", ["ANSI", "TSQL", "PLSQL", "POSTGRES", "MYSQL", "SPARKSQL"]
+    "dialect", ["ANSI", "TSQL", "PLSQL", "POSTGRES", "MYSQL", "SPARKSQL", "DB2"]
 )
 def test_generator_renders_primary_key(dialect, cliente_entity, cliente_attrs, default_opts):
     default_opts.dialect = dialect
@@ -147,7 +155,7 @@ def test_generator_renders_primary_key(dialect, cliente_entity, cliente_attrs, d
 
 
 @pytest.mark.parametrize(
-    "dialect", ["ANSI", "TSQL", "PLSQL", "POSTGRES", "MYSQL", "SPARKSQL"]
+    "dialect", ["ANSI", "TSQL", "PLSQL", "POSTGRES", "MYSQL", "SPARKSQL", "DB2"]
 )
 def test_generator_marks_not_null_for_pk(dialect, cliente_entity, cliente_attrs, default_opts):
     default_opts.dialect = dialect
@@ -177,6 +185,18 @@ def test_postgres_emits_comment_on(cliente_entity, cliente_attrs, default_opts):
     default_opts.dialect = "POSTGRES"
     ddl = GENERATORS["POSTGRES"](cliente_entity, cliente_attrs, default_opts)
     assert "COMMENT ON TABLE comum.cliente" in ddl
+
+
+def test_db2_types_and_comment_on(cliente_entity, cliente_attrs, default_opts):
+    """DB2 (v1.0034): tipos nativos + COMMENT ON TABLE/COLUMN."""
+    default_opts.dialect = "DB2"
+    ddl = GENERATORS["DB2"](cliente_entity, cliente_attrs, default_opts)
+    assert "CREATE TABLE comum.cliente" in ddl
+    assert "BIGINT" in ddl                 # id_cliente
+    assert "VARCHAR(120)" in ddl           # nome
+    assert "DECIMAL(18,4)" in ddl          # valor_credito
+    assert "COMMENT ON TABLE comum.cliente" in ddl
+    assert "COMMENT ON COLUMN comum.cliente.id_cliente" in ddl
 
 
 def test_mysql_inline_table_comment(cliente_entity, cliente_attrs, default_opts):

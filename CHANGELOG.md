@@ -5,6 +5,24 @@ Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+### Added
+- **Suporte ao dialeto DB2 (IBM Db2 / Db2 for i) em todo o app (v1.0034)** — o DB2
+  passa a ser cidadão de 1ª classe onde faz sentido:
+  - **Import DDL**: opção "DB2" no seletor de dialeto + mapeamento sqlglot
+    (`"DB2": "db2"`) + **auto-detecção** por conteúdo (DECFLOAT, VARGRAPHIC/GRAPHIC/
+    DBCLOB, SYSIBM/SYSCAT, NEXTVAL FOR). (`IDENTITY` de propósito NÃO é marcador —
+    colide com T-SQL.)
+  - **Export DDL**: novo gerador `gen_db2` (tipos DB2, `COMMENT ON TABLE/COLUMN`,
+    `CREATE [UNIQUE] INDEX`) + entrada no registro/labels; o seletor do front é
+    dinâmico (via `/ddl/dialects`), então DB2 aparece automaticamente.
+  - **Tipos por tecnologia**: catálogo DB2 no TypePicker (`VARCHAR, CHAR, CLOB,
+    INTEGER, BIGINT, SMALLINT, DECIMAL, DECFLOAT, DATE, TIME, TIMESTAMP, GRAPHIC,
+    VARGRAPHIC, BLOB, XML`…) + tipos de índice e estratégias de partição DB2.
+  - **Tecnologia do sistema**: "DB2" no wizard de novo sistema (opções de tech e
+    de dialeto de import).
+  - Testes: `map_type`/geradores cobrem DB2 (`test_ddl_generators.py`) e a
+    auto-detecção (`test_dialect_detection_db2.py`).
+
 ### Changed
 - **"Sistema atual" compartilhado entre as telas de modelagem (v1.0033)** — ao
   escolher um sistema em qualquer tela (DER, Entidades, Atributos, Índices,

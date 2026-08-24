@@ -334,6 +334,7 @@ function DDLTab() {
                 <option value="POSTGRES">PostgreSQL</option>
                 <option value="MYSQL">MySQL / MariaDB</option>
                 <option value="SPARKSQL">SparkSQL / Delta</option>
+                <option value="DB2">DB2 (IBM Db2 / Db2 for i)</option>
               </select>
             </Field>
           </div>

@@ -889,6 +889,16 @@ def _detect_dialect_from_content(ddl_text: str) -> str:
        re.search(r'\bCREATE\s+OR\s+REPLACE\s+VIEW\b', text_upper):
         return "oracle"
 
+    # DB2 (IBM Db2 / Db2 for i): tipos e catálogo EXCLUSIVOS — DECFLOAT,
+    # VARGRAPHIC/GRAPHIC/DBCLOB, SYSIBM/SYSCAT, NEXTVAL FOR. Nota: NÃO usamos
+    # "GENERATED … AS IDENTITY" aqui porque a palavra IDENTITY também aparece no
+    # T-SQL (checado acima) e venceria a classificação — ficaríamos com o dialeto
+    # errado. Os marcadores abaixo não colidem com outros dialetos.
+    if re.search(r'\b(?:DECFLOAT|VARGRAPHIC|DBCLOB|GRAPHIC)\b', text_upper) or \
+       re.search(r'\bSYS(?:IBM|CAT)\.', text_upper) or \
+       re.search(r'\bNEXTVAL\s+FOR\b', text_upper):
+        return "db2"
+
     # Sem match — retorna None (caller mantém o dialeto informado)
     return None
 
@@ -936,6 +946,7 @@ def run_ddl_import(
     dialect_map = {
         "ANSI": None, "TSQL": "tsql", "PLSQL": "oracle",
         "POSTGRES": "postgres", "MYSQL": "mysql", "SPARKSQL": "spark",
+        "DB2": "db2",
     }
     sg_dialect = dialect_map.get(effective_dialect.upper(), dialect_l)
 
