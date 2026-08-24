@@ -233,7 +233,8 @@ function AttributesTable({
   const rows = data.items;
 
   const exportCsv = () => {
-    const headers = ["Atributo", "Nome lógico", "Entidade", "Schema", "Sistema", "Tipo", "PK", "Nulo", "Flags"];
+    // Descrição + Regra de negócio incluídas no export (v1.0030).
+    const headers = ["Atributo", "Nome lógico", "Entidade", "Schema", "Sistema", "Tipo", "PK", "Nulo", "Flags", "Descrição", "Regra de negócio"];
     const csv = rows.map((a) => [
       a.technical_name,
       a.logical_name || "",
@@ -244,6 +245,8 @@ function AttributesTable({
       a.is_primary_key ? "sim" : "",
       a.is_nullable === false ? "NOT NULL" : "",
       (a.flags || []).map((f) => f.display_name).join(" | "),
+      a.description_md || "",
+      a.business_rule || "",
     ]);
     downloadCsv("atributos.csv", headers, csv);
   };

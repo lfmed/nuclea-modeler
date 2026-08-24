@@ -232,7 +232,8 @@ function IndexesTable({
   const rows = data.items;
 
   const exportCsv = () => {
-    const headers = ["Índice", "Tipo", "UNIQUE", "Colunas", "Entidade", "Schema", "Sistema", "Origem"];
+    // Descrição incluída no export (v1.0030).
+    const headers = ["Índice", "Tipo", "UNIQUE", "Colunas", "Entidade", "Schema", "Sistema", "Origem", "Descrição"];
     const csv = rows.map((ix) => [
       ix.index_name,
       ix.index_type,
@@ -242,6 +243,7 @@ function IndexesTable({
       ix.schema_name || "",
       ix.system_name || ix.system_id || "",
       ix.origin || "",
+      ix.description_md || "",
     ]);
     downloadCsv("indices.csv", headers, csv);
   };

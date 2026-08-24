@@ -90,6 +90,97 @@ def _attr_row_to_out(r: list) -> AttributeOut:
     )
 
 
+# Campos de attribute que o overlay de sessão espelha do payload staged sobre a
+# linha do catálogo. Espelha o allowlist de apply em tickets/service.py
+# (`attribute:NAME.update`) — se um entrar lá, entra aqui também.
+_ATTR_OVERLAY_FIELDS = (
+    "logical_name", "native_data_type", "is_nullable", "default_value",
+    "is_primary_key", "ordinal_position", "description_md", "business_rule",
+    "native_comment",
+)
+
+
+def _overlay_existing_attrs(
+    sql, actor: str, entity_id: str, out: list[AttributeOut],
+) -> list[AttributeOut]:
+    """Aplica edições pendentes do ticket OPEN do user sobre os attributes já
+    materializados de uma entity existente.
+
+    PORQUÊ (bug v1.0030): sem isto, `list_attributes` devolve a linha CRUA do
+    catálogo para entities existentes — as edições staged (PK, descrição, tipo…)
+    NÃO aparecem. A UI então reconstrói o payload de update a partir de dados
+    desatualizados; como o staging faz merge "última intenção vence" por field-key
+    (`attribute:NAME.update`), uma 2ª edição da mesma coluna no mesmo ticket
+    sobrescrevia a 1ª silenciosamente (ex.: editar descrição e depois togglar PK
+    perdia a descrição). Com o overlay, `a` reflete o estado staged e cada payload
+    reconstruído carrega os valores mais recentes.
+
+    Espelha `_overlay_entity_out` (que já faz isso pra entity-level). Só leitura.
+    """
+    keys = _resolve_entity_keys(sql, entity_id)
+    if not keys:
+        return out
+    system_id, schema_name, technical_name, _etype = keys
+    found = find_open_session_ticket(sql, actor, system_id)
+    if not found:
+        return out
+    ticket_id, diff = found
+    entry = pick_entry(index_session_diff(diff), schema_name, technical_name)
+    if not entry or entry.get("op") != "change":
+        return out
+    _ent_updates, attr_changes, attr_adds, attr_removes = field_changes_by_target(entry)
+
+    by_name = {a.technical_name: a for a in out}
+    # Updates: o payload completo do attribute fica em attr_changes[col]["update"]
+    # (ver update_attribute → field "attribute:NAME.update", after=payload dict).
+    for col, subs in attr_changes.items():
+        a = by_name.get(col)
+        payload = subs.get("update")
+        if not a or not isinstance(payload, dict):
+            continue
+        for f in _ATTR_OVERLAY_FIELDS:
+            # `is not None` espelha o filtro do apply — inclusive is_primary_key=False,
+            # que É aplicado (False is not None), refletindo um "desmarcar PK" staged.
+            if f in payload and payload[f] is not None:
+                setattr(a, f, payload[f])
+        a.pending_op = "change"
+
+    remove_names = {r.get("technical_name") for r in attr_removes}
+    for a in out:
+        if a.technical_name in remove_names:
+            a.pending_op = "remove"
+
+    # Adds virtuais staged nesta MESMA entity (raro, mas possível) que ainda não
+    # existem no catálogo — aparecem como pending "add".
+    from datetime import datetime as _dt
+    now = _dt.utcnow()
+    existing = set(by_name.keys())
+    for add in attr_adds:
+        name = add.get("technical_name")
+        if not name or name in existing:
+            continue
+        out.append(AttributeOut(
+            attribute_id=add.get("attribute_id") or f"pending-attr-{name}",
+            entity_id=entity_id,
+            technical_name=name,
+            logical_name=add.get("logical_name"),
+            ordinal_position=add.get("ordinal_position"),
+            native_data_type=add.get("native_data_type"),
+            is_nullable=add.get("is_nullable"),
+            default_value=add.get("default_value"),
+            is_primary_key=bool(add.get("is_primary_key", False)),
+            description_md=add.get("description_md"),
+            business_rule=add.get("business_rule"),
+            sample_value=None,
+            glossary_term_id=None,
+            native_comment=add.get("native_comment"),
+            created_at=now, created_by=actor,
+            updated_at=now, updated_by=actor,
+            pending_op="add",
+        ))
+    return out
+
+
 def _fetch_entity_row(sql, entity_id: str):
     """Lê uma entity do catálogo. Retorna a row crua ou None."""
     s = get_settings()
@@ -487,7 +578,8 @@ def list_entities_paginated(
         SELECT e.entity_id, e.system_id, sys.system_name, e.schema_name,
                e.technical_name, e.logical_name, e.entity_type, e.domain,
                e.criticality, e.updated_at,
-               (SELECT COUNT(*) FROM {s.fq_table('attributes')} a WHERE a.entity_id = e.entity_id) AS attrs
+               (SELECT COUNT(*) FROM {s.fq_table('attributes')} a WHERE a.entity_id = e.entity_id) AS attrs,
+               e.description_md, e.native_comment
         FROM {s.fq_table('entities')} e
         LEFT JOIN {s.fq_table('systems')} sys ON sys.system_id = e.system_id
         {where_clause}
@@ -503,6 +595,8 @@ def list_entities_paginated(
             domain=r[7], criticality=r[8] or None,
             attributes_count=int(r[10]) if r[10] is not None else 0,
             updated_at=r[9],
+            # r[11]/r[12] adicionados no SELECT (v1.0030) para o export CSV.
+            description_md=r[11], native_comment=r[12],
         )
         for r in rows
     ]
@@ -772,13 +866,18 @@ def list_attributes(
         [delta.param("entity_id", entity_id)],
     )
     out = [_attr_row_to_out(r) for r in rows]
-    # Overlay: se a entity é virtual (não existe ainda no catálogo), busca
-    # attributes do ticket OPEN do user. Sem isso o EditEntityDialog fica
-    # vazio mesmo o user tendo adicionado colunas na criação.
-    if not rows:
-        actor = _current_email(user_ws)
+    actor = _current_email(user_ws)
+    if rows:
+        # Entity existente: espelha edições staged do ticket OPEN sobre o catálogo
+        # (PK/descrição/tipo pendentes aparecem e o payload de update reconstruído
+        # na UI usa valores frescos — impede clobber de edições sequenciais).
+        if actor and actor != "unknown":
+            out = _overlay_existing_attrs(sql, actor, entity_id, out)
+    else:
+        # Entity virtual (ainda não existe no catálogo): busca attributes do
+        # ticket OPEN. Sem isso o EditEntityDialog fica vazio mesmo o user tendo
+        # adicionado colunas na criação.
         if actor:
-            # Procura entity virtual em qualquer sessão OPEN do user
             virtual_attrs = _find_virtual_entity_attrs(sql, actor, entity_id)
             if virtual_attrs:
                 out = virtual_attrs

@@ -19,6 +19,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   AlertCircle,
+  AlertTriangle,
   Inbox,
   CheckCircle2,
   PlayCircle,
@@ -125,12 +126,44 @@ function TicketsList() {
   });
 
   const ids = Array.from(selected);
-  const doBatch = (action: BatchAction, reason?: string) =>
+
+  // Guardrail de aprovação em lote (v1.0031, feedback do cliente): o recomendado
+  // é aprovar em lote apenas tickets do MESMO autor e do MESMO sistema. Como um
+  // ticket já é por (autor, sistema), a checagem é direta pelos campos do ticket
+  // — não precisa olhar o schema das entidades do diff. Decisão de produto: AVISAR
+  // (não bloquear) — o usuário pode prosseguir num lote heterogêneo se quiser.
+  const selectedTickets = tickets.filter((t) => selected.has(t.ticket_id));
+  const distinctAuthors = new Set(selectedTickets.map((t) => t.created_by));
+  const distinctSystems = new Set(selectedTickets.map((t) => t.system_id));
+  const mixedParts = [
+    distinctAuthors.size > 1 ? "autores" : null,
+    distinctSystems.size > 1 ? "sistemas" : null,
+  ].filter(Boolean) as string[];
+  const heterogeneous = selectedTickets.length > 1 && mixedParts.length > 0;
+  const batchWarning = heterogeneous
+    ? `A seleção mistura ${mixedParts.join(" e ")} diferentes — o recomendado é ` +
+      `aprovar em lote por autor/sistema.`
+    : null;
+
+  const doBatch = (action: BatchAction, reason?: string) => {
+    // Aviso antes de confirmar quando a seleção é heterogênea (não bloqueia).
+    if (batchWarning && !window.confirm(`${batchWarning}\n\nProsseguir mesmo assim?`))
+      return;
     runBatch({ data: { ticket_ids: ids, action, reason } });
+  };
 
   return (
     <div className="space-y-4">
-      <FilterTabs current={filter} onChange={setFilter} />
+      <FilterTabs
+        current={filter}
+        onChange={(f) => {
+          // Limpa a seleção ao trocar de filtro: senão `selected` guarda ids que
+          // saem da lista visível, o guardrail de lote (calculado sobre `tickets`
+          // visíveis) subcontaria autores/sistemas e a ação escaparia sem aviso.
+          setFilter(f);
+          clearSelection();
+        }}
+      />
 
       {canSelect && selected.size > 0 && (
         <BatchBar
@@ -138,6 +171,7 @@ function TicketsList() {
           busy={batching}
           canApprove={me.can_approve_tickets}
           canApply={me.can_apply_tickets}
+          warning={batchWarning}
           onClear={clearSelection}
           onAction={doBatch}
         />
@@ -205,6 +239,7 @@ function BatchBar({
   busy,
   canApprove,
   canApply,
+  warning,
   onClear,
   onAction,
 }: {
@@ -212,11 +247,19 @@ function BatchBar({
   busy: boolean;
   canApprove: boolean;
   canApply: boolean;
+  warning?: string | null;
   onClear: () => void;
   onAction: (action: BatchAction, reason?: string) => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/30 p-3">
+    <div className="space-y-2 rounded-md border bg-muted/30 p-3">
+      {warning && (
+        <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-xs text-amber-700 dark:text-amber-300">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+          <span>{warning}</span>
+        </div>
+      )}
+      <div className="flex flex-wrap items-center gap-2">
       <span className="text-sm font-medium">{count} selecionado(s)</span>
       <div className="flex-1" />
       {canApply && (
@@ -264,6 +307,7 @@ function BatchBar({
       <Button size="sm" variant="ghost" disabled={busy} onClick={onClear}>
         Limpar
       </Button>
+      </div>
     </div>
   );
 }

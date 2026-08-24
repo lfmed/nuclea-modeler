@@ -92,6 +92,10 @@ class EntityListOut(BaseModel):
     attributes_count: int | None = None
     updated_at: datetime
     is_shared: bool = False
+    # Descrições incluídas na listagem para o export CSV carregar contexto de
+    # negócio (v1.0030). Não são exibidas como coluna na tabela (só exportadas).
+    description_md: str | None = None
+    native_comment: str | None = None
     # Coluna de flags nas listagens (ponto 5.3 do plano). Preenchida só nos
     # endpoints paginados que fazem o join agregado; listas "frias" deixam [].
     flags: list[FlagBadge] = Field(default_factory=list)
@@ -248,6 +252,9 @@ class AttributeListOut(BaseModel):
     is_primary_key: bool = False
     updated_at: datetime | None = None
     flags: list[FlagBadge] = Field(default_factory=list)
+    # Descrições p/ export CSV (v1.0030).
+    description_md: str | None = None
+    business_rule: str | None = None
 
 
 class PaginatedAttributes(BaseModel):
@@ -273,6 +280,8 @@ class IndexListOut(BaseModel):
     is_unique: bool = False
     origin: Literal["EXTRACTED", "MANUAL"] | None = None
     updated_at: datetime | None = None
+    # Descrição p/ export CSV (v1.0030).
+    description_md: str | None = None
 
 
 class PaginatedIndexes(BaseModel):

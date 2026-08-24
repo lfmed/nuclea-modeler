@@ -154,7 +154,8 @@ def list_attributes_paginated(
         SELECT a.attribute_id, a.entity_id, e.technical_name, e.logical_name,
                e.schema_name, e.system_id, sys.system_name,
                a.technical_name, a.logical_name, a.ordinal_position,
-               a.native_data_type, a.is_nullable, a.is_primary_key, a.updated_at
+               a.native_data_type, a.is_nullable, a.is_primary_key, a.updated_at,
+               a.description_md, a.business_rule
         {base_from}
         ORDER BY {sort_col} {direction}
         LIMIT {page_size} OFFSET {offset}
@@ -172,6 +173,8 @@ def list_attributes_paginated(
             is_nullable=delta.as_bool(r[11]) if r[11] is not None else None,
             is_primary_key=delta.as_bool(r[12]),
             updated_at=r[13],
+            # r[14]/r[15] adicionados no SELECT (v1.0030) para o export CSV.
+            description_md=r[14], business_rule=r[15],
         )
         for r in rows
     ]
@@ -261,7 +264,8 @@ def list_indexes_paginated(
         f"""
         SELECT ix.index_id, ix.entity_id, e.technical_name, e.schema_name,
                e.system_id, sys.system_name, ix.index_name, ix.index_type,
-               ix.columns_json, ix.is_unique, ix.origin, ix.updated_at
+               ix.columns_json, ix.is_unique, ix.origin, ix.updated_at,
+               ix.description_md
         {base_from}
         ORDER BY {sort_col} {direction}
         LIMIT {page_size} OFFSET {offset}
@@ -276,6 +280,8 @@ def list_indexes_paginated(
             columns=_columns_from_json(r[8]),
             is_unique=delta.as_bool(r[9]) if r[9] is not None else False,
             origin=r[10], updated_at=r[11],
+            # r[12] adicionado no SELECT (v1.0030) para o export CSV.
+            description_md=r[12],
         )
         for r in rows
     ]

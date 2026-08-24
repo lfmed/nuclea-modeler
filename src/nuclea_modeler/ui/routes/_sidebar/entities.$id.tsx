@@ -10,6 +10,7 @@ import {
   useListAttributesSuspense,
   useCreateAttribute,
   useUpdateAttribute,
+  useUpdateEntity,
   useDeleteAttribute,
   useDeleteEntity,
   useListEntityFlagsSuspense,
@@ -25,6 +26,7 @@ import {
   useGetSessionStateSuspense,
   type BatchFlagSpec,
   type AttributeOut,
+  type EntityOut,
 } from "@/lib/api";
 import selector from "@/lib/selector";
 import { TypePicker } from "@/components/diagram/type-picker";
@@ -38,6 +40,7 @@ import {
   getPkWarnings,
   usePkDragReorder,
 } from "@/components/attributes/pk-controls";
+import { AttrDescriptionCell } from "@/components/attributes/description-cell";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,7 +51,7 @@ import { Separator } from "@/components/ui/separator";
 import { FlagPicker } from "@/components/flags/flag-picker";
 import {
   ArrowLeft, AlertCircle, Trash2, Plus, Key, FileText, ShieldCheck,
-  ClipboardList, GripVertical,
+  ClipboardList, GripVertical, Save, Pencil, X,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_sidebar/entities/$id")({
@@ -146,23 +149,7 @@ function EntityDetail() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5" />
-              Descrição de negócio
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {entity.description_md ? (
-              <pre className="whitespace-pre-wrap text-sm leading-relaxed">{entity.description_md}</pre>
-            ) : (
-              <p className="text-sm text-muted-foreground italic">
-                Sem descrição. Edite a entidade para adicionar contexto de negócio.
-              </p>
-            )}
-          </CardContent>
-        </Card>
+        <EntityDescriptionCard entity={entity} />
 
         <Card>
           <CardHeader>
@@ -207,6 +194,121 @@ function EntityDetail() {
 
       <AttachmentsPanel ownerKind="entity" ownerId={id} label="Anexos da tabela" />
     </div>
+  );
+}
+
+/**
+ * Card "Descrição de negócio" — EDITÁVEL (v1.0030, plano round 3 item A3).
+ *
+ * Antes era read-only e mandava o usuário abrir "editar entidade" pra mexer na
+ * descrição. Agora edita inline: botão lápis → textarea → "Salvar" faz stage via
+ * PUT /entities/{id} (fluxo editorial → ticket, NÃO grava direto no catálogo).
+ * O payload reenvia TODOS os campos atuais da entity + a nova descrição, porque
+ * o update do backend reconstrói field_changes a partir do payload completo;
+ * mandar só a descrição zeraria os demais campos no diff.
+ */
+function EntityDescriptionCard({ entity }: { entity: EntityOut }) {
+  const qc = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(entity.description_md || "");
+
+  const { mutate: updateEntity, isPending } = useUpdateEntity({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: ["getEntity", entity.entity_id] });
+        qc.invalidateQueries({ queryKey: ["getSessionStatus", entity.system_id] });
+        // Reflete na seção "Campos em aprovação" sem exigir reload.
+        qc.invalidateQueries({ queryKey: ["getSessionState", entity.system_id] });
+        toast.success("Descrição staged (pendente de aprovação)");
+        setEditing(false);
+      },
+      onError: (e) => toast.error(extractErrorMessage(e)),
+    },
+  });
+
+  const save = () => {
+    updateEntity({
+      entityId: entity.entity_id,
+      data: {
+        // Preserva o estado atual da entity; só a descrição muda.
+        system_id: entity.system_id,
+        schema_name: entity.schema_name,
+        technical_name: entity.technical_name,
+        logical_name: entity.logical_name ?? null,
+        description_md: text.trim() ? text : null,
+        domain: entity.domain ?? null,
+        business_owner: entity.business_owner ?? null,
+        technical_owner: entity.technical_owner ?? null,
+        criticality: entity.criticality ?? null,
+        tags: entity.tags ?? [],
+        notes: entity.notes ?? null,
+        entity_type: entity.entity_type,
+        native_comment: entity.native_comment ?? null,
+        row_count_approx: entity.row_count_approx ?? null,
+        // is_shared não está no tipo EntityOut (mesmo cast usado no EditEntityDialog do DER).
+        is_shared: Boolean((entity as { is_shared?: boolean }).is_shared),
+      },
+    });
+  };
+
+  return (
+    <Card className="lg:col-span-2">
+      <CardHeader>
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle className="flex items-center gap-2">
+            <FileText className="h-5 w-5" />
+            Descrição de negócio
+          </CardTitle>
+          {!editing && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setText(entity.description_md || "");
+                setEditing(true);
+              }}
+            >
+              <Pencil className="mr-1 h-3.5 w-3.5" />
+              Editar
+            </Button>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent>
+        {editing ? (
+          <div className="space-y-2">
+            <textarea
+              className="w-full min-h-[140px] rounded-md border bg-background px-3 py-2 text-sm leading-relaxed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder="Contexto de negócio da tabela (markdown suportado)…"
+              autoFocus
+            />
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setEditing(false)}
+                disabled={isPending}
+              >
+                <X className="mr-1 h-3.5 w-3.5" />
+                Cancelar
+              </Button>
+              <Button size="sm" onClick={save} disabled={isPending}>
+                <Save className="mr-1 h-3.5 w-3.5" />
+                {isPending ? "Salvando…" : "Salvar"}
+              </Button>
+            </div>
+          </div>
+        ) : entity.description_md ? (
+          <pre className="whitespace-pre-wrap text-sm leading-relaxed">{entity.description_md}</pre>
+        ) : (
+          <p className="text-sm text-muted-foreground italic">
+            Sem descrição. Clique em "Editar" para adicionar contexto de negócio.
+          </p>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -413,6 +515,9 @@ function AttributesSection({
     qc.invalidateQueries({ queryKey: ["listAttributes", entityId] });
     qc.invalidateQueries({ queryKey: ["getEntity", entityId] });
     qc.invalidateQueries({ queryKey: ["getSessionStatus", systemId] });
+    // getSessionState alimenta a seção "Campos em aprovação" (PendingChangesSection);
+    // sem invalidar, a edição recém-staged só apareceria após reload.
+    qc.invalidateQueries({ queryKey: ["getSessionState", systemId] });
   };
   const { mutate: applyFlags, isPending: applyingFlags } =
     useBatchApplyAttributeFlags({
@@ -523,7 +628,10 @@ function AttributesSection({
         is_nullable: checked ? false : a.is_nullable,
         default_value: a.default_value ?? null,
         is_primary_key: checked,
+        // Preserva descrição/regra ao togglar PK (o merge do staging é "última
+        // intenção vence" por field-key; omitir apagaria uma edição anterior).
         description_md: a.description_md ?? null,
+        business_rule: a.business_rule ?? null,
       },
     });
     toast.success(
@@ -555,6 +663,7 @@ function AttributesSection({
             default_value: a.default_value ?? null,
             is_primary_key: a.is_primary_key,
             description_md: a.description_md ?? null,
+            business_rule: a.business_rule ?? null,
           },
         });
       }
@@ -562,6 +671,33 @@ function AttributesSection({
     },
   });
   const pkCount = attrs.filter((a) => a.is_primary_key).length;
+
+  // Stage da descrição de UMA coluna (v1.0030, A3). Reenvia o payload COMPLETO
+  // do atributo (não só a descrição) porque o staging faz merge por field-key
+  // "attribute:NAME.update" com "última intenção vence": mandar parcial apagaria
+  // PK/tipo/etc. de uma edição anterior no mesmo ticket.
+  const saveAttrDesc = (a: AttributeOut, description: string) => {
+    updateAttr({
+      entityId,
+      attributeId: a.attribute_id,
+      data: {
+        entity_id: entityId,
+        technical_name: a.technical_name,
+        logical_name: a.logical_name ?? null,
+        native_data_type: a.native_data_type ?? null,
+        ordinal_position: a.ordinal_position ?? null,
+        is_nullable: a.is_nullable,
+        default_value: a.default_value ?? null,
+        is_primary_key: a.is_primary_key,
+        // Envia o texto CRU (não mapeia vazio→null): o apply de atributo filtra
+        // `None`, então null nunca limparia a descrição. String vazia "" passa
+        // no filtro e zera o texto — assim "apagar a descrição" funciona.
+        description_md: description,
+        business_rule: a.business_rule ?? null,
+      },
+    });
+    toast.success(`Descrição de "${a.technical_name}" staged (pendente)`);
+  };
 
   return (
     <Card>
@@ -723,7 +859,10 @@ function AttributesSection({
                         </Suspense>
                       </td>
                       <td className="py-2 pr-3 text-muted-foreground">
-                        {a.description_md ? (a.description_md.length > 80 ? a.description_md.slice(0, 80) + "…" : a.description_md) : "—"}
+                        <AttrDescriptionCell
+                          value={a.description_md}
+                          onSave={(desc) => saveAttrDesc(a, desc)}
+                        />
                       </td>
                       <td className="py-2 pr-3">
                         <button

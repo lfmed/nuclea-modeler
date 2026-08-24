@@ -56,6 +56,7 @@ import {
   useListAttributeFlagsSuspense,
   useBatchApplyAttributeFlags,
   useRemoveAttributeFlag,
+  type AttributeOut,
   type Cardinality,
   type DiagramEntity,
   type DiagramRelationship,
@@ -108,6 +109,7 @@ import {
 } from "@/components/diagram/layout";
 import { getTypesForTechnology } from "@/components/diagram/types-by-tech";
 import { TypePicker } from "@/components/diagram/type-picker";
+import { AttrDescriptionCell } from "@/components/attributes/description-cell";
 import {
   PkToggle,
   computePkOrdinals,
@@ -2337,6 +2339,35 @@ function AttributesEditor({
     },
   });
 
+  // Stage da descrição de UMA coluna (v1.0030, A2). Reenvia o payload COMPLETO
+  // do atributo — o staging faz merge por field-key "attribute:NAME.update" com
+  // "última intenção vence", então mandar parcial apagaria PK/tipo de uma edição
+  // anterior no mesmo ticket. Mesma razão do payload completo no PkToggle abaixo.
+  const saveAttrDesc = (a: AttributeOut, description: string) => {
+    updateAttr.mutate({
+      entityId,
+      attributeId: a.attribute_id,
+      data: {
+        entity_id: entityId,
+        technical_name: a.technical_name,
+        // Payload completo e consistente com os demais call sites (togglePk etc.):
+        // inclui logical_name/default_value pra não apagar uma edição anterior
+        // (merge "última intenção vence" por field-key).
+        logical_name: a.logical_name ?? null,
+        native_data_type: a.native_data_type || null,
+        ordinal_position: a.ordinal_position ?? null,
+        is_nullable: a.is_nullable,
+        default_value: a.default_value ?? null,
+        is_primary_key: a.is_primary_key,
+        // Texto CRU: "" limpa (o apply de atributo filtra None, então null nunca
+        // limparia). Ver a mesma nota em entities.$id.tsx.
+        description_md: description,
+        business_rule: a.business_rule ?? null,
+      },
+    });
+    toast.success(`Descrição de "${a.technical_name}" staged (pendente)`);
+  };
+
   return (
     <div className="space-y-4">
       {/* Entity-level flags section */}
@@ -2372,6 +2403,7 @@ function AttributesEditor({
               <th className="py-1 pr-2 font-medium">Tipo</th>
               <th className="py-1 pr-2 font-medium w-20">PK</th>
               <th className="py-1 pr-2 font-medium">Flags</th>
+              <th className="py-1 pr-2 font-medium">Descrição</th>
               <th className="py-1 pr-2 w-8"></th>
             </tr>
           </thead>
@@ -2399,10 +2431,18 @@ function AttributesEditor({
                           data: {
                             entity_id: entityId,
                             technical_name: a.technical_name,
+                            logical_name: a.logical_name ?? null,
                             native_data_type: a.native_data_type || null,
                             ordinal_position: a.ordinal_position ?? null,
                             is_nullable: checked ? false : a.is_nullable,
+                            default_value: a.default_value ?? null,
                             is_primary_key: checked,
+                            // Preserva descrição/regra ao togglar PK (v1.0030):
+                            // o merge do staging é "última intenção vence" por
+                            // field-key, então omitir aqui apagaria uma edição
+                            // de descrição feita antes no mesmo ticket.
+                            description_md: a.description_md ?? null,
+                            business_rule: a.business_rule ?? null,
                           },
                         });
                         toast.success(
@@ -2420,6 +2460,12 @@ function AttributesEditor({
                         entityId={entityId}
                       />
                     </Suspense>
+                  </td>
+                  <td className="py-1 pr-2 text-muted-foreground max-w-[220px]">
+                    <AttrDescriptionCell
+                      value={a.description_md}
+                      onSave={(desc) => saveAttrDesc(a, desc)}
+                    />
                   </td>
                   <td className="py-1 pr-2">
                     <button
