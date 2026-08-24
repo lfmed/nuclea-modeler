@@ -2380,6 +2380,7 @@ export const useSyncCatalogSuspense = (s?: Selector<SyncCatalogOut>) =>
   useSuspenseQuery({
     queryKey: ["getSyncCatalog"],
     queryFn: () => api.get<SyncCatalogOut>("/admin/settings/sync-catalog"),
+    select: (r) => r.data,
     ...s?.query,
   });
 
