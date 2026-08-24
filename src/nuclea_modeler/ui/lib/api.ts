@@ -2369,6 +2369,59 @@ export const useUCSchemas = (catalog: string | null | undefined) =>
     enabled: !!catalog,
   });
 
+// ─── Sync target catalog (admin setting, v1.0035) ────────────────────────────
+export interface SyncCatalogOut {
+  catalog: string; // efetivo (escolha do admin ou default)
+  default: string; // default do app (env NUCLEA_CATALOG)
+  is_custom: boolean;
+}
+
+export const useSyncCatalogSuspense = (s?: Selector<SyncCatalogOut>) =>
+  useSuspenseQuery({
+    queryKey: ["getSyncCatalog"],
+    queryFn: () => api.get<SyncCatalogOut>("/admin/settings/sync-catalog"),
+    ...s?.query,
+  });
+
+export const useSetSyncCatalog = (opts?: Opts<SyncCatalogOut, { catalog: string }>) =>
+  useMutation({
+    mutationFn: async ({ catalog }) =>
+      (await api.post<SyncCatalogOut>("/admin/settings/sync-catalog", { catalog })).data,
+    ...opts?.mutation,
+  });
+
+// ─── Round-trip CSV (exportar → editar → reimportar → diff → aprovação) v1.0035 ─
+export interface CsvExportOut {
+  filename: string;
+  csv: string;
+}
+export interface CsvImportOut {
+  ticket_id?: string | null;
+  entities_changed: number;
+  columns_changed: number;
+  unknown_tables: string[];
+  message: string;
+}
+
+export const useExportSystemCsv = (opts?: Opts<CsvExportOut, { systemId: string }>) =>
+  useMutation({
+    mutationFn: async ({ systemId }) =>
+      (await api.get<CsvExportOut>("/entities/export/csv", { params: { system_id: systemId } })).data,
+    ...opts?.mutation,
+  });
+
+export const useImportSystemCsv = (
+  opts?: Opts<CsvImportOut, { systemId: string; csvText: string }>,
+) =>
+  useMutation({
+    mutationFn: async ({ systemId, csvText }) =>
+      (await api.post<CsvImportOut>("/entities/import/csv", {
+        system_id: systemId,
+        csv_text: csvText,
+      })).data,
+    ...opts?.mutation,
+  });
+
 export const useListUCTablesSuspense = (
   catalog: string,
   schema: string,

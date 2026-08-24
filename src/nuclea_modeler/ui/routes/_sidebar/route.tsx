@@ -12,6 +12,7 @@ import {
   History,
   CloudCog,
   FileCode,
+  FileSpreadsheet,
   Link2,
   Network,
   FolderTree,
@@ -181,6 +182,12 @@ function Layout() {
           match: (p) => p.startsWith("/ddl"),
         },
         {
+          to: "/import-export",
+          label: "Exportar / Importar CSV",
+          icon: <FileSpreadsheet size={16} />,
+          match: (p) => p.startsWith("/import-export"),
+        },
+        {
           to: "/lakebase",
           label: "Lakebase Sandbox",
           icon: <TestTube2 size={16} />,
@@ -231,6 +238,12 @@ function Layout() {
           label: "Métricas",
           icon: <Gauge size={16} />,
           match: (p) => p.startsWith("/admin/metrics"),
+        },
+        {
+          to: "/admin/sync-config",
+          label: "Config. de Sync",
+          icon: <Database size={16} />,
+          match: (p) => p.startsWith("/admin/sync-config"),
         },
       ],
     },

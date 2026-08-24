@@ -6,11 +6,14 @@ Esses endpoints requerem role ADMIN.
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 
 from ..._metadata import api_prefix
-from ..core import Dependencies
+from ..core import Dependencies, delta
+from ..core._nuclea_config import get_settings
 from ..core.sql import SqlDependency
 from ..lakebase.service import open_connection
 from ..rbac.router import _current_email
@@ -18,6 +21,80 @@ from ..rbac.service import ROLE_ADMIN, require_role
 
 router = APIRouter(prefix=f"{api_prefix}/admin", tags=["admin"])
 log = logging.getLogger(__name__)
+
+
+# ─── App settings (key/value) — v1.0035 ─────────────────────────────────────
+# Hoje guarda o catálogo de destino do sync (escolhido na tela de Admin).
+SYNC_CATALOG_KEY = "sync_target_catalog"
+
+
+class SyncCatalogIn(BaseModel):
+    catalog: str
+
+
+class SyncCatalogOut(BaseModel):
+    catalog: str          # efetivo (escolhido ou default)
+    default: str          # default do app (env NUCLEA_CATALOG)
+    is_custom: bool       # True se veio de escolha do admin
+
+
+def _get_app_setting(sql, key: str) -> str | None:
+    s = get_settings()
+    row = delta.fetch_one_params(
+        sql,
+        f"SELECT setting_value FROM {s.fq_table('app_settings')} WHERE setting_key = :k",
+        [delta.param("k", key)],
+    )
+    return row[0] if row and row[0] is not None else None
+
+
+def _set_app_setting(sql, key: str, value: str, by: str) -> None:
+    """Upsert simples (delete+insert) — Delta não enforça PK, e a tabela tem 1
+    linha por chave."""
+    s = get_settings()
+    delta.run_params(
+        sql,
+        f"DELETE FROM {s.fq_table('app_settings')} WHERE setting_key = :k",
+        [delta.param("k", key)],
+    )
+    delta.insert(
+        sql, s.fq_table("app_settings"),
+        {"setting_key": key, "setting_value": value,
+         "updated_at": datetime.utcnow(), "updated_by": by},
+    )
+
+
+@router.get("/settings/sync-catalog", response_model=SyncCatalogOut, operation_id="getSyncCatalog")
+def get_sync_catalog(sql: SqlDependency) -> SyncCatalogOut:
+    """Catálogo de destino atual do sync (escolha do admin ou default do app)."""
+    default = get_settings().catalog
+    stored = _get_app_setting(sql, SYNC_CATALOG_KEY)
+    return SyncCatalogOut(catalog=stored or default, default=default, is_custom=bool(stored))
+
+
+@router.post("/settings/sync-catalog", response_model=SyncCatalogOut, operation_id="setSyncCatalog")
+def set_sync_catalog(
+    payload: SyncCatalogIn,
+    sql: SqlDependency,
+    user_ws: Dependencies.UserClient,
+    app_ws: Dependencies.Client,
+) -> SyncCatalogOut:
+    """Define o catálogo de destino do sync (ADMIN). Valida contra os catálogos
+    disponíveis no Unity Catalog para não gravar um nome inexistente."""
+    actor = _current_email(user_ws)
+    require_role(sql, actor, ROLE_ADMIN)
+    catalog = (payload.catalog or "").strip()
+    if not catalog:
+        raise HTTPException(400, "catalog é obrigatório")
+    try:
+        available = {c.name for c in app_ws.catalogs.list() if c.name}
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(500, f"Falha ao listar catalogs do UC: {exc}") from exc
+    if catalog not in available:
+        raise HTTPException(400, f"catalog '{catalog}' não está entre os disponíveis no Unity Catalog")
+    _set_app_setting(sql, SYNC_CATALOG_KEY, catalog, actor or "unknown")
+    default = get_settings().catalog
+    return SyncCatalogOut(catalog=catalog, default=default, is_custom=True)
 
 
 # ─── Demo schemas (Postgres DDL + dados) ──────────────────────────────────────

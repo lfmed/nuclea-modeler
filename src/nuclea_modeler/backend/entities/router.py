@@ -792,6 +792,29 @@ def update_entity(
             for fld in _ENT_DIFF_FIELDS
         ]
 
+    # Tabela nova ainda NÃO aprovada (entidade virtual): em vez de criar uma
+    # entry op=change separada (que não reflete no getEntity virtual, o qual lê
+    # o payload do add), mescla os metadados na própria entry op=add do ticket
+    # (fix v1.0035). Assim a edição aparece na hora e o apply cria a tabela já
+    # com os metadados corretos.
+    if not row:
+        add = _find_open_add_entry(sql, actor, entity_id)
+        if add:
+            add_ticket_id, add_system_id, add_diff, add_entry = add
+            add_entry["schema_name"] = payload.schema_name
+            add_entry["technical_name"] = payload.technical_name
+            add_entry["entity_type"] = payload.entity_type
+            merged_payload = dict(add_entry.get("payload") or {})
+            merged_payload.update(_entity_in_to_payload(payload))
+            # preserva o id pré-alocado (não vem no EntityIn)
+            merged_payload["pre_allocated_entity_id"] = entity_id
+            add_entry["payload"] = merged_payload
+            _save_session_diff(sql, add_ticket_id, add_diff)
+            return _virtual_entity_out(
+                entity_id, payload.system_id, payload, actor,
+                pending_op="add", pending_ticket_id=add_ticket_id,
+            )
+
     entry = {
         "op": "change",
         "schema_name": payload.schema_name,
@@ -954,6 +977,98 @@ def _resolve_entity_keys(sql, entity_id: str) -> tuple[str, str, str, str] | Non
     return (row[1], row[2], row[3], row[12] or "TABLE")
 
 
+def _find_open_add_entry(
+    sql, user_email: str, entity_id: str,
+) -> tuple[str, str, dict, dict] | None:
+    """Localiza a entry op=add (tabela criada e ainda NÃO aprovada) do user
+    cujo pre_allocated_entity_id == entity_id.
+
+    Retorna (ticket_id, system_id, diff, entry) — onde `entry` é o MESMO objeto
+    dentro de `diff` (mutar `entry` e salvar `diff` persiste a mudança). None se
+    não houver.
+
+    Fix v1.0035: editar uma tabela nova antes de aprovar dava 404 ("entity not
+    found") porque a entidade é virtual (só existe na entry op=add do ticket, não
+    no catálogo). Aqui resolvemos essa entry para MESCLAR metadados/atributos nela
+    — assim a edição reflete na UI (que lê os atributos do add) e o apply cria a
+    tabela já completa.
+    """
+    import json as _json
+    s = get_settings()
+    rows = delta.fetch_all_params(
+        sql,
+        f"""
+        SELECT ticket_id, system_id, diff_json
+        FROM {s.fq_table('reconciliation_tickets')}
+        WHERE status = 'OPEN' AND source_type = 'MANUAL' AND created_by = :user
+        """,
+        [delta.param("user", user_email)],
+    )
+    for r in rows:
+        try:
+            diff = _json.loads(r[2]) if r[2] else {}
+        except Exception:
+            continue
+        for entry in diff.get("entities", []) or []:
+            if not isinstance(entry, dict) or entry.get("op") != "add":
+                continue
+            payload = entry.get("payload") or {}
+            if payload.get("pre_allocated_entity_id") == entity_id:
+                return (r[0], r[1], diff, entry)
+    return None
+
+
+def _save_session_diff(sql, ticket_id: str, diff: dict) -> None:
+    """Persiste um diff mutado de volta no ticket (recount + update)."""
+    import json as _json
+    s = get_settings()
+    ents = diff.get("entities", []) or []
+    a = sum(1 for e in ents if e.get("op") == "add")
+    r = sum(1 for e in ents if e.get("op") == "remove")
+    c = sum(1 for e in ents if e.get("op") == "change")
+    diff["additions"], diff["removals"], diff["changes"] = a, r, c
+    delta.update_by_id(
+        sql, s.fq_table("reconciliation_tickets"), "ticket_id", ticket_id,
+        {
+            "diff_json": _json.dumps(diff, ensure_ascii=False, default=str),
+            "additions_count": a, "removals_count": r, "changes_count": c,
+            "applied_at": None,
+        },
+    )
+
+
+def _stage_virtual_attr(
+    sql, user_email: str, entity_id: str, *, kind: str, attr_payload: dict,
+) -> tuple[str, str] | None:
+    """Mescla um atributo (add/update/remove) na entry op=add de uma tabela
+    virtual (ainda não aprovada). Retorna (ticket_id, system_id) ou None.
+
+    `kind`: "add"/"update" (upsert por technical_name) ou "remove".
+    """
+    found = _find_open_add_entry(sql, user_email, entity_id)
+    if not found:
+        return None
+    ticket_id, system_id, diff, entry = found
+    attrs = list(entry.get("attributes") or [])
+    name = attr_payload.get("technical_name")
+    if kind == "remove":
+        attrs = [a for a in attrs if a.get("technical_name") != name]
+    else:
+        # upsert por technical_name (merge de campos)
+        idx = next((i for i, a in enumerate(attrs)
+                    if a.get("technical_name") == name), None)
+        if idx is None:
+            if attr_payload.get("ordinal_position") is None:
+                attr_payload = {**attr_payload, "ordinal_position": len(attrs) + 1}
+            attrs.append(attr_payload)
+        else:
+            merged = {**attrs[idx], **{k: v for k, v in attr_payload.items() if v is not None}}
+            attrs[idx] = merged
+    entry["attributes"] = attrs
+    _save_session_diff(sql, ticket_id, diff)
+    return ticket_id, system_id
+
+
 def _stage_attribute_change(
     sql,
     user_ws,
@@ -1038,6 +1153,10 @@ def create_attribute(
         field_changes=field_changes,
     )
     if not res:
+        # Tabela nova ainda não aprovada (entidade virtual): mescla a coluna na
+        # entry op=add do ticket em vez de 404 (fix v1.0035).
+        res = _stage_virtual_attr(sql, actor, entity_id, kind="add", attr_payload=attr_payload)
+    if not res:
         raise HTTPException(404, f"entity '{entity_id}' not found")
     return _virtual_attribute_out(aid, entity_id, payload, actor, pending_op="add")
 
@@ -1088,6 +1207,10 @@ def update_attribute(
         field_changes=field_changes,
     )
     if not res:
+        # Tabela nova ainda não aprovada: aplica a edição na entry op=add
+        # (upsert por technical_name) em vez de 404 (fix v1.0035).
+        res = _stage_virtual_attr(sql, actor, entity_id, kind="update", attr_payload=attr_payload)
+    if not res:
         raise HTTPException(404, f"entity '{entity_id}' not found")
     return _virtual_attribute_out(attribute_id, entity_id, payload, actor, pending_op="change")
 
@@ -1130,6 +1253,11 @@ def delete_attribute(
         payload_dict=attr_payload,
         field_changes=field_changes,
     )
+    if not res:
+        # Tabela nova ainda não aprovada: remove a coluna da entry op=add
+        # (fix v1.0035). Casa por technical_name.
+        actor = _current_email(user_ws) or "unknown"
+        res = _stage_virtual_attr(sql, actor, entity_id, kind="remove", attr_payload=attr_payload)
     if not res:
         raise HTTPException(404, f"entity '{entity_id}' not found")
     ticket_id, _ = res

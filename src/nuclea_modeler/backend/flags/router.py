@@ -373,15 +373,17 @@ def apply_entity_flag(
 
 
 def _validate_flag_applicable(flag: FlagOut, justification: str | None) -> None:
-    """Regras compartilhadas entre apply single-id e batch: flag ativa e
-    justificativa presente quando exigida. Levanta HTTPException(400)."""
+    """Regras compartilhadas entre apply single-id e batch: só valida que a flag
+    está ativa.
+
+    v1.0035 (feedback do cliente): a justificativa NÃO é mais obrigatória, nem
+    para flags com `requires_justification=True`. O campo continua existindo e é
+    gravado quando preenchido (útil como registro), mas nunca bloqueia a
+    aplicação da tag. Mantido `requires_justification` no modelo apenas como
+    rótulo/《recomendação》 na UI.
+    """
     if not flag.is_active:
         raise HTTPException(400, f"flag '{flag.flag_key}' is inactive")
-    if flag.requires_justification and not (justification or "").strip():
-        raise HTTPException(
-            400,
-            f"flag '{flag.flag_key}' requires a non-empty justification",
-        )
 
 
 def _apply_entity_flag_core(

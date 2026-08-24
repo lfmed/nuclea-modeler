@@ -6,6 +6,43 @@ Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 ## [Unreleased]
 
 ### Added
+- **Round-trip de edição via CSV (v1.0035)** — nova tela **Exportar / Importar CSV**:
+  exporta as colunas de um sistema (grão coluna, com esquema/tabela/descrições) num
+  CSV re-importável; o usuário edita fora do app e reimporta; o backend compara com
+  o catálogo e abre um **ticket editorial** com o diff (aprovação pelo fluxo normal).
+  Campos vazios = "não mexer"; tabelas inexistentes são ignoradas (sem exclusão por
+  omissão). Backend: `entities/roundtrip.py` + `GET /entities/export/csv` e
+  `POST /entities/import/csv`. Reusa o caminho editorial comprovado (não o diff-engine
+  da extração, que não cobre logical_name/descrição). Teste: `test_csv_roundtrip.py`.
+- **Tela Admin: catálogo de destino do Sync UC (v1.0035)** — página **Config. de Sync**
+  (ADMIN) para escolher, entre os catálogos disponíveis no Unity Catalog, qual será
+  usado no sync. Persistido em `app_settings` (migration 020); validado contra
+  `catalogs.list()`. A tela de Sync passa a usar essa escolha como default. Endpoints
+  `GET/POST /admin/settings/sync-catalog`.
+
+### Fixed 🐛
+- **Editar tabela nova antes de aprovar dava "entity not found" (v1.0035)** — ao criar
+  uma tabela e editá-la (metadados/colunas) antes da aprovação, os endpoints davam 404
+  porque a entidade é virtual (só existe na entry `op=add` do ticket). Agora as edições
+  (metadados via `update_entity`; colunas via create/update/delete attribute) são
+  **mescladas na própria entry `op=add`** (`_stage_virtual_attr`/`_find_open_add_entry`),
+  refletindo na hora e criando a tabela já completa no apply.
+- **Justificativa de tag/flag não é mais obrigatória (v1.0035)** — feedback do cliente:
+  o backend (`_validate_flag_applicable`) e o front (`FlagPicker`) não bloqueiam mais a
+  aplicação por falta de justificativa, nem em flags `requires_justification`. O campo
+  continua sendo gravado quando preenchido (rótulo passou a "recomendada"/"opcional").
+  Teste: `test_flag_justification_optional.py`.
+- **Descrição da tabela editável nos metadados (v1.0035)** — o modal de edição no DER
+  ganhou o campo **Descrição (negócio)** no bloco de Metadados (salvo junto no "Salvar
+  metadados" via `updateEntity`), além da tela do objeto (v1.0030).
+- **Linhas de relacionamento sumindo — mais um caso (v1.0035)** — ao abrir um DIAGRAMA
+  (recorte), a membership (`memberIds`) carregava async: o DER mostrava todas as
+  arestas e depois as removia quando a membership chegava (o usuário via "sumir"). Guard
+  em `baseEdges`: enquanto a membership não resolve, não renderiza arestas (aparecem já
+  corretas). Confirmado que os 4 handles do EntityNode são sempre renderizados (o núcleo
+  do v1.0027 segue válido).
+
+### Added
 - **Suporte ao dialeto DB2 (IBM Db2 / Db2 for i) em todo o app (v1.0034)** — o DB2
   passa a ser cidadão de 1ª classe onde faz sentido:
   - **Import DDL**: opção "DB2" no seletor de dialeto + mapeamento sqlglot
