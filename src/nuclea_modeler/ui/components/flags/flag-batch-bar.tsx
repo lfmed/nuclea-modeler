@@ -94,7 +94,7 @@ export function FlagBatchBar({
         <Suspense fallback={null}>
           <FlagPickerModal
             title={`Aplicar flags a ${count} ${noun}${count === 1 ? "" : "s"}`}
-            subtitle="As flags marcadas serão aplicadas a todos os selecionados. Flags LGPD exigem justificativa."
+            subtitle="As flags marcadas serão aplicadas a todos os selecionados. A justificativa é opcional (recomendada em flags LGPD)."
             onClose={() => setMode(null)}
             applying={busy}
             onApply={(specs) => {

@@ -7,6 +7,7 @@ import {
   useListSystemsSuspense,
   useListSyncRunsSuspense,
   useMyRolesSuspense,
+  useSyncCatalogSuspense,
   usePreviewSync,
   useRunSync,
   useUCCatalogs,
@@ -112,9 +113,12 @@ function SyncContent() {
 
   const prefs = loadSyncPrefs();
   const { data: catalogs } = useUCCatalogs();
+  // Catálogo de destino escolhido pelo admin (v1.0035) — vira o default do sync
+  // quando o usuário ainda não tem uma preferência local salva.
+  const { data: syncCat } = useSyncCatalogSuspense(selector());
   const [systemId, setSystemId] = useState<string>(systems[0]?.system_id ?? "");
   const [targetCatalog, setTargetCatalog] = useState<string>(
-    prefs.catalog || DEFAULT_TARGET_CATALOG,
+    prefs.catalog || syncCat.catalog || DEFAULT_TARGET_CATALOG,
   );
   const [targetSchema, setTargetSchema] = useState<string>(prefs.schema || "");
   const [mode, setMode] = useState<SyncMode>("INCREMENTAL");

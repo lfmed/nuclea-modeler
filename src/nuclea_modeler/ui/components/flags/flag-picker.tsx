@@ -177,19 +177,9 @@ export function FlagPickerModal({
       setError("Selecione ao menos uma flag.");
       return;
     }
-    // Valida justificativa por flag antes de aplicar (o backend também valida,
-    // mas checar aqui evita idas e voltas ao servidor).
-    const missing = Array.from(selected.values()).filter(
-      (s) => s.flag.requires_justification && !s.justification.trim(),
-    );
-    if (missing.length > 0) {
-      setError(
-        `Justificativa obrigatória em: ${missing
-          .map((s) => s.flag.display_name)
-          .join(", ")}.`,
-      );
-      return;
-    }
+    // v1.0035 (feedback do cliente): justificativa NÃO é obrigatória — nem para
+    // flags com requires_justification. Continua sendo gravada quando preenchida,
+    // mas nunca bloqueia o "Aplicar".
     const specs: BatchFlagSpec[] = Array.from(selected.values()).map((s) => ({
       flag_id: s.flag.flag_id,
       justification: s.justification.trim() || null,
@@ -210,7 +200,7 @@ export function FlagPickerModal({
           <h3 className="font-semibold">{title}</h3>
           <p className="text-xs text-muted-foreground">
             {subtitle ??
-              "Marque uma ou mais flags. Flags LGPD exigem justificativa."}
+              "Marque uma ou mais flags. A justificativa é opcional (recomendada em flags LGPD)."}
           </p>
         </div>
         <div className="p-4 border-b">
@@ -289,7 +279,7 @@ export function FlagPickerModal({
                   rows={2}
                   placeholder={
                     flag.requires_justification
-                      ? "Justificativa (obrigatória)*"
+                      ? "Justificativa (recomendada)"
                       : "Justificativa (opcional)"
                   }
                   value={justification}

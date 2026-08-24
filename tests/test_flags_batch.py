@@ -148,9 +148,10 @@ def test_batch_apply_entity_flags_idempotent(state):
     assert len(ef_inserts) == 1  # só e2 inseriu; e1 reaproveitou
 
 
-def test_batch_apply_entity_flags_partial_error_missing_justification(state):
-    """Flag que exige justificativa sem texto falha para TODOS os alvos daquela
-    flag, mas o lote não aborta as demais flags."""
+def test_batch_apply_entity_flags_justification_optional(state):
+    """v1.0035 (feedback do cliente): justificativa NÃO é mais obrigatória — nem
+    para flags com requires_justification. Aplicar sem justificativa SUCEDE em
+    todos os alvos (antes falhava). Só flag inativa/ inexistente bloqueia."""
     state["flags"] = {
         "f1": _flag_row("f1"),
         "fj": _flag_row("fj", category="LGPD", requires_just=True),
@@ -159,16 +160,13 @@ def test_batch_apply_entity_flags_partial_error_missing_justification(state):
         target_ids=["e1", "e2"],
         flags=[
             BatchFlagSpec(flag_id="f1"),           # ok
-            BatchFlagSpec(flag_id="fj"),           # sem justificativa → falha
+            BatchFlagSpec(flag_id="fj"),           # requires_justification, sem texto → agora OK
         ],
     )
     result = frouter.batch_apply_entity_flags(payload, MagicMock(), MagicMock())
     assert result.total == 4
-    assert result.succeeded == 2  # só f1 nos 2 alvos
-    assert result.failed == 2     # fj nos 2 alvos
-    failed = [r for r in result.results if not r.ok]
-    assert all(r.flag_id == "fj" for r in failed)
-    assert all("justif" in (r.error or "").lower() for r in failed)
+    assert result.succeeded == 4  # justificativa opcional → todos aplicam
+    assert result.failed == 0
 
 
 def test_batch_apply_entity_flags_missing_flag_fails_all_targets(state):

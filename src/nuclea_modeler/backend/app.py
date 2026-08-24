@@ -6,6 +6,7 @@ from .schemas.router import router as schemas_router
 from .diagrams.router import router as diagrams_router
 from .entities.router import router as entities_router
 from .entities.indexes_router import router as entities_indexes_router
+from .entities.roundtrip_router import router as entities_roundtrip_router
 from .entities.global_listings_router import (
     attributes_router as attributes_listing_router,
     indexes_router as indexes_listing_router,
@@ -62,6 +63,7 @@ app = create_app(
         connections_router,
         entities_router,
         entities_indexes_router,
+        entities_roundtrip_router,
         attributes_listing_router,
         indexes_listing_router,
         glossary_router,

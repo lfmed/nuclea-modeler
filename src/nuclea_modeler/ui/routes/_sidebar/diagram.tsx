@@ -456,10 +456,16 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
   }, [filteredEntities, savedPosOf, expanded]);
 
   const baseEdges = useMemo<Edge[]>(() => {
+    // Guard (v1.0035): ao abrir um DIAGRAMA (recorte), a membership (memberIds)
+    // carrega async. Sem esperar, filteredEntities mostra TODAS as entidades e
+    // as arestas, e quando memberIds chega o conjunto encolhe — o usuário vê as
+    // linhas "sumirem". Enquanto a membership não chega, não renderizamos arestas
+    // (evita o flash-e-some); elas aparecem já corretas quando memberIds resolve.
+    if (diagramId && !memberIds) return [];
     return view.relationships
       .filter((r) => visibleIds.has(r.source_entity_id) && visibleIds.has(r.target_entity_id))
       .map((r) => relationshipToEdge(r));
-  }, [view.relationships, visibleIds]);
+  }, [view.relationships, visibleIds, diagramId, memberIds]);
 
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
@@ -2119,6 +2125,9 @@ function EditEntityDialog({
   const [schema, setSchema] = useState(entity.schema_name);
   const [domain, setDomain] = useState(entity.domain || "");
   const [criticality, setCriticality] = useState(entity.criticality || "");
+  const [description, setDescription] = useState(
+    (entity as { description_md?: string | null }).description_md || "",
+  );
   const [isShared, setIsShared] = useState(
     Boolean((entity as { is_shared?: boolean }).is_shared),
   );
@@ -2143,6 +2152,7 @@ function EditEntityDialog({
         logical_name: logName || null,
         domain: domain || null,
         criticality: (criticality || null) as any,
+        description_md: description.trim() ? description : null,
         entity_type: entity.entity_type as any,
         tags: [],
         is_shared: isShared,
@@ -2205,6 +2215,16 @@ function EditEntityDialog({
                 </select>
               </Field>
             </div>
+            {/* Descrição da tabela editável nos metadados (v1.0035, feedback do
+                cliente). Vai junto no "Salvar metadados" via updateEntity. */}
+            <Field label="Descrição (negócio)">
+              <textarea
+                className="w-full min-h-[80px] rounded-md border bg-background px-3 py-2 text-sm leading-relaxed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Contexto de negócio da tabela (markdown suportado)…"
+              />
+            </Field>
             <div className="rounded-md border bg-muted/30 p-3">
               <label className="flex items-start gap-2 cursor-pointer">
                 <input
@@ -2246,7 +2266,7 @@ function EditEntityDialog({
           </div>
 
           <div className="pt-4 border-t text-xs text-muted-foreground">
-            Para editar descrição, owners, tags, flags LGPD e mais, abra a página completa em{" "}
+            Para editar owners, tags, flags LGPD e mais, abra a página completa em{" "}
             <Link
               to="/entities/$id"
               params={{ id: entity.entity_id }}
