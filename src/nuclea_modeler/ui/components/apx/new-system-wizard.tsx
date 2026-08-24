@@ -61,6 +61,7 @@ const TECH_OPTIONS = [
   "SQL Server",
   "MySQL",
   "Databricks",
+  "DB2",
   "Outro",
 ];
 
@@ -71,6 +72,7 @@ const DDL_DIALECTS = [
   { value: "MSSQL", label: "SQL Server" },
   { value: "MYSQL", label: "MySQL" },
   { value: "DATABRICKS", label: "Databricks" },
+  { value: "DB2", label: "DB2 (IBM Db2)" },
 ];
 
 // Cap para upload .DM1 — 50 MB (alinhado ao backend EmbarcaderoImportIn).

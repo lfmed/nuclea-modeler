@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-DDLDialect = Literal["ANSI", "TSQL", "PLSQL", "POSTGRES", "MYSQL", "SPARKSQL"]
+DDLDialect = Literal["ANSI", "TSQL", "PLSQL", "POSTGRES", "MYSQL", "SPARKSQL", "DB2"]
 
 
 class DDLExportRequest(BaseModel):

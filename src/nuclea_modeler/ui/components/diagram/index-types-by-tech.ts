@@ -57,6 +57,11 @@ const DATABRICKS_IDX: IndexTypeOption[] = [
   { value: "Z-ORDER", label: "Z-ORDER (legacy)", hint: "preferir LIQUID em tabelas novas" },
 ];
 
+const DB2_IDX: IndexTypeOption[] = [
+  { value: "BTREE", label: "BTREE", hint: "default" },
+  { value: "UNIQUE", label: "UNIQUE", hint: "garante unicidade" },
+];
+
 const GENERIC_IDX: IndexTypeOption[] = [
   { value: "BTREE", label: "BTREE" },
   { value: "UNIQUE", label: "UNIQUE" },
@@ -97,6 +102,11 @@ const MYSQL_PART: PartitionOption[] = [
   { value: "HASH", label: "HASH", needsNumPartitions: true },
 ];
 
+const DB2_PART: PartitionOption[] = [
+  { value: "NONE", label: "Sem particionamento" },
+  { value: "RANGE", label: "RANGE", needsBounds: true, hint: "por intervalo (data, número)" },
+];
+
 const GENERIC_PART: PartitionOption[] = [
   { value: "NONE", label: "Sem particionamento" },
   { value: "RANGE", label: "RANGE", needsBounds: true },
@@ -114,6 +124,7 @@ function techKey(tech: string | null | undefined): string {
   if (t.includes("sqlserver") || t.includes("mssql") || t.includes("sql server")) return "mssql";
   if (t.includes("mysql") || t.includes("mariadb")) return "mysql";
   if (t.includes("databricks") || t.includes("delta") || t.includes("spark")) return "databricks";
+  if (t.includes("db2") || t.includes("ibm")) return "db2";
   return "generic";
 }
 
@@ -124,6 +135,7 @@ export function getIndexTypesForTechnology(tech: string | null | undefined): Ind
     case "mssql": return SQLSERVER_IDX;
     case "mysql": return MYSQL_IDX;
     case "databricks": return DATABRICKS_IDX;
+    case "db2": return DB2_IDX;
     default: return GENERIC_IDX;
   }
 }
@@ -135,6 +147,7 @@ export function getPartitionStrategiesForTechnology(tech: string | null | undefi
     case "mssql": return SQLSERVER_PART;
     case "mysql": return MYSQL_PART;
     case "databricks": return DATABRICKS_PART;
+    case "db2": return DB2_PART;
     default: return GENERIC_PART;
   }
 }

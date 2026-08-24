@@ -78,6 +78,7 @@ def map_type(native: str | None, dialect: DDLDialect) -> str:
             "MYSQL": "INT",
             "SPARKSQL": "INT",
             "ANSI": "INTEGER",
+            "DB2": "INTEGER",
         }[dialect]
     if base in _BIGINT_TYPES:
         return {
@@ -87,6 +88,7 @@ def map_type(native: str | None, dialect: DDLDialect) -> str:
             "MYSQL": "BIGINT",
             "SPARKSQL": "BIGINT",
             "ANSI": "BIGINT",
+            "DB2": "BIGINT",
         }[dialect]
     if base in _SMALLINT_TYPES:
         return {
@@ -96,6 +98,7 @@ def map_type(native: str | None, dialect: DDLDialect) -> str:
             "MYSQL": "SMALLINT",
             "SPARKSQL": "SMALLINT",
             "ANSI": "SMALLINT",
+            "DB2": "SMALLINT",
         }[dialect]
     if base in _DECIMAL_TYPES:
         a = args or "18,2"
@@ -106,6 +109,7 @@ def map_type(native: str | None, dialect: DDLDialect) -> str:
             "MYSQL": f"DECIMAL({a})",
             "SPARKSQL": f"DECIMAL({a})",
             "ANSI": f"DECIMAL({a})",
+            "DB2": f"DECIMAL({a})",
         }[dialect]
     if base in _FLOAT_TYPES:
         return {
@@ -115,6 +119,7 @@ def map_type(native: str | None, dialect: DDLDialect) -> str:
             "MYSQL": "DOUBLE",
             "SPARKSQL": "DOUBLE",
             "ANSI": "DOUBLE PRECISION",
+            "DB2": "DOUBLE",
         }[dialect]
     if base in _VARCHAR_TYPES:
         a = args or "255"
@@ -125,6 +130,7 @@ def map_type(native: str | None, dialect: DDLDialect) -> str:
             "MYSQL": f"VARCHAR({a})",
             "SPARKSQL": "STRING",
             "ANSI": f"VARCHAR({a})",
+            "DB2": f"VARCHAR({a})",
         }[dialect]
     if base in _TEXT_TYPES:
         return {
@@ -134,6 +140,7 @@ def map_type(native: str | None, dialect: DDLDialect) -> str:
             "MYSQL": "TEXT",
             "SPARKSQL": "STRING",
             "ANSI": "TEXT",
+            "DB2": "CLOB",
         }[dialect]
     if base in _DATE_TYPES:
         return "DATE"
@@ -145,6 +152,7 @@ def map_type(native: str | None, dialect: DDLDialect) -> str:
             "MYSQL": "DATETIME",
             "SPARKSQL": "TIMESTAMP",
             "ANSI": "TIMESTAMP",
+            "DB2": "TIMESTAMP",
         }[dialect]
     if base in _BOOL_TYPES:
         return {
@@ -154,6 +162,9 @@ def map_type(native: str | None, dialect: DDLDialect) -> str:
             "MYSQL": "TINYINT(1)",
             "SPARKSQL": "BOOLEAN",
             "ANSI": "BOOLEAN",
+            # DB2 tem BOOLEAN nativo desde 11.1; SMALLINT(0/1) é o fallback
+            # clássico p/ Db2 for i. Usamos BOOLEAN por ser o mais direto.
+            "DB2": "BOOLEAN",
         }[dialect]
     # unknown — pass through, preserving args
     if args:
@@ -602,6 +613,43 @@ def gen_sparksql(entity: dict[str, Any], attrs: list[dict[str, Any]], opts: DDLE
     return "\n".join(out)
 
 
+def gen_db2(entity: dict[str, Any], attrs: list[dict[str, Any]], opts: DDLExportRequest) -> str:
+    """IBM Db2 (LUW / Db2 for i).
+
+    Tipos DB2 (INTEGER/BIGINT/SMALLINT/DECIMAL/VARCHAR/CLOB/TIMESTAMP…) via
+    map_type. Usa a sintaxe padrão `COMMENT ON TABLE/COLUMN … IS …` (igual a
+    Oracle/Postgres) e `CREATE [UNIQUE] INDEX`. DROP é best-effort (DB2 não tem
+    DROP IF EXISTS universal — reusa o _drop_stmt padrão do app).
+    """
+    table = _table_ref(entity, opts)
+    out: list[str] = []
+    out.append(_drop_stmt(table, opts) + f"CREATE TABLE {table} (")
+    cols = _build_columns_block(attrs, "DB2", inline_column_comments=False)
+    pk = _collect_pk(attrs)
+    body = list(cols)
+    if pk:
+        body.append(f"  PRIMARY KEY ({', '.join(pk)})")
+    out.append(",\n".join(body))
+    # DB2 particiona por RANGE (sintaxe próxima da do Oracle p/ export best-effort).
+    part_clause = _partition_clause_oracle(entity.get("_partitioning"))
+    out.append(f"){part_clause};")
+
+    if opts.include_comments:
+        tcomment = _entity_comment(entity)
+        if tcomment:
+            out.append(f"COMMENT ON TABLE {table} IS '{_esc(tcomment)}';")
+        for a in attrs:
+            c = _attr_comment(a)
+            if c:
+                out.append(
+                    f"COMMENT ON COLUMN {table}.{a['technical_name']} IS '{_esc(c)}';"
+                )
+
+    # CREATE [UNIQUE] INDEX — sintaxe padrão, compatível com DB2.
+    out.extend(_render_indexes_oracle(table, entity.get("_indexes") or []))
+    return "\n".join(out)
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Registry
 # ──────────────────────────────────────────────────────────────────────────────
@@ -616,6 +664,7 @@ GENERATORS: dict[DDLDialect, GeneratorFn] = {
     "POSTGRES": gen_postgres,
     "MYSQL": gen_mysql,
     "SPARKSQL": gen_sparksql,
+    "DB2": gen_db2,
 }
 
 
@@ -626,4 +675,5 @@ DIALECT_LABELS: dict[DDLDialect, tuple[str, str]] = {
     "POSTGRES": ("PostgreSQL", "PostgreSQL 12+"),
     "MYSQL": ("MySQL", "MySQL / MariaDB"),
     "SPARKSQL": ("Spark SQL / Delta", "Databricks (padrão)"),
+    "DB2": ("DB2", "IBM Db2 (LUW / Db2 for i)"),
 }

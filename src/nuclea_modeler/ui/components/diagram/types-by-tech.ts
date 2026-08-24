@@ -99,6 +99,27 @@ const DATABRICKS: TypeFamily[] = [
   { name: "BINARY", param: "none" },
 ];
 
+const DB2: TypeFamily[] = [
+  { name: "VARCHAR", param: "length", defaultLength: 50, maxLength: 32672 },
+  { name: "CHAR", param: "length", defaultLength: 1 },
+  { name: "CLOB", param: "none" },
+  { name: "INTEGER", param: "none" },
+  { name: "BIGINT", param: "none" },
+  { name: "SMALLINT", param: "none" },
+  { name: "DECIMAL", param: "precision_scale", defaultPrecision: 18, defaultScale: 2 },
+  { name: "REAL", param: "none" },
+  { name: "DOUBLE", param: "none" },
+  { name: "DECFLOAT", param: "none" },
+  { name: "BOOLEAN", param: "none" },
+  { name: "DATE", param: "none" },
+  { name: "TIME", param: "none" },
+  { name: "TIMESTAMP", param: "none" },
+  { name: "GRAPHIC", param: "length", defaultLength: 50 },
+  { name: "VARGRAPHIC", param: "length", defaultLength: 50 },
+  { name: "BLOB", param: "none" },
+  { name: "XML", param: "none" },
+];
+
 const GENERIC: TypeFamily[] = [
   { name: "STRING", param: "none" },
   { name: "VARCHAR", param: "length", defaultLength: 255 },
@@ -121,6 +142,7 @@ export function getTypeFamiliesForTechnology(tech: string | null | undefined): T
   if (t.includes("sqlserver") || t.includes("mssql") || t.includes("sql server")) return SQLSERVER;
   if (t.includes("mysql") || t.includes("mariadb")) return MYSQL;
   if (t.includes("databricks") || t.includes("delta") || t.includes("spark")) return DATABRICKS;
+  if (t.includes("db2") || t.includes("ibm")) return DB2;
   return GENERIC;
 }
 

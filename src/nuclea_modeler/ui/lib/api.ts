@@ -1656,7 +1656,8 @@ export type DDLDialect =
   | "PLSQL"
   | "POSTGRES"
   | "MYSQL"
-  | "SPARKSQL";
+  | "SPARKSQL"
+  | "DB2";
 
 export interface DDLDialectInfo {
   code: DDLDialect;
