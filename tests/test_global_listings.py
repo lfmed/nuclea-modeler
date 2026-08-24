@@ -176,9 +176,11 @@ def _run_attrs(monkeypatch, page_rows=None, **kwargs):
 
 
 def test_attributes_maps_rows(monkeypatch):
+    # r[14]=description_md, r[15]=business_rule adicionados ao SELECT (v1.0030).
     row = [
         "attr-1", "ent-1", "PEDIDO", "Pedido", "dbo", "sys-1", "Vendas",
         "id_cliente", "ID do Cliente", 3, "BIGINT", False, True, _NOW,
+        "FK para cliente", "Sempre preenchido em pedidos ativos",
     ]
     res, _cap = _run_attrs(monkeypatch, page_rows=[row])
     assert res.total == 1
@@ -189,6 +191,8 @@ def test_attributes_maps_rows(monkeypatch):
     assert item.is_primary_key is True
     assert item.is_nullable is False
     assert item.ordinal_position == 3
+    assert item.description_md == "FK para cliente"
+    assert item.business_rule == "Sempre preenchido em pedidos ativos"
 
 
 def test_attributes_pk_filter_and_archived_guard(monkeypatch):
@@ -238,9 +242,11 @@ def _run_indexes(monkeypatch, page_rows=None, **kwargs):
 
 def test_indexes_maps_rows_and_columns(monkeypatch):
     cols_json = '[{"name":"col_a","direction":"ASC"},{"name":"col_b","direction":"DESC"}]'
+    # r[12]=description_md adicionado ao SELECT (v1.0030).
     row = [
         "idx-1", "ent-1", "PEDIDO", "dbo", "sys-1", "Vendas",
         "ix_pedido_cliente", "BTREE", cols_json, True, "MANUAL", _NOW,
+        "Índice de busca por cliente",
     ]
     res, _cap = _run_indexes(monkeypatch, page_rows=[row])
     assert res.total == 1
@@ -249,6 +255,7 @@ def test_indexes_maps_rows_and_columns(monkeypatch):
     assert item.is_unique is True
     assert [c.name for c in item.columns] == ["col_a", "col_b"]
     assert item.columns[1].direction == "DESC"
+    assert item.description_md == "Índice de busca por cliente"
 
 
 def test_indexes_type_and_unique_filters(monkeypatch):
@@ -267,7 +274,8 @@ def test_indexes_sort_whitelist(monkeypatch):
 def test_indexes_has_more_pagination(monkeypatch):
     # total=1 e 1 item na página 1 → has_more False
     cols_json = "[]"
-    row = ["idx-1", "ent-1", "E", "dbo", "s", "S", "ix", "BTREE", cols_json, False, "MANUAL", _NOW]
+    # r[12]=description_md adicionado ao SELECT (v1.0030).
+    row = ["idx-1", "ent-1", "E", "dbo", "s", "S", "ix", "BTREE", cols_json, False, "MANUAL", _NOW, None]
 
     _patch_common(monkeypatch, glr)
     monkeypatch.setattr(glr.delta, "fetch_one_params", lambda sql, q, p: [1])
