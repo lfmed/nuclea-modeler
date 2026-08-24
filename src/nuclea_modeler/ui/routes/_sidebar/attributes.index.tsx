@@ -12,7 +12,7 @@ import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { QueryErrorResetBoundary } from "@tanstack/react-query";
 import { ErrorBoundary } from "react-error-boundary";
-import { saveLastSystemId, coerceNumber } from "@/lib/persist-search";
+import { saveLastSystemId, getLastSystemId, coerceNumber } from "@/lib/persist-search";
 
 import {
   useListAttributesPaginatedSuspense,
@@ -77,7 +77,8 @@ function AttributesPage() {
 
   // Inicializa estado a partir da URL (search params)
   const [q, setQ] = useState(search.q || "");
-  const [systemId, setSystemId] = useState(search.system || "");
+  // "Sistema atual" compartilhado entre as telas de modelagem (ver entities.index).
+  const [systemId, setSystemId] = useState(search.system || getLastSystemId() || "");
   const [pk, setPk] = useState(search.pk || "");
   const [flagId, setFlagId] = useState(search.flagId || "");
   const [sortBy, setSortBy] = useState(search.sortBy || "technical_name");
