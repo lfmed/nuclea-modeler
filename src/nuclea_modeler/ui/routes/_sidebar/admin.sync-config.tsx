@@ -130,7 +130,6 @@ function SyncConfigForm() {
             {catalogs.map((c) => (
               <option key={c.name} value={c.name}>
                 {c.name}
-                {c.catalog_type ? ` · ${c.catalog_type}` : ""}
               </option>
             ))}
           </select>
