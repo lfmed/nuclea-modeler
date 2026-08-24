@@ -19,7 +19,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { QueryErrorResetBoundary, useQueryClient } from "@tanstack/react-query";
 import { ErrorBoundary } from "react-error-boundary";
 import { toast } from "sonner";
-import { saveLastSystemId, coerceNumber } from "@/lib/persist-search";
+import { saveLastSystemId, getLastSystemId, coerceNumber } from "@/lib/persist-search";
 
 import {
   useListEntitiesPaginatedSuspense,
@@ -104,7 +104,10 @@ function EntitiesPage() {
   // Nota: no bootstrap, não podemos validar contra a lista de systems (o hook suspende).
   // Por isso, a sincronização com URL acontece no efeito abaixo.
   const [q, setQ] = useState(search.q || "");
-  const [systemId, setSystemId] = useState(search.system || "");
+  // "Sistema atual" compartilhado entre as telas de modelagem: sem ?system= na
+  // URL, cai no último sistema escolhido em QUALQUER tela (DER/listas) via
+  // sessionStorage — assim a seleção acompanha o usuário ao trocar de menu.
+  const [systemId, setSystemId] = useState(search.system || getLastSystemId() || "");
   const [entityType, setEntityType] = useState(search.entityType || "");
   const [criticality, setCriticality] = useState(search.criticality || "");
   const [flagId, setFlagId] = useState(search.flagId || "");

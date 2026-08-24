@@ -5,6 +5,18 @@ Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+### Changed
+- **"Sistema atual" compartilhado entre as telas de modelagem (v1.0033)** — ao
+  escolher um sistema em qualquer tela (DER, Entidades, Atributos, Índices,
+  Relacionamentos), a seleção passa a **acompanhar o usuário** ao abrir as demais —
+  só muda quando ele trocar em alguma delas. Antes, o DER lembrava o último sistema
+  (sessionStorage), mas as listas só liam o `?system=` da URL e **zeravam para
+  "Todos os sistemas"** quando abertas pela sidebar. Agora todas inicializam com
+  `?system=` → último sistema compartilhado (`getLastSystemId`) → 1º da lista, e
+  todas gravam a escolha (`saveLastSystemId`) — o estado é bidirecional entre as
+  telas. (Navegador e Canvas Exploratório não têm filtro de sistema único —
+  mostram todos por natureza — então não entram nessa regra.)
+
 ### Fixed 🐛
 - **Edições sequenciais na mesma coluna não se perdem mais (v1.0032)** — correção
   de code-review sobre o v1.0030. `list_attributes` devolvia a linha CRUA do

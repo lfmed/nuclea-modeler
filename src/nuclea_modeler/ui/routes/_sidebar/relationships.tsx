@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { QueryErrorResetBoundary, useQueryClient } from "@tanstack/react-query";
 import { ErrorBoundary } from "react-error-boundary";
-import { saveLastSystemId } from "@/lib/persist-search";
+import { saveLastSystemId, getLastSystemId } from "@/lib/persist-search";
 
 import {
   useCreateRelationship,
@@ -103,7 +103,8 @@ function RelationshipsBody() {
   const navigate = useNavigate();
 
   // Inicializa systemId: URL → último salvo → primeiro da lista
-  const initialSystem = systemFromUrl || "";
+  // "Sistema atual" compartilhado entre as telas de modelagem (ver entities.index).
+  const initialSystem = systemFromUrl || getLastSystemId() || "";
   const [systemId, setSystemId] = useState<string>(initialSystem);
   const [openDialog, setOpenDialog] = useState(false);
 
