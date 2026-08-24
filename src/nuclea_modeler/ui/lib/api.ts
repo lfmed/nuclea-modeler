@@ -152,6 +152,10 @@ export interface EntityListOut {
   criticality?: Criticality | null;
   attributes_count?: number | null;
   updated_at: string;
+  // Descrições incluídas na listagem paginada p/ o export CSV (v1.0030).
+  // (EntityOut redeclara os mesmos campos — tipos idênticos, sem conflito.)
+  description_md?: string | null;
+  native_comment?: string | null;
   // Coluna de flags — só preenchida no endpoint paginado (/entities/page).
   flags?: FlagBadge[];
   // Editorial session — quando há mudança pendente no ticket de sessão
@@ -772,6 +776,9 @@ export interface AttributeListOut {
   is_primary_key: boolean;
   updated_at?: string | null;
   flags?: FlagBadge[];
+  // Descrições incluídas na listagem paginada p/ o export CSV (v1.0030).
+  description_md?: string | null;
+  business_rule?: string | null;
 }
 
 export interface AttributesPageParams {
@@ -825,6 +832,8 @@ export interface IndexListOut {
   is_unique: boolean;
   origin?: "EXTRACTED" | "MANUAL" | null;
   updated_at?: string | null;
+  // Descrição incluída na listagem paginada p/ o export CSV (v1.0030).
+  description_md?: string | null;
 }
 
 export interface IndexesPageParams {

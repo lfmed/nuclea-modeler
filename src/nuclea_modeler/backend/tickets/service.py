@@ -970,6 +970,10 @@ def _dispatch_field_change(
                 "is_nullable": attr_payload.get("is_nullable"),
                 "default_value": attr_payload.get("default_value"),
                 "is_primary_key": bool(attr_payload.get("is_primary_key", False)),
+                # description_md/business_rule persistem na CRIAÇÃO de coluna
+                # (v1.0030) — ex.: coluna criada já com descrição no modal do DER.
+                "description_md": attr_payload.get("description_md"),
+                "business_rule": attr_payload.get("business_rule"),
                 "native_comment": attr_payload.get("native_comment"),
                 "created_at": state.now, "created_by": state.applied_by,
                 "updated_at": state.now, "updated_by": state.applied_by,
@@ -1003,6 +1007,14 @@ def _dispatch_field_change(
                 # REORDENAÇÃO de PK composta (drag na UI). Sem ele o novo
                 # número da PK não sobreviveria ao apply do ticket.
                 "ordinal_position": attr_payload.get("ordinal_position"),
+                # description_md/business_rule entram no allowlist (v1.0030) para
+                # a EDIÇÃO de descrição por coluna (no modal do DER e na tela do
+                # objeto) sobreviver ao apply. Antes eram descartados aqui e a
+                # descrição staged nunca chegava ao catálogo. Gotcha: o filtro
+                # `v is not None` impede LIMPAR pra NULL — string vazia ("") passa
+                # e zera o texto; isso é intencional (edição só adiciona/troca).
+                "description_md": attr_payload.get("description_md"),
+                "business_rule": attr_payload.get("business_rule"),
                 "native_comment": attr_payload.get("native_comment"),
             }.items() if v is not None
         }

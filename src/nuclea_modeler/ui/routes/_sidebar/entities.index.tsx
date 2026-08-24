@@ -336,9 +336,10 @@ function EntitiesTable({
   const qc = useQueryClient();
 
   const exportCsv = () => {
+    // Descrição + Comentário nativo incluídos no export (v1.0030).
     const headers = [
       "Nome técnico", "Nome lógico", "Sistema", "Schema", "Tipo",
-      "Domínio", "Criticidade", "# Attrs", "Flags",
+      "Domínio", "Criticidade", "# Attrs", "Flags", "Descrição", "Comentário nativo",
     ];
     const rows = entities.map((e) => [
       e.technical_name,
@@ -350,6 +351,8 @@ function EntitiesTable({
       e.criticality || "",
       e.attributes_count ?? 0,
       (e.flags || []).map((f) => f.display_name).join(" | "),
+      e.description_md || "",
+      e.native_comment || "",
     ]);
     downloadCsv("entidades.csv", headers, rows);
   };

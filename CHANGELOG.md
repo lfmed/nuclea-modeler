@@ -5,7 +5,52 @@ Versionamento: [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
-### Added
+### Fixed 🐛
+- **Edições sequenciais na mesma coluna não se perdem mais (v1.0032)** — correção
+  de code-review sobre o v1.0030. `list_attributes` devolvia a linha CRUA do
+  catálogo para entities existentes (sem overlay das edições pendentes), então a UI
+  reconstruía o payload de update com dados desatualizados; como o staging faz merge
+  "última intenção vence" por field-key, editar a descrição e depois togglar a PK da
+  MESMA coluna no mesmo ticket **apagava a descrição** (e vice-versa). Fix: novo
+  `_overlay_existing_attrs` espelha o estado staged sobre o catálogo (análogo ao
+  `_overlay_entity_out` de entity-level), com teste. Além disso:
+  (a) **descrição de coluna agora pode ser limpa** — a UI envia texto cru (`""`
+  limpa) em vez de `null`, que o apply de atributo filtrava;
+  (b) payloads de update de atributo ficaram **consistentes** entre DER e tela do
+  objeto (todos carregam logical_name/default_value/description_md/business_rule),
+  eliminando perda cruzada de edições;
+  (c) a seção "Campos em aprovação" atualiza na hora (invalida `getSessionState`);
+  (d) o guardrail de lote limpa a seleção ao trocar de filtro (evitava o aviso
+  escapar quando a seleção saía da lista visível).
+- **Guardrail de aprovação em lote — mesmo autor + mesmo sistema (v1.0031)** —
+  feedback do cliente: aprovar mudanças em lote só deveria valer para tickets do
+  mesmo schema e do mesmo usuário. Como um ticket já é por **(autor, sistema)**, o
+  guardrail valida autor + sistema direto pelos campos do ticket (não precisa
+  varrer o schema das entidades do diff). Decisão de produto: **avisar, não
+  bloquear** — quando a seleção mistura autores e/ou sistemas diferentes, a barra
+  de ações em lote mostra um aviso âmbar e a ação pede confirmação antes de
+  prosseguir; o usuário ainda pode aprovar um lote heterogêneo se quiser. Só
+  frontend (`tickets.index.tsx`), sem mudança de backend nem de contrato.
+- **Editar descrições em todo lugar + exportar no CSV (v1.0030)** — fecha o tema
+  "descrições" do feedback do cliente (round 3, itens A2/A3/A5). O v1.0029 só
+  **exibia** descrição no DER; agora dá pra **editar** e **exportar**:
+  - **Editar por coluna no modal do DER (A2)** — o editor de atributos do diagrama
+    ganhou uma coluna **Descrição** editável inline (clique → textarea → Salvar;
+    Ctrl/Cmd+Enter salva, Esc cancela). Staged via ticket como os demais campos.
+  - **Editar na tela do objeto (A3)** — o card "Descrição de negócio" da entidade
+    virou **editável** (botão Editar → textarea → Salvar) e cada coluna da tabela
+    de atributos tem descrição **editável inline** (mesma célula do DER). Tudo via
+    fluxo editorial → ticket.
+  - **Export com descritivos (A5)** — os CSVs de **Entidades** (Descrição +
+    Comentário nativo), **Atributos** (Descrição + Regra de negócio) e **Índices**
+    (Descrição) agora carregam os campos de descrição. Os endpoints paginados
+    passaram a trazer esses campos no SELECT (mapeamento posicional documentado).
+  - **Backend (gotcha corrigido):** o allowlist de apply de `attribute:NAME.update`
+    **não incluía** `description_md`/`business_rule` — a descrição staged era
+    **descartada** no apply e nunca chegava ao catálogo. Adicionados ao allowlist
+    (update + create). Célula sempre reenvia o payload COMPLETO do atributo porque
+    o staging faz merge por field-key com "última intenção vence" (parcial apagaria
+    PK/tipo). O `PkToggle` também passou a reenviar descrição/regra pelo mesmo motivo.
 - **Descrições de tabela/coluna no DER (v1.0029)** — as descrições (`description_md`),
   comentários nativos (`native_comment`) e regra de negócio (`business_rule`) já
   existiam no catálogo mas **não chegavam ao diagrama**. Agora o endpoint do DER carrega
