@@ -36,7 +36,7 @@ jobs:
     env:
       UV_PYTHON: ${{ matrix.python }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -81,7 +81,7 @@ jobs:
         # Artifact único por job da matrix (precisa nome distinto para
         # actions/upload-artifact@v4 não rejeitar colisão).
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-xml-py${{ matrix.python }}
           path: coverage.xml
@@ -99,7 +99,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
@@ -144,13 +144,13 @@ jobs:
     # On PRs we diff against the PR base. On pushes to main we scan the
     # whole tree (TruffleHog errors when base == head, e.g. the initial push).
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: TruffleHog (PR — diff against base)
         if: github.event_name == 'pull_request'
-        uses: trufflesecurity/trufflehog@v3.95.3
+        uses: trufflesecurity/trufflehog@v3.97.1
         with:
           path: ./
           base: ${{ github.event.pull_request.base.sha }}
@@ -159,7 +159,7 @@ jobs:
 
       - name: TruffleHog (push — full scan)
         if: github.event_name == 'push'
-        uses: trufflesecurity/trufflehog@v3.95.3
+        uses: trufflesecurity/trufflehog@v3.97.1
         with:
           path: ./
           extra_args: --only-verified
