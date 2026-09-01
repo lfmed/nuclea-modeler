@@ -117,7 +117,12 @@ function DdlForm() {
       onSuccess: (data) => {
         setResult(data);
         setIsPreview(false);
-        triggerDownload(data, systemId, dialect);
+        // Nome do arquivo = nome do sistema (round 5, pt 17), com fallback ao id.
+        triggerDownload(
+          data,
+          systems.find((s) => s.system_id === systemId)?.system_name || systemId,
+          dialect,
+        );
       },
     },
   });
@@ -447,14 +452,23 @@ function FormSkeleton() {
 
 function triggerDownload(
   result: DDLExportResult,
-  systemId: string,
+  systemName: string,
   dialect: DDLDialect,
 ) {
   const blob = new Blob([result.combined_text], { type: "text/sql" });
   const url = URL.createObjectURL(blob);
+  // Nome do arquivo = nome do sistema "slugificado" (round 5, pt 17). Antes usávamos
+  // o systemId (UUID), pouco legível. Ex.: "Cadastro de Clientes" → "cadastro-de-clientes".
+  const slug =
+    (systemName || "system")
+      .normalize("NFD") // separa letra-base + acento (é → e + ´)
+      .replace(/\p{Diacritic}/gu, "") // remove os acentos (ç, ã, é…)
+      .replace(/[^a-zA-Z0-9]+/g, "-") // não-alfanumérico → hífen
+      .replace(/^-+|-+$/g, "") // apara hífens das pontas
+      .toLowerCase() || "system";
   const a = document.createElement("a");
   a.href = url;
-  a.download = `nuclea-${systemId || "system"}-${dialect.toLowerCase()}.sql`;
+  a.download = `${slug}-${dialect.toLowerCase()}.sql`;
   document.body.appendChild(a);
   a.click();
   a.remove();

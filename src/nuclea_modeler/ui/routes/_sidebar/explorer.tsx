@@ -109,7 +109,12 @@ function SystemsLevel() {
       ) : (
         <ul>
           {systems.map((sys) => (
-            <SystemNode key={sys.system_id} systemId={sys.system_id} name={sys.system_name} />
+            <SystemNode
+              key={sys.system_id}
+              systemId={sys.system_id}
+              name={sys.system_name}
+              technology={sys.technology}
+            />
           ))}
         </ul>
       )}
@@ -206,7 +211,16 @@ function ArchivedSystemsSection() {
   );
 }
 
-function SystemNode({ systemId, name }: { systemId: string; name: string }) {
+function SystemNode({
+  systemId,
+  name,
+  technology,
+}: {
+  systemId: string;
+  name: string;
+  /** Tecnologia/dialeto do banco do sistema (ex.: "PostgreSQL", "DB2"). round 5, pt 19. */
+  technology?: string | null;
+}) {
   const [open, setOpen] = useState(false);
   const qc = useQueryClient();
   const { data: me } = useMyRolesSuspense(selector());
@@ -241,6 +255,15 @@ function SystemNode({ systemId, name }: { systemId: string; name: string }) {
           <Caret open={open} />
           <Database className="h-4 w-4 shrink-0 text-nuclea-primary" />
           <span className="font-medium">{name}</span>
+          {/* Tecnologia do banco ao lado do nome (round 5, pt 19): ex. "RAT – Postgres". */}
+          {technology && (
+            <span
+              className="rounded border border-nuclea-primary/30 bg-nuclea-primary/10 px-1.5 py-0.5 text-[10px] font-medium leading-none text-nuclea-primary"
+              title={`Tecnologia do banco: ${technology}`}
+            >
+              {technology}
+            </span>
+          )}
         </button>
         {canManage && (
           <Button

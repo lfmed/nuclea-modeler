@@ -65,13 +65,17 @@ const TECH_OPTIONS = [
   "Outro",
 ];
 
+// Os `value` DEVEM bater com o backend (extractions/service.py
+// _resolve_sqlglot_dialect e o Literal DDLDialect). Antes usávamos
+// POSTGRESQL/MSSQL/ORACLE/DATABRICKS — o backend não reconhecia e o import de DDL
+// falhava com 0 objetos (round 5, pt 12). Mantemos os nomes canônicos.
 const DDL_DIALECTS = [
   { value: "ANSI", label: "ANSI / Genérico" },
-  { value: "POSTGRESQL", label: "PostgreSQL" },
-  { value: "ORACLE", label: "Oracle" },
-  { value: "MSSQL", label: "SQL Server" },
+  { value: "POSTGRES", label: "PostgreSQL" },
+  { value: "PLSQL", label: "Oracle" },
+  { value: "TSQL", label: "SQL Server" },
   { value: "MYSQL", label: "MySQL" },
-  { value: "DATABRICKS", label: "Databricks" },
+  { value: "SPARKSQL", label: "Databricks / Spark" },
   { value: "DB2", label: "DB2 (IBM Db2)" },
 ];
 
@@ -156,11 +160,12 @@ function WizardInner({
       setTechnology("Databricks");
     } else if (source === "DDL") {
       const map: Record<string, string> = {
-        POSTGRESQL: "PostgreSQL",
-        ORACLE: "Oracle",
-        MSSQL: "SQL Server",
+        POSTGRES: "PostgreSQL",
+        PLSQL: "Oracle",
+        TSQL: "SQL Server",
         MYSQL: "MySQL",
-        DATABRICKS: "Databricks",
+        SPARKSQL: "Databricks",
+        DB2: "DB2",
       };
       setTechnology(map[ddlDialect] || "");
     } else if (!techTouched) {

@@ -110,6 +110,7 @@ import {
 import { getTypesForTechnology } from "@/components/diagram/types-by-tech";
 import { TypePicker } from "@/components/diagram/type-picker";
 import { AttrDescriptionCell } from "@/components/attributes/description-cell";
+import { AttrDefaultCell } from "@/components/attributes/default-cell";
 import {
   PkToggle,
   computePkOrdinals,
@@ -2388,6 +2389,29 @@ function AttributesEditor({
     toast.success(`Descrição de "${a.technical_name}" staged (pendente)`);
   };
 
+  // Stage do valor DEFAULT de UMA coluna no DER (round 5, pt 20). Mesma disciplina
+  // do saveAttrDesc: payload COMPLETO (merge "última intenção vence" por field-key).
+  // Texto CRU: "" limpa (o apply filtra None, então null nunca limparia).
+  const saveAttrDefault = (a: AttributeOut, defaultValue: string) => {
+    updateAttr.mutate({
+      entityId,
+      attributeId: a.attribute_id,
+      data: {
+        entity_id: entityId,
+        technical_name: a.technical_name,
+        logical_name: a.logical_name ?? null,
+        native_data_type: a.native_data_type || null,
+        ordinal_position: a.ordinal_position ?? null,
+        is_nullable: a.is_nullable,
+        default_value: defaultValue,
+        is_primary_key: a.is_primary_key,
+        description_md: a.description_md ?? null,
+        business_rule: a.business_rule ?? null,
+      },
+    });
+    toast.success(`Valor padrão de "${a.technical_name}" staged (pendente)`);
+  };
+
   return (
     <div className="space-y-4">
       {/* Entity-level flags section */}
@@ -2421,6 +2445,7 @@ function AttributesEditor({
             <tr className="border-b text-left text-muted-foreground">
               <th className="py-1 pr-2 font-medium">Nome</th>
               <th className="py-1 pr-2 font-medium">Tipo</th>
+              <th className="py-1 pr-2 font-medium">Padrão</th>
               <th className="py-1 pr-2 font-medium w-20">PK</th>
               <th className="py-1 pr-2 font-medium">Flags</th>
               <th className="py-1 pr-2 font-medium">Descrição</th>
@@ -2437,6 +2462,12 @@ function AttributesEditor({
                 <tr key={a.attribute_id} className="border-b">
                   <td className="py-1 pr-2 font-mono">{a.technical_name}</td>
                   <td className="py-1 pr-2 font-mono text-muted-foreground">{a.native_data_type || "—"}</td>
+                  <td className="py-1 pr-2 text-muted-foreground max-w-[160px]">
+                    <AttrDefaultCell
+                      value={a.default_value}
+                      onSave={(v) => saveAttrDefault(a, v)}
+                    />
+                  </td>
                   <td className="py-1 pr-2">
                     <PkToggle
                       checked={a.is_primary_key}

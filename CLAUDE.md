@@ -56,6 +56,14 @@ documentado para quem mantém depois.** Cumprir em todo PR:
   sourceHandle="source-right" e targetHandle="target-left". Isso garante que as linhas
   sempre tocam uma borda real da tabela, independente da navegação. Veja entity-node.tsx
   linhas 265+ e relationshipToEdge() no diagram.tsx ~2040-2075.
+- **Dialeto DDL: vocabulário CANÔNICO único (GOTCHA, v1.0037).** O import de DDL usa
+  `sqlglot`; o backend só entende as chaves canônicas `ANSI | POSTGRES | TSQL | PLSQL |
+  MYSQL | SPARKSQL | DB2` (ver `extractions/service.py::_resolve_sqlglot_dialect`). Toda
+  tela que manda dialeto (wizard, extractions, export) DEVE usar EXATAMENTE esses valores.
+  O `new-system-wizard.tsx` mandava `POSTGRESQL/MSSQL/ORACLE/DATABRICKS` → o sqlglot recebia
+  nome desconhecido, parseava 0 objetos e o import falhava (round 5, pt 12). O helper agora
+  normaliza aliases e cai em `None` (auto) se não reconhecer — mas mantenha o vocabulário
+  alinhado. Teste: `tests/test_dialect_resolution.py`.
 - **`ui/lib/api.ts` é ESCRITO À MÃO** — não há codegen no deploy (cliente sem npm/apx).
   Rota nova no backend ⇒ escreva o hook à mão em `api.ts` (padrão `use<Op>` /
   `use<Op>Suspense` / `selector()`). Ignore a linha do boilerplate que diz "auto-regenera".
