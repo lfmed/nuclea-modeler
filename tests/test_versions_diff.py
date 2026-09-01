@@ -314,3 +314,33 @@ def test_diff_complex_realistic_scenario(patch_load):
         c.type == "entity_changed" and c.field == "logical_name"
         for c in diff.changes
     )
+
+
+# ─── compute_diff_vs_current (round 5, pt 18) ────────────────────────────────
+
+
+def test_diff_vs_current_compares_version_with_live_model(monkeypatch):
+    """`to="current"`: compara a versão com o snapshot ATUAL (ao vivo).
+
+    Valida o rótulo `to_version_id == "current"` e que o lado `to` vem de
+    build_snapshot (não de _load_snapshot). Aqui o modelo atual tem uma entidade a
+    mais que a versão → 1 adição.
+    """
+    from nuclea_modeler.backend.versions.service import compute_diff_vs_current
+
+    snap_from = _snapshot(entities=[_entity("e1", "public", "cliente")])
+    snap_current = _snapshot(
+        entities=[
+            _entity("e1", "public", "cliente"),
+            _entity("e2", "vendas", "pedido"),  # nova no modelo atual
+        ]
+    )
+    monkeypatch.setattr(vsvc, "_load_snapshot", lambda sql, vid: snap_from)
+    monkeypatch.setattr(vsvc, "build_snapshot", lambda sql, sysid: snap_current)
+    monkeypatch.setattr(vsvc.delta, "fetch_one_params", lambda *a, **k: ["sys-1"])
+
+    diff = compute_diff_vs_current(MagicMock(), "v-from")
+    assert diff.from_version_id == "v-from"
+    assert diff.to_version_id == "current"
+    assert diff.totals["additions"] == 1
+    assert diff.additions[0].entity_key == "vendas.pedido"

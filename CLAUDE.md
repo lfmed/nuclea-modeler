@@ -79,6 +79,13 @@ documentado para quem mantém depois.** Cumprir em todo PR:
   (`CreateRelationshipDialog`): cria os atributos-FK via `createAttribute` → pega os ids →
   cria o relacionamento — tudo no mesmo ticket (o apply ordena atributos antes de
   relacionamentos). Rolename (`id`→`id_<pai>`) só em colisão, editável (`transportedFkName`).
+- **Versões × Tickets são conceitos SEPARADOS (v1.0041).** Versão = snapshot imutável
+  publicado manualmente (`model_versions.snapshot_json`); Ticket = aprovação editorial de
+  mudanças no modelo vivo. Não há vínculo populado entre eles (`reconciliation_tickets.
+  target_version_id` existe mas nunca é gravado) — a tela de Versões linka para Tickets em
+  vez de fingir um FK. Diff aceita `to="current"` (`compute_diff_vs_current` → `build_snapshot`
+  ao vivo) para "o que mudou desde a versão X" sem publicar. Restore já é não-destrutivo
+  (cria DRAFT). Export = download do `snapshot_json` (frontend, sem backend novo).
 - **`ui/lib/api.ts` é ESCRITO À MÃO** — não há codegen no deploy (cliente sem npm/apx).
   Rota nova no backend ⇒ escreva o hook à mão em `api.ts` (padrão `use<Op>` /
   `use<Op>Suspense` / `selector()`). Ignore a linha do boilerplate que diz "auto-regenera".

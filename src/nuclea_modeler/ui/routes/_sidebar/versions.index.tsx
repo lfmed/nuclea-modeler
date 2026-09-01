@@ -78,8 +78,15 @@ function Header() {
         <Badge variant="outline" className="font-mono">M8</Badge>
       </div>
       <p className="text-muted-foreground max-w-3xl">
-        Histórico imutável de versões publicadas por sistema. Cada publicação congela
-        um snapshot do modelo e permite comparações entre versões com diff lado a lado.
+        Log (somente leitura) das versões de cada sistema. Cada versão congela um
+        snapshot do modelo; você pode <strong>comparar duas versões</strong> ou uma
+        versão com o <strong>modelo atual</strong>, <strong>restaurar</strong> uma versão
+        como rascunho (sem sobrescrever o modelo) e <strong>exportar</strong> o snapshot.{" "}
+        As aprovações que alteram o modelo ficam em{" "}
+        <Link to="/tickets" className="text-nuclea-primary hover:underline">
+          Tickets
+        </Link>
+        .
       </p>
     </div>
   );
