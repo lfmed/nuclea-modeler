@@ -78,9 +78,11 @@ import {
   Download,
   Eye,
   EyeOff,
+  Hand,
   ImageDown,
   LayoutGrid,
   Maximize2,
+  MousePointer2,
   Network,
   Plus,
   RefreshCw,
@@ -91,9 +93,11 @@ import {
   ShieldAlert,
   ShieldCheck,
   Trash2,
+  Waypoints,
   X,
   XCircle,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/apx/empty-state";
 import { AttachmentsPanel } from "@/components/attachments/attachments-panel";
 import { FlagPicker } from "@/components/flags/flag-picker";
@@ -308,6 +312,14 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
   const [direction, setDirection] = useState<LayoutDirection>("LR");
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("hierarchical");
 
+  // Modo do cursor no canvas (round 5, pt 10). Antes os nós eram SEMPRE arrastáveis
+  // e um clique simples abria a edição — sem distinção de modo. Agora:
+  //   - "move":    arrasta as tabelas (nós arrastáveis; sem conectar).
+  //   - "select":  só seleciona; DUPLO clique abre a edição (não arrasta).
+  //   - "connect": arrasta entre tabelas para criar FK (nós não-arrastáveis).
+  // O duplo clique abre a edição em qualquer modo (descoberta fácil).
+  const [canvasMode, setCanvasMode] = useState<"move" | "select" | "connect">("move");
+
   // M6 (fatia 4a): seletor de schema + diagrama. Schema restringe por
   // schema_name; diagrama restringe à membership (read-only nesta fatia).
   const { data: schemaList } = useListSchemasSuspense({ systemId }, selector());
@@ -457,19 +469,44 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
   }, [filteredEntities, savedPosOf, expanded]);
 
   const baseEdges = useMemo<Edge[]>(() => {
-    // Guard (v1.0035): ao abrir um DIAGRAMA (recorte), a membership (memberIds)
-    // carrega async. Sem esperar, filteredEntities mostra TODAS as entidades e
-    // as arestas, e quando memberIds chega o conjunto encolhe — o usuário vê as
-    // linhas "sumirem". Enquanto a membership não chega, não renderizamos arestas
-    // (evita o flash-e-some); elas aparecem já corretas quando memberIds resolve.
-    if (diagramId && !memberIds) return [];
+    // As arestas seguem SEMPRE o mesmo conjunto visível dos nós (visibleIds), então
+    // aparecem JUNTO com as tabelas (round 5, pt 13 — "FKs demoravam a aparecer").
+    //
+    // Histórico: o guard `if (diagramId && !memberIds) return []` (v1.0035) segurava
+    // as arestas até a membership de um DIAGRAMA (recorte) carregar, para evitar um
+    // flash de linhas a mais que depois sumia. Mas isso fazia as FKs surgirem DEPOIS
+    // dos nós — exatamente a queixa do cliente. Como os NÓS já filtram por memberIds
+    // via visibleIds, filtrar as arestas pelo mesmo visibleIds mantém nós e arestas
+    // consistentes (o mesmo recorte), sem o atraso.
     return view.relationships
       .filter((r) => visibleIds.has(r.source_entity_id) && visibleIds.has(r.target_entity_id))
       .map((r) => relationshipToEdge(r));
-  }, [view.relationships, visibleIds, diagramId, memberIds]);
+  }, [view.relationships, visibleIds]);
 
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
+
+  // Arestas com HANDLES ORIENTADOS pela posição relativa dos nós (round 5, pt 13).
+  // relationshipToEdge fixa source-right → target-left, ótimo no layout Esq→Dir; mas
+  // quando o destino fica à ESQUERDA da origem (após arrastar ou em RL), a linha saía
+  // pela direita e contornava o nó — visualmente confusa. Aqui escolhemos o lado de
+  // saída/entrada conforme o X relativo, então a linha sempre aponta NA DIREÇÃO do
+  // destino. Recalcula ao arrastar (as 4 handles existem nos dois lados, não "flutua").
+  // Deriva de `edges` (preserva id/label/selected) sobrescrevendo só os handles.
+  const edgesToRender = useMemo<Edge[]>(() => {
+    const posById = new Map(nodes.map((n) => [n.id, n.position]));
+    return edges.map((e) => {
+      const s = posById.get(e.source);
+      const t = posById.get(e.target);
+      if (!s || !t) return e;
+      const targetOnRight = t.x >= s.x;
+      return {
+        ...e,
+        sourceHandle: targetOnRight ? "source-right" : "source-left",
+        targetHandle: targetOnRight ? "target-left" : "target-right",
+      };
+    });
+  }, [edges, nodes]);
 
   // Initialize / re-layout. Roda quando muda systemId, expanded, filter,
   // domainFilter, schema ou diagrama — momentos onde a estrutura de nós muda e
@@ -538,9 +575,11 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
     [],
   );
 
-  // Click on a node → open edit panel
+  // DUPLO clique num nó → abre o painel de edição (round 5, pt 10). O clique
+  // simples fica reservado para SELECIONAR (built-in do React Flow) — o
+  // selectedNodeId (usado no "PNG objeto") vem de node.selected, não daqui.
   const [editingEntity, setEditingEntity] = useState<DiagramEntity | null>(null);
-  const onNodeClick = useCallback(
+  const onNodeDoubleClick = useCallback(
     (_evt: any, node: Node) => {
       const ent = (node.data as any)?.entity as DiagramEntity | undefined;
       if (ent) setEditingEntity(ent);
@@ -915,6 +954,37 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
             </CardDescription>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {/* Modo do cursor (round 5, pt 10): Mover / Selecionar / Conectar. */}
+            <div
+              className="inline-flex overflow-hidden rounded-md border"
+              role="group"
+              aria-label="Modo do cursor no diagrama"
+            >
+              {(
+                [
+                  { m: "move", label: "Mover", Icon: Hand, title: "Mover: clique e arraste as tabelas pelo canvas" },
+                  { m: "select", label: "Selecionar", Icon: MousePointer2, title: "Selecionar: um clique seleciona; duplo clique abre a edição" },
+                  { m: "connect", label: "Conectar", Icon: Waypoints, title: "Conectar: arraste de uma tabela até outra para criar uma FK" },
+                ] as const
+              ).map(({ m, label, Icon, title }) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setCanvasMode(m)}
+                  title={title}
+                  aria-pressed={canvasMode === m}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium transition-colors",
+                    canvasMode === m
+                      ? "bg-nuclea-primary text-white"
+                      : "bg-background text-muted-foreground hover:bg-muted/60",
+                  )}
+                >
+                  <Icon className="h-4 w-4" />
+                  <span className="hidden md:inline">{label}</span>
+                </button>
+              ))}
+            </div>
             <Button
               variant="outline"
               size="sm"
@@ -1109,17 +1179,26 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
       <CardContent>
         <div
           ref={canvasRef}
-          className="h-[calc(100vh-16rem)] min-h-[520px] w-full rounded-md border bg-background"
+          className={cn(
+            "h-[calc(100vh-16rem)] min-h-[520px] w-full rounded-md border bg-background",
+            // Dica visual do modo do cursor (round 5, pt 10).
+            canvasMode === "connect" && "cursor-crosshair",
+          )}
         >
           <ReactFlow
             nodes={nodes}
-            edges={edges}
+            edges={edgesToRender}
             nodeTypes={nodeTypes}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
             onNodesDelete={onNodesDelete}
-            onNodeClick={onNodeClick}
+            onNodeDoubleClick={onNodeDoubleClick}
+            // Modo do cursor (round 5, pt 10): só arrasta em "move"; só conecta em
+            // "connect"; "select" apenas seleciona (duplo clique edita).
+            nodesDraggable={canvasMode === "move"}
+            nodesConnectable={canvasMode === "connect"}
+            elementsSelectable
             deleteKeyCode={["Backspace", "Delete"]}
             fitView
             fitViewOptions={{ padding: 0.15 }}

@@ -53,6 +53,71 @@ function boundingBox(
 }
 
 /**
+ * Anti-sobreposição (round 5, pt 13): garante que NENHUM par de tabelas fique
+ * sobreposto após um layout automático. O Dagre normalmente já separa os nós, mas
+ * a altura estimada (`nodeHeight`) depende do nº de atributos — se um nó vier mais
+ * alto do que o estimado, dava sobreposição vertical. Os layouts circular/força/
+ * ortogonal também podem colidir. Esta passagem empurra pares que se sobrepõem no
+ * eixo de MENOR penetração (movimento mínimo → layout estável), com uma folga.
+ *
+ * Só mexe em nós REALMENTE sobrepostos (interseção de área > 0); nós que apenas se
+ * encostam ficam parados. Aplicada apenas em layouts AUTOMÁTICOS — nunca sobre as
+ * posições salvas/arrastadas manualmente (essas passam pelo caminho "positioned"
+ * do layout incremental, que não chama esta função).
+ */
+function resolveOverlaps(
+  nodes: Node[],
+  expanded: boolean,
+  gap = 28,
+  maxIter = 10,
+): Node[] {
+  if (nodes.length < 2) return nodes;
+  const out = nodes.map((n) => ({ ...n, position: { ...n.position } }));
+  for (let iter = 0; iter < maxIter; iter++) {
+    let moved = false;
+    for (let i = 0; i < out.length; i++) {
+      for (let j = i + 1; j < out.length; j++) {
+        const a = out[i];
+        const b = out[j];
+        const ah = nodeHeight(a, expanded);
+        const bh = nodeHeight(b, expanded);
+        // Penetração (positiva = sobrepõe) em cada eixo.
+        const penX =
+          Math.min(a.position.x + NODE_WIDTH, b.position.x + NODE_WIDTH) -
+          Math.max(a.position.x, b.position.x);
+        const penY =
+          Math.min(a.position.y + ah, b.position.y + bh) -
+          Math.max(a.position.y, b.position.y);
+        if (penX > 0 && penY > 0) {
+          moved = true;
+          if (penX < penY) {
+            const push = (penX + gap) / 2;
+            if (a.position.x <= b.position.x) {
+              a.position.x -= push;
+              b.position.x += push;
+            } else {
+              a.position.x += push;
+              b.position.x -= push;
+            }
+          } else {
+            const push = (penY + gap) / 2;
+            if (a.position.y <= b.position.y) {
+              a.position.y -= push;
+              b.position.y += push;
+            } else {
+              a.position.y += push;
+              b.position.y -= push;
+            }
+          }
+        }
+      }
+    }
+    if (!moved) break; // convergiu — nenhum par sobreposto restante
+  }
+  return out;
+}
+
+/**
  * Layout Dagre "do zero" — reposiciona TODOS os nós recebidos. Usado quando o
  * diagrama ainda não tem nenhuma posição salva (tudo novo) ou pelo botão
  * "Auto-organizar tudo" (que sobrescreve posições manuais de propósito).
@@ -92,7 +157,7 @@ export function applyDagreLayout(
 
   dagre.layout(g);
 
-  return nodes.map((node) => {
+  const laid = nodes.map((node) => {
     const meta = g.node(node.id);
     if (!meta) return node;
     return {
@@ -100,6 +165,9 @@ export function applyDagreLayout(
       position: { x: meta.x - meta.width / 2, y: meta.y - meta.height / 2 },
     };
   });
+  // Rede de segurança anti-sobreposição (round 5, pt 13). Como o incremental chama
+  // applyDagreLayout só nos nós NOVOS, isto nunca move posições salvas.
+  return resolveOverlaps(laid, expanded);
 }
 
 // Folga (px) entre o bloco de nós já organizados e o bloco de nós novos.
@@ -493,18 +561,27 @@ export function applyLayoutByMode(
   direction: LayoutDirection = "LR",
   expanded: boolean = true,
 ): Node[] {
+  let laid: Node[];
   switch (mode) {
     case "hierarchical":
-      return applyDagreLayout(nodes, edges, direction, expanded);
+      laid = applyDagreLayout(nodes, edges, direction, expanded);
+      break;
     case "tree":
-      return applyTreeLayout(nodes, edges, direction, expanded);
+      laid = applyTreeLayout(nodes, edges, direction, expanded);
+      break;
     case "circular":
-      return applyCircularLayout(nodes);
+      laid = applyCircularLayout(nodes);
+      break;
     case "orthogonal":
-      return applyOrthogonalLayout(nodes, edges, expanded);
+      laid = applyOrthogonalLayout(nodes, edges, expanded);
+      break;
     case "force":
-      return applyForceLayout(nodes, edges);
+      laid = applyForceLayout(nodes, edges);
+      break;
     default:
-      return applyDagreLayout(nodes, edges, direction, expanded);
+      laid = applyDagreLayout(nodes, edges, direction, expanded);
   }
+  // Anti-sobreposição em TODOS os modos (round 5, pt 13) — circular/força/ortogonal
+  // podem colidir; dagre já é resolvido internamente, aqui é idempotente.
+  return resolveOverlaps(laid, expanded);
 }
