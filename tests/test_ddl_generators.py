@@ -11,7 +11,11 @@ from __future__ import annotations
 
 import pytest
 
-from nuclea_modeler.backend.ddl.generators import GENERATORS, map_type
+from nuclea_modeler.backend.ddl.generators import (
+    GENERATORS,
+    map_type,
+    render_foreign_keys,
+)
 from nuclea_modeler.backend.ddl.models import DDLExportRequest
 
 
@@ -395,3 +399,54 @@ def test_mysql_partition_by_hash(cliente_entity, cliente_attrs, default_opts):
     default_opts.dialect = "MYSQL"
     ddl = GENERATORS["MYSQL"](_entity_with_index(cliente_entity, None, part), cliente_attrs, default_opts)
     assert "PARTITION BY HASH (id) PARTITIONS 8" in ddl
+
+
+# ─── Foreign keys (round 5, pt 11) ───────────────────────────────────────────
+
+
+def _fk(**over) -> dict:
+    base = dict(
+        name="fk_item_pedido",
+        child_ref="vendas.item",
+        parent_ref="vendas.pedido",
+        child_cols=["pedido_id"],
+        parent_cols=["id"],
+        on_update="CASCADE",
+        on_delete="NO ACTION",
+    )
+    base.update(over)
+    return base
+
+
+def test_render_fk_ansi_includes_actions():
+    """ANSI: ALTER TABLE … ADD CONSTRAINT … FK … REFERENCES … com ON DELETE/UPDATE."""
+    out = render_foreign_keys([_fk()], DDLExportRequest(system_id="s", dialect="ANSI"))
+    assert len(out) == 1
+    sql = out[0]
+    assert "ALTER TABLE vendas.item ADD CONSTRAINT fk_item_pedido" in sql
+    assert "FOREIGN KEY (pedido_id) REFERENCES vendas.pedido (id)" in sql
+    assert "ON DELETE NO ACTION" in sql
+    assert "ON UPDATE CASCADE" in sql
+    assert sql.rstrip().endswith(";")
+
+
+def test_render_fk_sparksql_omits_actions():
+    """Databricks/Spark: FK informativa, sem ON DELETE/UPDATE."""
+    out = render_foreign_keys([_fk()], DDLExportRequest(system_id="s", dialect="SPARKSQL"))
+    sql = out[0]
+    assert "FOREIGN KEY (pedido_id) REFERENCES vendas.pedido (id)" in sql
+    assert "ON DELETE" not in sql
+    assert "ON UPDATE" not in sql
+
+
+def test_render_fk_composite_columns():
+    """FK composta: colunas na ordem, pareadas pai↔filho."""
+    out = render_foreign_keys(
+        [_fk(child_cols=["a", "b"], parent_cols=["x", "y"])],
+        DDLExportRequest(system_id="s", dialect="POSTGRES"),
+    )
+    assert "FOREIGN KEY (a, b) REFERENCES vendas.pedido (x, y)" in out[0]
+
+
+def test_render_fk_empty_when_no_relationships():
+    assert render_foreign_keys([], DDLExportRequest(system_id="s", dialect="ANSI")) == []

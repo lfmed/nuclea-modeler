@@ -7,7 +7,9 @@ from typing import Any
 from ..core import delta
 from ..core._nuclea_config import get_settings
 from ..core.sql import Sql
-from .generators import GENERATORS
+import re
+
+from .generators import GENERATORS, render_foreign_keys
 from .models import DDLExportRequest, DDLExportResult, DDLObjectResult
 
 
@@ -204,6 +206,65 @@ def fetch_indexes_and_partitioning(
     return indexes_by_entity, partitioning_by_entity
 
 
+_REL_FK_COLS = [
+    "relationship_id", "source_entity_id", "target_entity_id",
+    "source_attr_ids", "target_attr_ids",
+    "fk_update_rule", "fk_delete_rule", "relationship_name",
+]
+
+
+def _fk_constraint_name(child_ref: str, parent_ref: str) -> str:
+    """Nome de constraint SEGURO (identificador SQL) para a FK.
+
+    Deriva de `fk_<filho>_<pai>` a partir dos nomes de tabela (sem schema),
+    trocando qualquer caractere não-alfanumérico por `_`. Não usamos o
+    relationship_name porque ele pode ter espaços/setas ("Pedido → Cliente").
+    """
+    def _bare(ref: str) -> str:
+        base = ref.split(".")[-1]
+        return re.sub(r"[^A-Za-z0-9]+", "_", base).strip("_") or "tbl"
+
+    return f"fk_{_bare(child_ref)}_{_bare(parent_ref)}"
+
+
+def fetch_relationships(
+    sql: Sql, system_id: str, entity_ids: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Carrega os relacionamentos (FKs) de um sistema para emissão no DDL.
+
+    round 5, pt 11: até então o export NÃO gerava nenhuma FK. Aqui buscamos os
+    relacionamentos e, no generate_export, emitimos ``ALTER TABLE <filho> ADD
+    CONSTRAINT … FOREIGN KEY … REFERENCES <pai> …`` após os CREATE TABLE.
+
+    Convenção do modelo: source = PAI (PK em source_attr_ids), target = FILHO
+    (colunas FK em target_attr_ids). Arrays vêm do delta já como listas.
+    """
+    s = get_settings()
+    rows = delta.fetch_all_params(
+        sql,
+        f"""
+        SELECT {", ".join(_REL_FK_COLS)}
+        FROM {s.fq_table('relationships')}
+        WHERE system_id = :system_id
+        """,
+        [delta.param("system_id", system_id)],
+    )
+    out: list[dict[str, Any]] = []
+    for r in rows:
+        d = dict(zip(_REL_FK_COLS, r))
+        d["source_attr_ids"] = list(d.get("source_attr_ids") or [])
+        d["target_attr_ids"] = list(d.get("target_attr_ids") or [])
+        out.append(d)
+    # Filtra para relacionamentos cujas DUAS pontas estão no conjunto exportado.
+    if entity_ids is not None:
+        keep = set(entity_ids)
+        out = [
+            d for d in out
+            if d["source_entity_id"] in keep and d["target_entity_id"] in keep
+        ]
+    return out
+
+
 def generate_export(
     sql: Sql,
     payload: DDLExportRequest,
@@ -247,7 +308,64 @@ def generate_export(
             )
         )
 
+    # ── Foreign keys (round 5, pt 11) ─────────────────────────────────────────
+    # Emitidas como ALTER TABLE após os CREATE TABLE. Só entram FKs cujas colunas
+    # (pai E filho) foram resolvidas — relacionamento sem mapeamento coluna-a-coluna
+    # é ignorado (não dá pra emitir uma FK sem colunas). source=PAI, target=FILHO.
+    fk_statements: list[str] = []
+    rels = fetch_relationships(sql, payload.system_id, eids)
+    if rels:
+        ent_ref_by_id: dict[str, str] = {}
+        attr_name_by_id: dict[str, str] = {}
+        for ent, attrs in pairs:
+            schema = ent.get("schema_name") or ""
+            nm = ent.get("technical_name") or ""
+            ent_ref_by_id[ent["entity_id"]] = (
+                f"{schema}.{nm}" if payload.qualify_schema and schema else nm
+            )
+            for a in attrs:
+                attr_name_by_id[a["attribute_id"]] = a["technical_name"]
+
+        resolved_fks: list[dict[str, Any]] = []
+        used_names: set[str] = set()
+        for r in rels:
+            parent_id = r["source_entity_id"]
+            child_id = r["target_entity_id"]
+            if parent_id not in ent_ref_by_id or child_id not in ent_ref_by_id:
+                continue
+            parent_cols = [
+                attr_name_by_id[i] for i in r["source_attr_ids"] if i in attr_name_by_id
+            ]
+            child_cols = [
+                attr_name_by_id[i] for i in r["target_attr_ids"] if i in attr_name_by_id
+            ]
+            # Sem mapeamento coluna-a-coluna completo não dá pra emitir a FK.
+            if not parent_cols or not child_cols or len(parent_cols) != len(child_cols):
+                continue
+            base = _fk_constraint_name(ent_ref_by_id[child_id], ent_ref_by_id[parent_id])
+            name = base
+            n = 2
+            while name in used_names:  # unicidade dentro do arquivo
+                name = f"{base}_{n}"
+                n += 1
+            used_names.add(name)
+            resolved_fks.append({
+                "name": name,
+                "child_ref": ent_ref_by_id[child_id],
+                "parent_ref": ent_ref_by_id[parent_id],
+                "child_cols": child_cols,
+                "parent_cols": parent_cols,
+                "on_update": r.get("fk_update_rule"),
+                "on_delete": r.get("fk_delete_rule"),
+            })
+        fk_statements = render_foreign_keys(resolved_fks, payload)
+
     combined_text = "\n\n-- ---\n\n".join(f.ddl_text for f in files)
+    if fk_statements:
+        combined_text += (
+            "\n\n-- ---\n\n-- Foreign Keys (relacionamentos)\n"
+            + "\n\n".join(fk_statements)
+        )
     success_count = sum(1 for f in files if not f.errors)
     error_count = len(files) - success_count
 

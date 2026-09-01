@@ -651,6 +651,43 @@ def gen_db2(entity: dict[str, Any], attrs: list[dict[str, Any]], opts: DDLExport
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Foreign keys (round 5, pt 11)
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def render_foreign_keys(
+    fks: list[dict[str, Any]], opts: DDLExportRequest
+) -> list[str]:
+    """Emite ``ALTER TABLE … ADD CONSTRAINT … FOREIGN KEY … REFERENCES …``.
+
+    Antes o export não gerava NENHUMA FK (round 5, pt 11). As FKs são emitidas
+    como ALTER TABLE DEPOIS de todos os CREATE TABLE — assim não dependem da ordem
+    de criação das tabelas e a mesma sintaxe vale em todos os dialetos.
+
+    Cada `fk` já vem resolvido pelo service (ids → nomes): ``name``, ``child_ref``,
+    ``parent_ref``, ``child_cols`` (colunas FK no filho), ``parent_cols`` (PK no pai),
+    ``on_update``, ``on_delete``.
+    """
+    out: list[str] = []
+    for fk in fks:
+        child_cols = ", ".join(fk["child_cols"])
+        parent_cols = ", ".join(fk["parent_cols"])
+        stmt = (
+            f"ALTER TABLE {fk['child_ref']} ADD CONSTRAINT {fk['name']}\n"
+            f"  FOREIGN KEY ({child_cols}) REFERENCES {fk['parent_ref']} ({parent_cols})"
+        )
+        # Databricks/Spark: a FK é apenas INFORMATIVA (não forçada) e não aceita
+        # ações ON DELETE/UPDATE — omitimos essas cláusulas nesse dialeto.
+        if opts.dialect != "SPARKSQL":
+            if fk.get("on_delete"):
+                stmt += f"\n  ON DELETE {fk['on_delete']}"
+            if fk.get("on_update"):
+                stmt += f"\n  ON UPDATE {fk['on_update']}"
+        out.append(stmt + ";")
+    return out
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Registry
 # ──────────────────────────────────────────────────────────────────────────────
 
