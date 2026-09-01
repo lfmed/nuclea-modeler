@@ -70,6 +70,15 @@ documentado para quem mantém depois.** Cumprir em todo PR:
   `("P","F")` — senão a FK "sumia" e reaparecia como um índice (IDX) no modelo (round 5,
   pt 14). Se um `.DM1` do cliente ainda mostrar FK virando índice, verifique o `KeyType`
   real das linhas de `Indexes`. Teste: `tests/test_embarcadero_security.py`.
+- **FK: emissão no DDL + transporte com rolename (v1.0040).** O export de DDL agora
+  emite `ALTER TABLE <filho> ADD CONSTRAINT … FOREIGN KEY … REFERENCES <pai> …` após os
+  CREATE (ver `ddl/generators.render_foreign_keys` + `ddl/service.fetch_relationships`);
+  Spark/Databricks = FK informativa (sem ON DELETE/UPDATE). Convenção do modelo:
+  **source = PAI** (PK em `source_attr_ids`), **target = FILHO** (FK em `target_attr_ids`).
+  O "transportar chaves" (criar colunas FK na filha) é orquestrado NO FRONTEND
+  (`CreateRelationshipDialog`): cria os atributos-FK via `createAttribute` → pega os ids →
+  cria o relacionamento — tudo no mesmo ticket (o apply ordena atributos antes de
+  relacionamentos). Rolename (`id`→`id_<pai>`) só em colisão, editável (`transportedFkName`).
 - **`ui/lib/api.ts` é ESCRITO À MÃO** — não há codegen no deploy (cliente sem npm/apx).
   Rota nova no backend ⇒ escreva o hook à mão em `api.ts` (padrão `use<Op>` /
   `use<Op>Suspense` / `selector()`). Ignore a linha do boilerplate que diz "auto-regenera".

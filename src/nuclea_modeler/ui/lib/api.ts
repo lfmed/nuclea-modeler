@@ -2923,6 +2923,7 @@ export interface RelationshipIn {
   description?: string | null;
   fk_update_rule?: FKRule | null;
   fk_delete_rule?: FKRule | null;
+  relationship_name?: string | null; // rótulo do relacionamento (round 5)
 }
 
 export interface RelationshipListOut {
@@ -2938,6 +2939,7 @@ export interface RelationshipListOut {
   target_cardinality?: Cardinality | null;
   origin?: RelationshipOrigin | null;
   description?: string | null;
+  relationship_name?: string | null; // rótulo do relacionamento (round 5)
   updated_at: string;
 }
 

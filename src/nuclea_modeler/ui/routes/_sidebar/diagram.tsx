@@ -320,6 +320,15 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
   // O duplo clique abre a edição em qualquer modo (descoberta fácil).
   const [canvasMode, setCanvasMode] = useState<"move" | "select" | "connect">("move");
 
+  // Cursor "Conectar" clique-a-clique (round 5, pt 9): no modo Conectar, o 1º clique
+  // numa tabela marca a ORIGEM (pai) e o 2º clique na outra abre o diálogo de FK
+  // (pai → filha). É uma alternativa ao arrastar entre handles (que também funciona).
+  const [connectSource, setConnectSource] = useState<string | null>(null);
+  // Ao sair do modo Conectar (ou trocar de modo), esquece a origem pendente.
+  useEffect(() => {
+    setConnectSource(null);
+  }, [canvasMode]);
+
   // M6 (fatia 4a): seletor de schema + diagrama. Schema restringe por
   // schema_name; diagrama restringe à membership (read-only nesta fatia).
   const { data: schemaList } = useListSchemasSuspense({ systemId }, selector());
@@ -508,6 +517,17 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
     });
   }, [edges, nodes]);
 
+  // Destaca a tabela-origem pendente no modo Conectar (pt 9) com um anel de foco,
+  // sem mexer no estado dos nós (só uma className derivada para o render).
+  const nodesToRender = useMemo<Node[]>(() => {
+    if (!connectSource) return nodes;
+    return nodes.map((n) =>
+      n.id === connectSource
+        ? { ...n, className: cn(n.className, "ring-2 ring-nuclea-accent rounded-md") }
+        : n,
+    );
+  }, [nodes, connectSource]);
+
   // Initialize / re-layout. Roda quando muda systemId, expanded, filter,
   // domainFilter, schema ou diagrama — momentos onde a estrutura de nós muda e
   // faz sentido recalcular o layout.
@@ -581,10 +601,35 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
   const [editingEntity, setEditingEntity] = useState<DiagramEntity | null>(null);
   const onNodeDoubleClick = useCallback(
     (_evt: any, node: Node) => {
+      // No modo Conectar o duplo clique não edita (o clique já é usado p/ conectar).
+      if (canvasMode === "connect") return;
       const ent = (node.data as any)?.entity as DiagramEntity | undefined;
       if (ent) setEditingEntity(ent);
     },
-    [],
+    [canvasMode],
+  );
+
+  // Clique numa tabela: só faz algo no modo Conectar (pt 9). 1º clique = origem
+  // (pai); 2º clique numa tabela diferente = abre o diálogo de FK; clicar na mesma
+  // cancela. Nos modos Mover/Selecionar o clique é só seleção (built-in do RF).
+  const onNodeClick = useCallback(
+    (_evt: any, node: Node) => {
+      if (canvasMode !== "connect") return;
+      const ent = (node.data as any)?.entity as DiagramEntity | undefined;
+      const labelOf = (id: string) =>
+        (view.entities.find((e) => e.entity_id === id)?.technical_name) || id;
+      setConnectSource((prev) => {
+        if (!prev) {
+          toast.info(`Origem: ${ent?.technical_name || node.id}. Agora clique na tabela-filha.`);
+          return node.id;
+        }
+        if (prev === node.id) return null; // clicou na mesma → cancela
+        setPendingConn({ source: prev, target: node.id });
+        toast.success(`Relacionamento ${labelOf(prev)} → ${ent?.technical_name || node.id}`);
+        return null;
+      });
+    },
+    [canvasMode, view.entities],
   );
 
   const onConnect = useCallback((conn: Connection) => {
@@ -1177,6 +1222,16 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
         </div>
       </CardHeader>
       <CardContent>
+        {canvasMode === "connect" && (
+          <div className="mb-2 rounded-md border border-nuclea-accent/40 bg-nuclea-accent/10 px-3 py-1.5 text-xs text-nuclea-accent">
+            Modo <strong>Conectar</strong>: clique na tabela-<strong>pai</strong> e
+            depois na <strong>filha</strong> para criar a FK — ou arraste entre as
+            bordas.{" "}
+            {connectSource
+              ? "Origem selecionada; clique na filha (ou na mesma tabela para cancelar)."
+              : ""}
+          </div>
+        )}
         <div
           ref={canvasRef}
           className={cn(
@@ -1186,13 +1241,14 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
           )}
         >
           <ReactFlow
-            nodes={nodes}
+            nodes={nodesToRender}
             edges={edgesToRender}
             nodeTypes={nodeTypes}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
             onNodesDelete={onNodesDelete}
+            onNodeClick={onNodeClick}
             onNodeDoubleClick={onNodeDoubleClick}
             // Modo do cursor (round 5, pt 10): só arrasta em "move"; só conecta em
             // "connect"; "select" apenas seleciona (duplo clique edita).
@@ -1899,6 +1955,28 @@ function ValidationDialog({
   );
 }
 
+/**
+ * Nome da coluna FK transportada do pai para a filha (round 5, pt 11).
+ *
+ * Mantém o nome original da PK do pai; em COLISÃO com uma coluna já existente na
+ * filha (ex.: a filha também tem "id"), vira `<nome>_<sufixo>` (rolename), onde o
+ * sufixo é editável (default = nome da tabela-pai). Ex.: pai X com PK "id" → "id_x".
+ * Garante unicidade incluindo as colunas já criadas neste mesmo lote (`taken`).
+ * Comparação case-insensitive para não gerar "ID" e "id" na mesma tabela.
+ */
+function transportedFkName(baseName: string, suffix: string, taken: Set<string>): string {
+  const lower = (s: string) => s.toLowerCase();
+  const takenLower = new Set([...taken].map(lower));
+  let name = takenLower.has(lower(baseName)) ? `${baseName}_${suffix}` : baseName;
+  let candidate = name;
+  let n = 2;
+  while (takenLower.has(lower(candidate))) {
+    candidate = `${name}_${n}`;
+    n += 1;
+  }
+  return candidate;
+}
+
 function CreateRelationshipDialog({
   systemId,
   source,
@@ -1918,17 +1996,43 @@ function CreateRelationshipDialog({
   const [sourceCard, setSourceCard] = useState<Cardinality>("OPTIONAL");
   const [targetCard, setTargetCard] = useState<Cardinality>("MANDATORY");
   const [description, setDescription] = useState("");
+  const [relName, setRelName] = useState(""); // rótulo do relacionamento (round 5)
   const [sourceAttrIds, setSourceAttrIds] = useState<string[]>([]);
   const [targetAttrIds, setTargetAttrIds] = useState<string[]>([]);
-
-  const { mutate: create, isPending, error } = useCreateRelationship({
-    mutation: { onSuccess: () => onCreated() },
-  });
 
   const srcEnt = entities.find((e) => e.entity_id === source);
   const tgtEnt = entities.find((e) => e.entity_id === target);
   const label = (e?: DiagramEntity) =>
     e ? `${e.schema_name}.${e.technical_name}` : "?";
+
+  // ── Transporte de chaves com rolename (round 5, pt 11) ──────────────────────
+  // Quando ligado, as colunas da PK do pai (ou as selecionadas em "origem") são
+  // CRIADAS na filha como colunas FK; em colisão de nome, aplica o rolename
+  // (id → id_<sufixo>). O sufixo default é o nome da tabela-pai, editável.
+  const [transport, setTransport] = useState(false);
+  const [rolenameSuffix, setRolenameSuffix] = useState("");
+  const effectiveSuffix = rolenameSuffix.trim() || (srcEnt?.technical_name ?? "ref");
+
+  // Colunas do pai a transportar: as selecionadas em "origem", ou as PKs do pai.
+  const parentColsForTransport = (sourceAttrIds.length
+    ? (srcEnt?.attributes || []).filter((a) => sourceAttrIds.includes(a.attribute_id))
+    : (srcEnt?.attributes || []).filter((a) => a.is_primary_key));
+
+  // Preview do que será criado na filha (from → to), com rolename em colisão.
+  const transportPreview = useMemo(() => {
+    const taken = new Set((tgtEnt?.attributes || []).map((a) => a.technical_name));
+    return parentColsForTransport.map((pc) => {
+      const to = transportedFkName(pc.technical_name, effectiveSuffix, taken);
+      taken.add(to);
+      return { from: pc.technical_name, to, type: pc.native_data_type || null, id: pc.attribute_id };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tgtEnt, effectiveSuffix, sourceAttrIds, srcEnt]);
+
+  const createRel = useCreateRelationship();
+  const createAttr = useCreateAttribute();
+  const [submitting, setSubmitting] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
 
   const toggleAttr = (which: "src" | "tgt", attrId: string) => {
     const setter = which === "src" ? setSourceAttrIds : setTargetAttrIds;
@@ -1937,21 +2041,61 @@ function CreateRelationshipDialog({
     );
   };
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    create({
-      data: {
-        system_id: systemId,
-        source_entity_id: source,
-        target_entity_id: target,
-        source_attr_ids: sourceAttrIds,
-        target_attr_ids: targetAttrIds,
-        rel_type: relType,
-        source_cardinality: sourceCard,
-        target_cardinality: targetCard,
-        description: description || null,
-      },
-    });
+    setErr(null);
+    setSubmitting(true);
+    try {
+      let srcIds = sourceAttrIds;
+      let tgtIds = targetAttrIds;
+
+      if (transport) {
+        if (transportPreview.length === 0) {
+          setErr("Marque a PK no pai (ou selecione colunas de origem) para transportar.");
+          setSubmitting(false);
+          return;
+        }
+        // Cria cada coluna FK na filha (mesmo ticket da sessão) e coleta os ids.
+        // O apply ordena atributos ANTES de relacionamentos, então o relacionamento
+        // criado abaixo referencia colunas que já existirão no filho.
+        const newChildIds: string[] = [];
+        for (const p of transportPreview) {
+          const created = await createAttr.mutateAsync({
+            entityId: target,
+            data: {
+              entity_id: target,
+              technical_name: p.to,
+              native_data_type: p.type,
+              is_nullable: targetCard === "OPTIONAL",
+              is_primary_key: false,
+            },
+          });
+          newChildIds.push((created as { attribute_id: string }).attribute_id);
+        }
+        srcIds = transportPreview.map((p) => p.id);
+        tgtIds = newChildIds;
+      }
+
+      await createRel.mutateAsync({
+        data: {
+          system_id: systemId,
+          source_entity_id: source,
+          target_entity_id: target,
+          source_attr_ids: srcIds,
+          target_attr_ids: tgtIds,
+          rel_type: relType,
+          source_cardinality: sourceCard,
+          target_cardinality: targetCard,
+          description: description || null,
+          relationship_name: relName || null,
+        },
+      });
+      onCreated();
+    } catch (ex) {
+      setErr(ex instanceof Error ? ex.message : String(ex));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -1974,6 +2118,17 @@ function CreateRelationshipDialog({
             <span className="text-nuclea-primary">{label(srcEnt)}</span>
             <span className="mx-2 text-muted-foreground">→</span>
             <span className="text-nuclea-accent">{label(tgtEnt)}</span>
+          </div>
+
+          <div>
+            <label className="text-sm font-medium block mb-1.5">
+              Nome do relacionamento
+            </label>
+            <Input
+              value={relName}
+              onChange={(e) => setRelName(e.target.value)}
+              placeholder='Opcional (ex.: "Pedido → Cliente")'
+            />
           </div>
 
           <div>
@@ -2059,11 +2214,56 @@ function CreateRelationshipDialog({
             </div>
           </div>
 
-          {/* Picker de colunas (FK explícita coluna-a-coluna). Opcional. */}
+          {/* Transporte de chaves com rolename (round 5, pt 11) */}
+          <div className="rounded-md border p-3 space-y-2">
+            <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
+              <input
+                type="checkbox"
+                checked={transport}
+                onChange={(e) => setTransport(e.target.checked)}
+              />
+              Transportar chaves do pai (criar colunas FK na filha)
+            </label>
+            {transport && (
+              <div className="space-y-2 text-xs">
+                <p className="text-muted-foreground">
+                  As colunas de "origem" (ou a PK do pai, se nenhuma) são criadas na
+                  filha. Em colisão de nome, aplica-se o rolename{" "}
+                  <code>nome_{effectiveSuffix}</code>.
+                </p>
+                <div className="flex items-center gap-2">
+                  <label className="whitespace-nowrap">Sufixo (rolename):</label>
+                  <Input
+                    value={rolenameSuffix}
+                    onChange={(e) => setRolenameSuffix(e.target.value)}
+                    placeholder={srcEnt?.technical_name ?? "pai"}
+                    className="h-8 font-mono"
+                  />
+                </div>
+                <div className="rounded border bg-muted/40 p-2 font-mono">
+                  {transportPreview.length ? (
+                    transportPreview.map((p) => (
+                      <div key={p.id}>
+                        {p.from} <span className="text-muted-foreground">→ criar</span>{" "}
+                        <span className="text-nuclea-primary">{p.to}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <span className="italic text-muted-foreground">
+                      Marque a PK no pai ou selecione colunas de origem abaixo.
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Picker de colunas (FK explícita coluna-a-coluna). */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-sm font-medium block mb-1.5">
-                Colunas origem ({sourceAttrIds.length})
+                Colunas origem{" "}
+                ({sourceAttrIds.length || (transport ? "PK do pai" : 0)})
               </label>
               <div className="max-h-32 overflow-y-auto border rounded-md p-2 space-y-1 text-xs">
                 {srcEnt?.attributes?.length ? (
@@ -2083,28 +2283,30 @@ function CreateRelationshipDialog({
                 )}
               </div>
             </div>
-            <div>
-              <label className="text-sm font-medium block mb-1.5">
-                Colunas destino ({targetAttrIds.length})
-              </label>
-              <div className="max-h-32 overflow-y-auto border rounded-md p-2 space-y-1 text-xs">
-                {tgtEnt?.attributes?.length ? (
-                  tgtEnt.attributes.map((a) => (
-                    <label key={a.attribute_id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 px-1 rounded">
-                      <input
-                        type="checkbox"
-                        checked={targetAttrIds.includes(a.attribute_id)}
-                        onChange={() => toggleAttr("tgt", a.attribute_id)}
-                      />
-                      <code className="font-mono">{a.technical_name}</code>
-                      {a.is_primary_key && <span className="text-amber-600">🔑</span>}
-                    </label>
-                  ))
-                ) : (
-                  <span className="text-muted-foreground italic">sem colunas</span>
-                )}
+            {!transport && (
+              <div>
+                <label className="text-sm font-medium block mb-1.5">
+                  Colunas destino ({targetAttrIds.length})
+                </label>
+                <div className="max-h-32 overflow-y-auto border rounded-md p-2 space-y-1 text-xs">
+                  {tgtEnt?.attributes?.length ? (
+                    tgtEnt.attributes.map((a) => (
+                      <label key={a.attribute_id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 px-1 rounded">
+                        <input
+                          type="checkbox"
+                          checked={targetAttrIds.includes(a.attribute_id)}
+                          onChange={() => toggleAttr("tgt", a.attribute_id)}
+                        />
+                        <code className="font-mono">{a.technical_name}</code>
+                        {a.is_primary_key && <span className="text-amber-600">🔑</span>}
+                      </label>
+                    ))
+                  ) : (
+                    <span className="text-muted-foreground italic">sem colunas</span>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           <div>
@@ -2118,9 +2320,11 @@ function CreateRelationshipDialog({
             />
           </div>
 
-          {error && (
+          {(err || createRel.error || createAttr.error) && (
             <div className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-xs text-destructive">
-              <pre className="whitespace-pre-wrap">{String(error)}</pre>
+              <pre className="whitespace-pre-wrap">
+                {err || String(createRel.error || createAttr.error)}
+              </pre>
             </div>
           )}
 
@@ -2128,8 +2332,14 @@ function CreateRelationshipDialog({
             <Button type="button" variant="outline" onClick={onClose}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={isPending}>
-              {isPending ? "Criando..." : "Criar"}
+            <Button type="submit" disabled={submitting}>
+              {submitting
+                ? transport
+                  ? "Transportando…"
+                  : "Criando..."
+                : transport
+                  ? "Transportar + criar FK"
+                  : "Criar"}
             </Button>
           </div>
         </form>
