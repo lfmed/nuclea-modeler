@@ -24,6 +24,7 @@ import {
   AlertCircle,
   ArrowLeft,
   ClipboardCopy,
+  Download,
   History,
   Minus,
   Plus,
@@ -77,7 +78,7 @@ function VersionDetailPage() {
   );
 }
 
-type Tab = "metadata" | "snapshot" | "diff";
+type Tab = "metadata" | "snapshot" | "diff" | "diff_current";
 
 function VersionDetail() {
   const { id } = Route.useParams();
@@ -188,6 +189,9 @@ function VersionDetail() {
         <TabButton active={tab === "diff"} onClick={() => setTab("diff")}>
           Diff vs. anterior
         </TabButton>
+        <TabButton active={tab === "diff_current"} onClick={() => setTab("diff_current")}>
+          Diff vs. atual
+        </TabButton>
       </div>
 
       {tab === "metadata" && <MetadataTab version={version} />}
@@ -195,6 +199,11 @@ function VersionDetail() {
       {tab === "diff" && (
         <Suspense fallback={<Skeleton className="h-40 w-full" />}>
           <DiffVsPreviousTab version={version} />
+        </Suspense>
+      )}
+      {tab === "diff_current" && (
+        <Suspense fallback={<Skeleton className="h-40 w-full" />}>
+          <DiffVsCurrentTab version={version} />
         </Suspense>
       )}
     </div>
@@ -263,6 +272,20 @@ function SnapshotTab({ version }: { version: VersionOut }) {
     }
   };
 
+  // Export do snapshot como arquivo .json (round 5, pt 18) — para arquivar a versão
+  // ou alimentar ferramentas externas. Usa o snapshot_json já carregado (sem backend).
+  const download = () => {
+    const blob = new Blob([text], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `nuclea-snapshot-${version.version_number || version.version_id}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
@@ -272,10 +295,16 @@ function SnapshotTab({ version }: { version: VersionOut }) {
             JSON congelado no momento da publicação
           </CardDescription>
         </div>
-        <Button variant="outline" size="sm" onClick={copy}>
-          <ClipboardCopy className="mr-2 h-3.5 w-3.5" />
-          {copied ? "Copiado!" : "Copiar"}
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={copy}>
+            <ClipboardCopy className="mr-2 h-3.5 w-3.5" />
+            {copied ? "Copiado!" : "Copiar"}
+          </Button>
+          <Button variant="outline" size="sm" onClick={download}>
+            <Download className="mr-2 h-3.5 w-3.5" />
+            Baixar JSON
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
         <pre className="text-xs font-mono p-3 rounded-md bg-muted/50 max-h-[600px] overflow-auto whitespace-pre">
@@ -325,6 +354,25 @@ function DiffVsPreviousTab({ version }: { version: VersionOut }) {
     <Suspense fallback={<Skeleton className="h-40 w-full" />}>
       <DiffPanel fromId={previous.version_id} toId={version.version_id} />
     </Suspense>
+  );
+}
+
+/**
+ * Diff da versão contra o MODELO ATUAL (ao vivo) — round 5, pt 18. Usa o mesmo
+ * endpoint de diff com `to="current"` (o backend monta o snapshot atual na hora).
+ * Deixa ver "o que mudou desde esta versão" sem publicar uma versão nova.
+ */
+function DiffVsCurrentTab({ version }: { version: VersionOut }) {
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-muted-foreground">
+        Comparando o snapshot desta versão com o <strong>estado atual do modelo</strong>{" "}
+        (não publicado). Útil para revisar o que mudou antes de publicar uma nova versão.
+      </p>
+      <Suspense fallback={<Skeleton className="h-40 w-full" />}>
+        <DiffPanel fromId={version.version_id} toId="current" />
+      </Suspense>
+    </div>
   );
 }
 

@@ -303,10 +303,40 @@ def _index_attrs(snapshot: dict[str, Any], entity_id: str) -> dict[str, dict[str
 
 
 def compute_diff(sql: Sql, from_version_id: str, to_version_id: str) -> VersionDiff:
-    """Compare two snapshots and produce categorized diff entries."""
+    """Compara dois snapshots JÁ PUBLICADOS (versão × versão)."""
     snap_from = _load_snapshot(sql, from_version_id)
     snap_to = _load_snapshot(sql, to_version_id)
+    return _diff_snapshots(snap_from, snap_to, from_version_id, to_version_id)
 
+
+def compute_diff_vs_current(sql: Sql, from_version_id: str) -> VersionDiff:
+    """Diff de uma versão contra o MODELO ATUAL (ao vivo) — round 5, pt 18.
+
+    Deixa o usuário ver "o que mudou desde a versão X" sem precisar publicar uma
+    versão nova. O lado `to` é um snapshot construído na hora a partir do catálogo
+    (mesma função usada no publish), então a comparação é idêntica à de duas versões.
+    """
+    snap_from = _load_snapshot(sql, from_version_id)
+    s = get_settings()
+    row = delta.fetch_one_params(
+        sql,
+        f"SELECT system_id FROM {s.fq_table('model_versions')} WHERE version_id = :vid",
+        [delta.param("vid", from_version_id)],
+    )
+    if not row:
+        raise HTTPException(404, f"version '{from_version_id}' not found")
+    snap_to = build_snapshot(sql, row[0])
+    return _diff_snapshots(snap_from, snap_to, from_version_id, "current")
+
+
+def _diff_snapshots(
+    snap_from: dict[str, Any],
+    snap_to: dict[str, Any],
+    from_version_id: str,
+    to_version_id: str,
+) -> VersionDiff:
+    """Núcleo do diff: compara dois snapshots (dicts) já carregados e categoriza
+    as diferenças (entidades/atributos adicionados, removidos, alterados)."""
     from_idx = _index_entities(snap_from)
     to_idx = _index_entities(snap_to)
 

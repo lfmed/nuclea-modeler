@@ -18,6 +18,7 @@ from .models import (
 from .service import (
     _get_version,
     compute_diff,
+    compute_diff_vs_current,
     deprecate_version,
     publish_version,
     restore_version,
@@ -78,6 +79,10 @@ def get_diff(
     from_: str = Query(..., alias="from", min_length=1),
     to: str = Query(..., min_length=1),
 ) -> VersionDiff:
+    # `to="current"` compara a versão `from` com o MODELO ATUAL (round 5, pt 18) —
+    # ver o que mudou desde uma versão sem publicar outra.
+    if to == "current":
+        return compute_diff_vs_current(sql, from_)
     if from_ == to:
         raise HTTPException(400, "from and to versions must be different")
     return compute_diff(sql, from_, to)
