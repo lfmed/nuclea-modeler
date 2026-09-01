@@ -41,6 +41,7 @@ import {
   usePkDragReorder,
 } from "@/components/attributes/pk-controls";
 import { AttrDescriptionCell } from "@/components/attributes/description-cell";
+import { AttrDefaultCell } from "@/components/attributes/default-cell";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -583,6 +584,7 @@ function AttributesSection({
   const [nullable, setNullable] = useState(true);
   const [isPk, setIsPk] = useState(false);
   const [desc, setDesc] = useState("");
+  const [defaultVal, setDefaultVal] = useState(""); // valor DEFAULT (round 5, pt 20)
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -596,6 +598,7 @@ function AttributesSection({
         // PK não deveria ser nullable — ao marcar PK na criação, força NOT NULL.
         is_nullable: isPk ? false : nullable,
         is_primary_key: isPk,
+        default_value: defaultVal || null, // exportado no DDL (pt 20)
         description_md: desc || null,
       },
     });
@@ -603,6 +606,7 @@ function AttributesSection({
     setLogName("");
     setDataType("");
     setDesc("");
+    setDefaultVal("");
     setIsPk(false);
     setNullable(true);
   };
@@ -699,6 +703,31 @@ function AttributesSection({
     toast.success(`Descrição de "${a.technical_name}" staged (pendente)`);
   };
 
+  // Stage do valor DEFAULT de UMA coluna (round 5, pt 20). Mesma disciplina do
+  // saveAttrDesc: reenvia o payload COMPLETO (o merge do staging é "última intenção
+  // vence" por field-key; mandar parcial apagaria PK/tipo/descrição de uma edição
+  // anterior no mesmo ticket). O texto vai CRU: "" limpa o default (o apply filtra
+  // None, então null nunca limparia — "" passa no filtro e zera).
+  const saveAttrDefault = (a: AttributeOut, defaultValue: string) => {
+    updateAttr({
+      entityId,
+      attributeId: a.attribute_id,
+      data: {
+        entity_id: entityId,
+        technical_name: a.technical_name,
+        logical_name: a.logical_name ?? null,
+        native_data_type: a.native_data_type ?? null,
+        ordinal_position: a.ordinal_position ?? null,
+        is_nullable: a.is_nullable,
+        default_value: defaultValue,
+        is_primary_key: a.is_primary_key,
+        description_md: a.description_md ?? null,
+        business_rule: a.business_rule ?? null,
+      },
+    });
+    toast.success(`Valor padrão de "${a.technical_name}" staged (pendente)`);
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -751,7 +780,16 @@ function AttributesSection({
                 Nullable
               </label>
             </div>
-            <Input placeholder="Descrição (opcional)" value={desc} onChange={(e) => setDesc(e.target.value)} />
+            <div className="grid md:grid-cols-2 gap-3">
+              <Input placeholder="Descrição (opcional)" value={desc} onChange={(e) => setDesc(e.target.value)} />
+              {/* Valor DEFAULT (round 5, pt 20). String precisa vir com aspas — o backend emite CRU. */}
+              <Input
+                placeholder="Valor padrão (ex.: 'ativo', 0, CURRENT_TIMESTAMP)"
+                value={defaultVal}
+                onChange={(e) => setDefaultVal(e.target.value)}
+                className="font-mono"
+              />
+            </div>
             <div className="flex justify-end">
               <Button type="submit" size="sm" disabled={isPending || !techName}>
                 {isPending ? "Salvando..." : "Adicionar"}
@@ -795,6 +833,7 @@ function AttributesSection({
                   <th className="py-2 pr-3 font-medium">Nome técnico</th>
                   <th className="py-2 pr-3 font-medium">Nome lógico</th>
                   <th className="py-2 pr-3 font-medium">Tipo</th>
+                  <th className="py-2 pr-3 font-medium">Padrão</th>
                   <th className="py-2 pr-3 font-medium">Nullable</th>
                   <th className="py-2 pr-3 font-medium">Flags</th>
                   <th className="py-2 pr-3 font-medium">Descrição</th>
@@ -852,6 +891,12 @@ function AttributesSection({
                       </td>
                       <td className="py-2 pr-3">{a.logical_name || "—"}</td>
                       <td className="py-2 pr-3 font-mono text-xs text-muted-foreground">{a.native_data_type || "—"}</td>
+                      <td className="py-2 pr-3 text-muted-foreground">
+                        <AttrDefaultCell
+                          value={a.default_value}
+                          onSave={(v) => saveAttrDefault(a, v)}
+                        />
+                      </td>
                       <td className="py-2 pr-3 text-xs">{a.is_nullable === false ? "NOT NULL" : "NULL"}</td>
                       <td className="py-2 pr-3">
                         <Suspense fallback={<Skeleton className="h-5 w-20" />}>

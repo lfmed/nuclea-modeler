@@ -903,6 +903,74 @@ def _detect_dialect_from_content(ddl_text: str) -> str:
     return None
 
 
+# ─── Resolução de dialeto para o sqlglot ──────────────────────────────────────
+# O sqlglot só reconhece nomes canônicos ("postgres", "tsql", "oracle", "mysql",
+# "spark", "db2"). O app, porém, tem MAIS de uma tela mandando o dialeto e elas não
+# usavam o mesmo vocabulário: o wizard de novo sistema enviava
+# "POSTGRESQL"/"MSSQL"/"ORACLE"/"DATABRICKS", que NÃO batiam com o mapa canônico —
+# o sqlglot recebia um nome desconhecido, o parse devolvia 0 objetos e o import
+# terminava "FAILED" sem pista do motivo (round 5, pt 12). Centralizamos a tradução
+# aqui, com uma tabela de aliases, para o backend ficar resiliente a QUALQUER
+# chamador; um nome ainda assim desconhecido cai em None (modo auto do sqlglot) em
+# vez de estourar "Unknown dialect".
+_DDL_DIALECT_ALIASES: dict[str, str] = {
+    # PostgreSQL
+    "POSTGRESQL": "POSTGRES", "PSQL": "POSTGRES", "PG": "POSTGRES",
+    # Oracle → nossa chave canônica é PLSQL
+    "ORACLE": "PLSQL",
+    # SQL Server → nossa chave canônica é TSQL
+    "MSSQL": "TSQL", "SQLSERVER": "TSQL", "SQL SERVER": "TSQL", "SQL_SERVER": "TSQL",
+    # Databricks/Spark/Delta → nossa chave canônica é SPARKSQL
+    "DATABRICKS": "SPARKSQL", "SPARK": "SPARKSQL", "DELTA": "SPARKSQL",
+    # IBM Db2 (variações)
+    "DB2 FOR I": "DB2", "DB2LUW": "DB2", "LUW": "DB2",
+}
+
+# Chave canônica (após aliases) → nome que o sqlglot entende. None = ANSI/auto.
+_SQLGLOT_DIALECT_BY_KEY: dict[str, str | None] = {
+    "ANSI": None,
+    "TSQL": "tsql",
+    "PLSQL": "oracle",
+    "POSTGRES": "postgres",
+    "MYSQL": "mysql",
+    "SPARKSQL": "spark",
+    "DB2": "db2",
+}
+
+# Allowlist de dialetos que o sqlglot reconhece — consultada quando o nome informado
+# não é canônico nem alias conhecido. Se estiver aqui, passamos direto (lowercase);
+# senão, caímos em None (auto) para nunca estourar "Unknown dialect".
+_SQLGLOT_KNOWN_DIALECTS: frozenset[str] = frozenset({
+    "tsql", "oracle", "postgres", "mysql", "spark", "db2", "sqlite",
+    "snowflake", "bigquery", "redshift", "presto", "trino", "hive",
+    "databricks", "duckdb", "clickhouse", "teradata", "drill",
+})
+
+
+def _resolve_sqlglot_dialect(dialect: str | None) -> str | None:
+    """Traduz o dialeto informado (canônico OU alias comum) para o nome do sqlglot.
+
+    Retorna None para ANSI/genérico/desconhecido — nesses casos o sqlglot roda em
+    modo automático em vez de estourar "Unknown dialect". Ver a nota acima sobre o
+    bug do wizard (round 5, pt 12).
+
+    Exemplos:
+        _resolve_sqlglot_dialect("POSTGRES")    -> "postgres"
+        _resolve_sqlglot_dialect("POSTGRESQL")  -> "postgres"   (alias)
+        _resolve_sqlglot_dialect("MSSQL")       -> "tsql"        (alias)
+        _resolve_sqlglot_dialect("ANSI")        -> None          (auto)
+        _resolve_sqlglot_dialect("XYZ")         -> None          (desconhecido → auto)
+    """
+    if not dialect:
+        return None
+    key = dialect.strip().upper()
+    key = _DDL_DIALECT_ALIASES.get(key, key)
+    if key in _SQLGLOT_DIALECT_BY_KEY:
+        return _SQLGLOT_DIALECT_BY_KEY[key]
+    lowered = key.lower()
+    return lowered if lowered in _SQLGLOT_KNOWN_DIALECTS else None
+
+
 def run_ddl_import(
     sql: Sql,
     *,
@@ -941,14 +1009,11 @@ def run_ddl_import(
         else:
             effective_dialect = dialect or "ANSI"
 
-    dialect_l = effective_dialect.lower() if effective_dialect else None
-    # sqlglot usa lowercase: 'tsql' (T-SQL), 'oracle', 'postgres', 'mysql', 'spark'
-    dialect_map = {
-        "ANSI": None, "TSQL": "tsql", "PLSQL": "oracle",
-        "POSTGRES": "postgres", "MYSQL": "mysql", "SPARKSQL": "spark",
-        "DB2": "db2",
-    }
-    sg_dialect = dialect_map.get(effective_dialect.upper(), dialect_l)
+    # Traduz para o nome que o sqlglot entende (resiliente a aliases; ver
+    # _resolve_sqlglot_dialect). Antes, um dialeto fora do mapa canônico (ex.:
+    # "POSTGRESQL" vindo do wizard) escapava como nome desconhecido e zerava o
+    # parse → import "FAILED" (round 5, pt 12).
+    sg_dialect = _resolve_sqlglot_dialect(effective_dialect)
 
     entities: list[ExtractedEntity] = []
     errors: list[str] = []
@@ -1144,8 +1209,10 @@ def run_ddl_import(
         duration_ms = int((time.monotonic() - start_clock) * 1000)
         msg = (
             "Nenhum objeto (CREATE TABLE/VIEW) reconhecido no DDL. "
-            f"Dialeto usado: {effective_dialect}. "
-            f"Confirme se corresponde ao arquivo."
+            f"Dialeto usado: {effective_dialect} "
+            f"(sqlglot: {sg_dialect or 'auto'}). "
+            "Confirme se o dialeto corresponde ao arquivo "
+            "(aceitos: ANSI, POSTGRES, TSQL, PLSQL, MYSQL, SPARKSQL, DB2)."
         )
         if errors:
             msg += f" {len(errors)} statement(s) ignorado(s) no parse."
