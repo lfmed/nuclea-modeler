@@ -205,6 +205,9 @@ def _relationship_in_to_payload(
         "origin": origin,
         "fk_update_rule": payload.fk_update_rule,
         "fk_delete_rule": payload.fk_delete_rule,
+        # Sem isto o nome digitado se perdia entre o staging e o apply (a coluna
+        # existe desde a migration 019, mas nunca era gravada). round 5.
+        "relationship_name": payload.relationship_name,
     }
 
 
@@ -234,6 +237,7 @@ def _virtual_relationship_out(
         origin="MANUAL",
         fk_update_rule=payload.fk_update_rule,
         fk_delete_rule=payload.fk_delete_rule,
+        relationship_name=payload.relationship_name,
         created_at=now,
         created_by=actor,
         updated_at=now,

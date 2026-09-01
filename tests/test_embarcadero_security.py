@@ -154,6 +154,48 @@ def test_extracts_indexes_with_columns():
     assert ix.columns[0].direction == "DESC"  # SortOrdering=D
 
 
+def test_skips_foreign_key_index():
+    """Índice de APOIO da FK (KeyType='F') é PULADO (round 5, pt 14).
+
+    O ER/Studio cria, junto de cada FK, um índice de apoio marcado KeyType='F'.
+    A FK em si já vira um RELACIONAMENTO (seção ForeignKey); sem pular esse índice,
+    a FK "sumia" e reaparecia como um índice (IDX) no modelo. Aqui garantimos que
+    só o índice de verdade (KeyType='U') sobrevive.
+    """
+    payload = (
+        "Entity\n"
+        "DiagramId,ModelId,EntityId,EntityNameId,TableNameId,OwnerId,DefinitionId\n"
+        "1,2,10,100,100,0,0\n"
+        "\n"
+        "Attribute\n"
+        "DiagramId,ModelId,EntityId,AttributeId,AttributeNameId,DatatypeId,Length,Scale,Nullable,DefinitionId\n"
+        "1,2,10,1,200,8,-2,-1,N,0\n"
+        "1,2,10,2,201,10,80,-1,Y,0\n"
+        "\n"
+        "Indexes\n"
+        "DiagramId,ModelId,EntityId,IndexId,Indexes_ID,Entity_ID,IsUniqueId,IndexTypeId,KeyType,HashSize,HashSizeTypeId,IgnoreDupKeyId,DupRowId,NoSortId,SortOrderingId,IndexNameId,Flags,NSTFlag,CompareFlags,Global_User_ID,Row_Time_Stamp,ColumnStoreId\n"
+        "1,2,10,1,1,10,13,0,U,0,0,0,0,0,0,300,0,0,0,0,0,0\n"
+        "1,2,10,3,3,10,13,0,F,0,0,0,0,0,0,302,0,0,0,0,0,0\n"
+        "\n"
+        "IndexColumn\n"
+        "DiagramId,ModelId,EntityId,IndexId,AttributeId,IndexColumn_ID,Attribute_ID,Indexes_ID,SequenceNo,SortOrdering,ColumnName_PDId,Global_User_ID,Row_Time_Stamp\n"
+        "1,2,10,1,2,1,201,1,1,A,0,0,0\n"
+        "1,2,10,3,1,3,200,3,1,A,0,0,0\n"
+        "\n"
+        "SmallString\n"
+        "String_Id,Data,Overflow,ConstantString,Row_Time_Stamp\n"
+        "100,clientes,0,0,0\n"
+        "200,id_cliente,0,0,0\n"
+        "201,email,0,0,0\n"
+        "300,ix_email_unico,0,0,0\n"
+        "302,fk_idx_cliente,0,0,0\n"
+    )
+    snap, _ = parse_dm1(payload, system_id="sys-test")
+    ent = snap.entities[0]
+    # Só o índice U sobrevive; o índice F (apoio de FK) foi pulado.
+    assert [ix.index_name for ix in ent.indexes] == ["ix_email_unico"]
+
+
 def test_unknown_datatype_emits_warning():
     """DatatypeId fora do mapping conhecido cai pra fallback VARCHAR/UNKNOWN com warning."""
     payload = (
