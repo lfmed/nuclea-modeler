@@ -64,6 +64,12 @@ documentado para quem mantém depois.** Cumprir em todo PR:
   nome desconhecido, parseava 0 objetos e o import falhava (round 5, pt 12). O helper agora
   normaliza aliases e cai em `None` (auto) se não reconhecer — mas mantenha o vocabulário
   alinhado. Teste: `tests/test_dialect_resolution.py`.
+- **DM1 (ER/Studio) cria índice de APOIO da FK (GOTCHA, v1.0039).** No `.DM1`, cada
+  FK vira (1) um relacionamento na seção `ForeignKey` E (2) um índice de apoio na seção
+  `Indexes` com `KeyType="F"`. O parser (`extractions/embarcadero.py`) pula `KeyType` em
+  `("P","F")` — senão a FK "sumia" e reaparecia como um índice (IDX) no modelo (round 5,
+  pt 14). Se um `.DM1` do cliente ainda mostrar FK virando índice, verifique o `KeyType`
+  real das linhas de `Indexes`. Teste: `tests/test_embarcadero_security.py`.
 - **`ui/lib/api.ts` é ESCRITO À MÃO** — não há codegen no deploy (cliente sem npm/apx).
   Rota nova no backend ⇒ escreva o hook à mão em `api.ts` (padrão `use<Op>` /
   `use<Op>Suspense` / `selector()`). Ignore a linha do boilerplate que diz "auto-regenera".

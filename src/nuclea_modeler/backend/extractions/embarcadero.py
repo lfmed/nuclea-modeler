@@ -249,7 +249,13 @@ def parse_dm1(text: str, system_id: str) -> tuple[ExtractionSnapshot, list[str]]
     indexes_by_entity: dict[str, list[ExtractedIndex]] = {}
     seen_idx: set[tuple[str, str]] = set()
     for ix in idx_rows:
-        if ix.get("KeyType") == "P":
+        # Pula PK e FK (round 5, pt 14). A PK já é coberta pela seção PrimaryKey.
+        # A FK em si vira RELACIONAMENTO na seção ForeignKey (abaixo) — mas o
+        # ER/Studio também cria um índice de APOIO da FK (KeyType "F") e, sem este
+        # filtro, ele virava um ExtractedIndex: a FK "sumia" e reaparecia como um
+        # índice (IDX) no modelo. Só índices de verdade (secundários/únicos) passam.
+        key_type = (ix.get("KeyType") or "").upper()
+        if key_type in ("P", "F"):
             continue
         ent_id = ix.get("EntityId", "")
         idx_id = ix.get("IndexId", "")
@@ -274,7 +280,7 @@ def parse_dm1(text: str, system_id: str) -> tuple[ExtractionSnapshot, list[str]]
             continue
         # KeyType="U" → UNIQUE constraint. is_unique é flag separada
         # (não duplica em index_type pra evitar redundância na UI).
-        is_unique = (ix.get("KeyType") or "").upper() == "U"
+        is_unique = key_type == "U"
         indexes_by_entity.setdefault(ent_id, []).append(
             ExtractedIndex(
                 index_name=idx_name,

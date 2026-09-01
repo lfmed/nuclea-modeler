@@ -602,6 +602,7 @@ def _apply_relationship_change(
                 "origin": payload.get("origin", "MANUAL"),
                 "fk_update_rule": payload.get("fk_update_rule"),
                 "fk_delete_rule": payload.get("fk_delete_rule"),
+                "relationship_name": payload.get("relationship_name"),
                 "created_at": now, "created_by": applied_by,
                 "updated_at": now, "updated_by": applied_by,
             },
@@ -621,6 +622,7 @@ def _apply_relationship_change(
             "description": payload.get("description"),
             "fk_update_rule": payload.get("fk_update_rule"),
             "fk_delete_rule": payload.get("fk_delete_rule"),
+            "relationship_name": payload.get("relationship_name"),
             "updated_at": now,
             "updated_by": applied_by,
         }
