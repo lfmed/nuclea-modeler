@@ -143,6 +143,64 @@ def test_insert_tz_aware_datetime_normalised_to_utc():
     assert "13:30:00" in stmt
 
 
+# ─── insert_many (batch) ─────────────────────────────────────────────────────
+
+
+def test_insert_many_single_statement_multi_row():
+    """N linhas → 1 statement `INSERT ... VALUES (…),(…),…` (não N statements)."""
+    sql, captured = _mock_sql_capture()
+    rows = [
+        {"attribute_id": "a1", "technical_name": "id", "ordinal_position": 1},
+        {"attribute_id": "a2", "technical_name": "nome", "ordinal_position": 2},
+        {"attribute_id": "a3", "technical_name": "email", "ordinal_position": 3},
+    ]
+    delta.insert_many(sql, "cat.sch.attributes", rows)
+    assert len(captured) == 1  # um único round-trip para as 3 linhas
+    stmt = captured[0]
+    assert stmt.startswith("INSERT INTO cat.sch.attributes (attribute_id, technical_name, ordinal_position) VALUES ")
+    # 3 tuplas de VALUES, uma por linha
+    assert stmt.count("(") == 4  # 1 lista de colunas + 3 tuplas de valores
+    assert "'a1'" in stmt and "'a2'" in stmt and "'a3'" in stmt
+    assert "'id'" in stmt and "'nome'" in stmt and "'email'" in stmt
+
+
+def test_insert_many_empty_is_noop():
+    sql, captured = _mock_sql_capture()
+    delta.insert_many(sql, "cat.sch.t", [])
+    assert captured == []
+
+
+def test_insert_many_chunks_respect_chunk_size():
+    """Mais linhas que chunk_size → ceil(N/chunk) statements (não N)."""
+    sql, captured = _mock_sql_capture()
+    rows = [{"id": f"r{i}", "n": i} for i in range(5)]
+    delta.insert_many(sql, "cat.sch.t", rows, chunk_size=2)
+    # 5 linhas / 2 por chunk = 3 statements
+    assert len(captured) == 3
+
+
+def test_insert_many_projects_onto_first_row_columns():
+    """A 1ª linha define as colunas; cada linha é projetada (row.get)."""
+    sql, captured = _mock_sql_capture()
+    rows = [
+        {"a": 1, "b": "x"},
+        {"a": 2, "b": None},  # b ausente viraria NULL; aqui explicitamente None
+    ]
+    delta.insert_many(sql, "cat.sch.t", rows)
+    stmt = captured[0]
+    assert stmt.startswith("INSERT INTO cat.sch.t (a, b) VALUES ")
+    assert "(1, 'x')" in stmt
+    assert "(2, NULL)" in stmt
+
+
+def test_insert_many_escapes_apostrophes():
+    sql, captured = _mock_sql_capture()
+    delta.insert_many(sql, "cat.sch.t", [{"name": "O'Hara"}])
+    stmt = captured[0]
+    assert "O''Hara" in stmt
+    assert stmt.count("'") % 2 == 0  # quoting balanceado
+
+
 # ─── update_by_id ───────────────────────────────────────────────────────────
 
 

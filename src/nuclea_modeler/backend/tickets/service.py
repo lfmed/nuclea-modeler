@@ -844,42 +844,72 @@ def _apply_op_add(state: _ApplyState, ent_change: dict[str, Any]) -> None:
         )
         existing_attr_names = {r[0] for r in attr_rows}
 
+    # Monta as linhas de atributo (pula as que já existem — idempotência por nome).
+    # PORQUÊ inserir em LOTE (um único INSERT ... VALUES (…),(…),…) em vez de um
+    # INSERT por coluna: cada INSERT é um round-trip completo pela Statement
+    # Execution API (submit + poll). Aplicar ~10 entidades com dezenas de colunas
+    # cada estourava o timeout de 300s porque eram centenas de round-trips. O lote
+    # transforma N round-trips em ~1 por entidade.
+    attr_specs: list[tuple[str, dict[str, Any], dict[str, Any]]] = []  # (name, row, payload)
     for idx, attr in enumerate(ent_change.get("attributes") or []):
         name = attr.get("technical_name", "")
-        if name in existing_attr_names:
+        if not name or name in existing_attr_names:
             continue
+        aid = attr.get("attribute_id") or delta.new_id("attr-")
+        row = {
+            "attribute_id": aid,
+            "entity_id": eid,
+            "technical_name": name,
+            "logical_name": attr.get("logical_name"),
+            "ordinal_position": attr.get("ordinal_position", idx + 1),
+            "native_data_type": attr.get("native_data_type"),
+            "is_nullable": attr.get("is_nullable"),
+            "default_value": attr.get("default_value"),
+            "is_primary_key": bool(attr.get("is_primary_key", False)),
+            # round 6 pt 15: descrição importada de COMMENT ON COLUMN;
+            # round 6 pt 21: expressão de CHECK constraint da coluna.
+            "description_md": attr.get("description_md"),
+            "native_comment": attr.get("native_comment"),
+            "check_constraint": attr.get("check_constraint"),
+            "created_at": state.now, "created_by": state.applied_by,
+            "updated_at": state.now, "updated_by": state.applied_by,
+        }
+        attr_specs.append((name, row, attr))
+
+    # Fast-path: um único INSERT multi-linha com TODAS as colunas da entity.
+    # Fallback: se o lote falhar (uma linha ruim derruba o statement inteiro),
+    # reaplica linha-a-linha para isolar a linha ruim e não perder as boas —
+    # preserva a resiliência/auto-cura de re-apply do comportamento anterior.
+    inserted_ids: set[str] = set()
+    if attr_specs:
+        rows_only = [row for (_n, row, _a) in attr_specs]
         try:
-            aid = attr.get("attribute_id") or delta.new_id("attr-")
-            delta.insert(
-                state.sql,
-                s.fq_table("attributes"),
-                {
-                    "attribute_id": aid,
-                    "entity_id": eid,
-                    "technical_name": name,
-                    "logical_name": attr.get("logical_name"),
-                    "ordinal_position": attr.get("ordinal_position", idx + 1),
-                    "native_data_type": attr.get("native_data_type"),
-                    "is_nullable": attr.get("is_nullable"),
-                    "default_value": attr.get("default_value"),
-                    "is_primary_key": bool(attr.get("is_primary_key", False)),
-                    # round 6 pt 15: descrição importada de COMMENT ON COLUMN;
-                    # round 6 pt 21: expressão de CHECK constraint da coluna.
-                    "description_md": attr.get("description_md"),
-                    "native_comment": attr.get("native_comment"),
-                    "check_constraint": attr.get("check_constraint"),
-                    "created_at": state.now, "created_by": state.applied_by,
-                    "updated_at": state.now, "updated_by": state.applied_by,
-                },
+            delta.insert_many(state.sql, s.fq_table("attributes"), rows_only)
+            state.applied_attributes += len(rows_only)
+            inserted_ids = {row["attribute_id"] for row in rows_only}
+        except Exception as exc_batch:  # noqa: BLE001 — degrada p/ linha-a-linha
+            log.warning(
+                "_apply_op_add: INSERT em lote falhou para %s.%s (%s) — "
+                "reaplicando linha-a-linha para isolar a linha ruim.",
+                schema_name, technical_name, exc_batch,
             )
-            state.applied_attributes += 1
-            # round 6 pt 16: flags escolhidas na criação da coluna (via ticket).
+            for name, row, _attr in attr_specs:
+                try:
+                    delta.insert(state.sql, s.fq_table("attributes"), row)
+                    state.applied_attributes += 1
+                    inserted_ids.add(row["attribute_id"])
+                except Exception as exc:  # noqa: BLE001 — resiliente: cura no re-apply
+                    state.errors.append(
+                        f"attribute {schema_name}.{technical_name}.{name}: {exc}"
+                    )
+
+    # round 6 pt 16: flags escolhidas na criação de cada coluna (via ticket) — só
+    # para as colunas que de fato entraram. Aplicadas após o INSERT (fazem seus
+    # próprios INSERT/UPDATE idempotentes; raras no import de DDL/xlsx).
+    for name, row, attr in attr_specs:
+        if row["attribute_id"] in inserted_ids and attr.get("flag_keys"):
             _apply_flag_keys_to_target(
-                state, flag_keys=attr.get("flag_keys"), attribute_id=aid
-            )
-        except Exception as exc:  # noqa: BLE001 — resiliente: cura no re-apply
-            state.errors.append(
-                f"attribute {schema_name}.{technical_name}.{name}: {exc}"
+                state, flag_keys=attr.get("flag_keys"), attribute_id=row["attribute_id"]
             )
 
 

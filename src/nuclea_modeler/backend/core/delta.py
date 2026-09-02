@@ -261,6 +261,44 @@ def insert(sql_dep: Sql, table: str, row: dict[str, Any]) -> None:
     run(sql_dep, f"INSERT INTO {table} ({cols}) VALUES ({vals})")
 
 
+def insert_many(
+    sql_dep: Sql,
+    table: str,
+    rows: Sequence[dict[str, Any]],
+    *,
+    chunk_size: int = 200,
+) -> None:
+    """Insert MANY rows in a single (or few) `INSERT ... VALUES (...),(...),...`.
+
+    PORQUÊ: cada round-trip pela Statement Execution API custa um submit + poll
+    completos. Inserir N linhas uma-a-uma (loop de `insert()`) são N round-trips —
+    foi por isso que aplicar um ticket com dezenas de atributos estourava o
+    timeout (>300s no apply de ~10 entidades). Aqui juntamos tudo num único
+    statement, transformando N round-trips em ceil(N/chunk_size).
+
+    Contrato: todas as linhas DEVEM ter o MESMO conjunto de colunas — a 1ª linha
+    define a ordem das colunas e cada linha é projetada sobre ela (`row.get(col)`),
+    então uma chave a mais numa linha do meio é ignorada silenciosamente e uma a
+    menos vira NULL. No uso interno (apply de ticket) as linhas são montadas pelo
+    MESMO dict literal, então o shape é idêntico por construção.
+
+    Valores são inlinados como literais SQL (trusted-input only, igual a `insert()`).
+    `chunk_size` limita linhas por statement para o SQL gerado não explodir.
+    """
+    materialized = [r for r in rows if r]
+    if not materialized:
+        return
+    cols = list(materialized[0].keys())
+    col_sql = ", ".join(cols)
+    for start in range(0, len(materialized), chunk_size):
+        chunk = materialized[start:start + chunk_size]
+        values_sql = ", ".join(
+            "(" + ", ".join(_quote_lit(r.get(c)) for c in cols) + ")"
+            for r in chunk
+        )
+        run(sql_dep, f"INSERT INTO {table} ({col_sql}) VALUES {values_sql}")
+
+
 def update_by_id(
     sql_dep: Sql,
     table: str,
