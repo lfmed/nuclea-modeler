@@ -940,12 +940,29 @@ def _apply_op_change(
             delta.param("technical_name", technical_name),
         ],
     )
-    if not existing:
+    eid = existing[0] if existing else None
+    # round 6 (follow-up): search_path/CREATE SCHEMA pode fazer a entidade viver num
+    # schema diferente do que o entry carrega (ex.: import CSV/xlsx sem schema). Só
+    # um fallback SEGURO: o `target_entity_id` gravado no staging aponta para a
+    # entidade EXATA (por id). NÃO usamos fallback por nome — um change (inclusive
+    # attribute_remove/DELETE) jamais pode cair numa tabela homônima de OUTRO schema
+    # (review): melhor errar "not found" do que corromper a tabela errada.
+    if not eid:
+        tid = (ent_change.get("payload") or {}).get("target_entity_id")
+        if tid:
+            row = delta.fetch_one_params(
+                state.sql,
+                f"SELECT entity_id FROM {s.fq_table('entities')} "
+                f"WHERE entity_id = :id AND system_id = :sid",
+                [delta.param("id", tid), delta.param("sid", state.system_id)],
+            )
+            if row:
+                eid = row[0]
+    if not eid:
         state.errors.append(
             f"change target not found: {schema_name}.{technical_name}"
         )
         return
-    eid = existing[0]
 
     updates: dict[str, Any] = {}
     for fc in ent_change.get("field_changes") or []:
