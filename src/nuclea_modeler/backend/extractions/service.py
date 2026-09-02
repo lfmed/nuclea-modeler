@@ -1158,21 +1158,36 @@ def run_ddl_import(
                         if pfk:
                             pending_fks.append(pfk)
                 # CHECK table-level: `CONSTRAINT ck CHECK (expr)` (round 6 pt 21).
-                # sqlglot expõe como exp.Check; associamos a expressão ao atributo
-                # referenciado quando o check menciona UMA única coluna conhecida
-                # (cobre o caso comum, ex.: `CHECK (PRINCIPAL IN (0,1))`). Best-effort:
-                # nunca derruba o parse (exp.Check pode não existir em toda versão).
+                # sqlglot modela AMBOS (inline de coluna E table-level) como
+                # `CheckColumnConstraint`; `find_all` recursa e acha os dois. Assoc.
+                # a expressão ao atributo referenciado quando menciona UMA única
+                # coluna conhecida (ex.: `CHECK (PRINCIPAL IN (0,1))`). O de coluna
+                # já foi capturado acima — o guard `not ...check_constraint` evita
+                # sobrescrever. Best-effort: nunca derruba o parse (os nomes de
+                # classe variam entre versões do sqlglot).
                 try:
                     attr_by_name = {a.technical_name: a for a in attributes}
-                    for chk in schema_obj.find_all(exp.Check):
+                    check_cls = [
+                        getattr(exp, n, None)
+                        for n in ("CheckColumnConstraint", "Check")
+                    ]
+                    check_nodes: list = []
+                    for cls in check_cls:
+                        if cls is not None:
+                            check_nodes.extend(schema_obj.find_all(cls))
+                    for chk in check_nodes:
                         expr = chk.this if getattr(chk, "this", None) is not None else chk
-                        refs = {
-                            c.name for c in expr.find_all(exp.Column)
-                            if getattr(c, "name", None)
-                        }
+                        try:
+                            refs = {
+                                c.name for c in expr.find_all(exp.Column)
+                                if getattr(c, "name", None)
+                            }
+                            expr_sql = expr.sql()
+                        except Exception:  # noqa: BLE001
+                            continue
                         known = [r for r in refs if r in attr_by_name]
                         if len(known) == 1 and not attr_by_name[known[0]].check_constraint:
-                            attr_by_name[known[0]].check_constraint = expr.sql()
+                            attr_by_name[known[0]].check_constraint = expr_sql
                 except Exception:  # noqa: BLE001
                     pass
                 # Comentário de tabela: `... COMMENT 'texto'` / `COMMENT = '...'`
@@ -1217,8 +1232,26 @@ def run_ddl_import(
 
     # Aplica os comentários de COMMENT ON coletados (autoritativos — sobrescrevem
     # o que veio inline no CREATE, pois são declarações explícitas).
+    #
+    # GOTCHA (round 6, arquivo real do cliente): o schema do COMMENT ON pode
+    # DIVERGIR do schema resolvido no CREATE. Ex.: o DDL tem `SET search_path TO
+    # social;` → a tabela vira `social.pessoa`, mas o `COMMENT ON TABLE pessoa`
+    # (sem schema) é indexado como `public.pessoa`. Sem fallback, o comentário não
+    # casa e a descrição não é importada. Fazemos fallback por NOME de tabela
+    # quando (a) o match schema-qualificado falha e (b) o nome é ÚNICO no arquivo.
+    from collections import Counter as _Counter
+    _tbl_counts = _Counter(e.technical_name for e in entities)
+    _tbl_comment_by_name: dict[str, str] = {}
+    for (_s, _t), _txt in deferred_table_comments.items():
+        _tbl_comment_by_name.setdefault(_t, _txt)
+    _col_comment_by_name: dict[tuple[str, str], str] = {}
+    for (_s, _t, _c), _txt in deferred_col_comments.items():
+        _col_comment_by_name.setdefault((_t, _c), _txt)
+
     for e in entities:
         tc = deferred_table_comments.get((e.schema_name, e.technical_name))
+        if not tc and _tbl_counts[e.technical_name] == 1:
+            tc = _tbl_comment_by_name.get(e.technical_name)
         if tc:
             e.native_comment = tc
         # round 6 pt 15: o COMMENT ON de tabela vira também descrição de negócio.
@@ -1227,6 +1260,8 @@ def run_ddl_import(
         # então o comentário de tabela chega em description_md sem mais nada aqui.
         for a in e.attributes:
             cc = deferred_col_comments.get((e.schema_name, e.technical_name, a.technical_name))
+            if not cc and _tbl_counts[e.technical_name] == 1:
+                cc = _col_comment_by_name.get((e.technical_name, a.technical_name))
             if cc:
                 a.native_comment = cc
             # round 6 pt 15: importa o COMMENT ON COLUMN (ou comentário inline) como
