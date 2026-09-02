@@ -150,4 +150,9 @@ class QuickEntityIn(BaseModel):
     logical_name: str | None = None
     entity_type: Literal["TABLE", "VIEW", "MATERIALIZED_VIEW", "EXTERNAL"] = "TABLE"
     domain: str | None = None
+    # round 6 pt 16: descrição + flags já no ato da criação manual. As flags vão
+    # no ticket e são aplicadas na aprovação (modelo editorial). Cada dict de
+    # `initial_attributes` também aceita "description_md" e "flag_keys": [ ].
+    description_md: str | None = None
+    flag_keys: list[str] = Field(default_factory=list)
     initial_attributes: list[dict] = Field(default_factory=list)

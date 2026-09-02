@@ -130,6 +130,9 @@ class AttributeIn(BaseModel):
     glossary_term_id: str | None = None
     native_comment: str | None = None
     check_constraint: str | None = None  # round 6 pt 21
+    # round 6 pt 16: flags (flag_key) escolhidas na criação manual da coluna —
+    # aplicadas na aprovação do ticket. Não é campo do banco; só entrada.
+    flag_keys: list[str] = Field(default_factory=list)
 
 
 class AttributeOut(BaseModel):

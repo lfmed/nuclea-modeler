@@ -492,6 +492,10 @@ def quick_add_entity(
             "is_nullable": raw.get("is_nullable", True),
             "is_primary_key": bool(raw.get("is_primary_key", False)),
             "default_value": raw.get("default_value"),
+            # round 6 pt 16/21: descrição, flags e CHECK já na criação manual.
+            "description_md": raw.get("description_md"),
+            "check_constraint": raw.get("check_constraint"),
+            "flag_keys": raw.get("flag_keys") or [],
         })
         attrs_out.append(
             DiagramAttribute(
@@ -519,6 +523,9 @@ def quick_add_entity(
             "entity_type": payload.entity_type,
             "tags": [],
             "pre_allocated_entity_id": eid,
+            # round 6 pt 16: descrição + flags da tabela já na criação.
+            "description_md": payload.description_md,
+            "flag_keys": payload.flag_keys,
         },
         "attributes": attrs_for_diff,
     }

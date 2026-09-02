@@ -675,6 +675,49 @@ def _ensure_schema(sql: Sql, system_id: str, schema_name: str, actor: str, now: 
     )
 
 
+def _apply_flag_keys_to_target(
+    state: "_ApplyState",
+    *,
+    flag_keys: list[str] | None,
+    entity_id: str | None = None,
+    attribute_id: str | None = None,
+) -> None:
+    """round 6 pt 16: aplica flags (por ``flag_key``) a uma entity/atributo recém
+    criado, DENTRO do apply do ticket. Reusa os cores de flags (idempotentes, com
+    propagação LGPD coluna→entidade) — não duplica a lógica. Best-effort: uma flag
+    inexistente/erro não derruba o apply (registra e segue)."""
+    if not flag_keys:
+        return
+    from ..flags.router import (
+        _apply_attribute_flag_core,
+        _apply_entity_flag_core,
+        _fetch_flag,
+    )
+    s = get_settings()
+    for key in flag_keys:
+        try:
+            row = delta.fetch_one_params(
+                state.sql,
+                f"SELECT flag_id FROM {s.fq_table('flags')} WHERE flag_key = :k",
+                [delta.param("k", key)],
+            )
+            if not row:
+                continue
+            flag = _fetch_flag(state.sql, row[0])
+            if attribute_id:
+                _apply_attribute_flag_core(
+                    state.sql, attribute_id=attribute_id, flag=flag,
+                    justification="Aplicado na criação (pt 16)", actor=state.applied_by,
+                )
+            elif entity_id:
+                _apply_entity_flag_core(
+                    state.sql, entity_id=entity_id, flag=flag,
+                    justification="Aplicado na criação (pt 16)", actor=state.applied_by,
+                )
+        except Exception as exc:  # noqa: BLE001
+            state.errors.append(f"flag '{key}': {exc}")
+
+
 def _apply_op_add(state: _ApplyState, ent_change: dict[str, Any]) -> None:
     """Materializa um entity novo + attributes + indexes (op='add').
 
@@ -769,6 +812,10 @@ def _apply_op_add(state: _ApplyState, ent_change: dict[str, Any]) -> None:
             )
             state.applied_entities += 1
             new_entity = True
+            # round 6 pt 16: flags escolhidas na criação da tabela (via ticket).
+            _apply_flag_keys_to_target(
+                state, flag_keys=payload.get("flag_keys"), entity_id=eid
+            )
 
             # Índices (eng. reversa) — só na criação; origin=EXTRACTED diferencia
             # da criação manual via UI.
@@ -826,6 +873,10 @@ def _apply_op_add(state: _ApplyState, ent_change: dict[str, Any]) -> None:
                 },
             )
             state.applied_attributes += 1
+            # round 6 pt 16: flags escolhidas na criação da coluna (via ticket).
+            _apply_flag_keys_to_target(
+                state, flag_keys=attr.get("flag_keys"), attribute_id=aid
+            )
         except Exception as exc:  # noqa: BLE001 — resiliente: cura no re-apply
             state.errors.append(
                 f"attribute {schema_name}.{technical_name}.{name}: {exc}"
@@ -987,6 +1038,10 @@ def _dispatch_field_change(
             },
         )
         state.applied_attributes += 1
+        # round 6 pt 16: flags escolhidas na criação manual da coluna (via ticket).
+        _apply_flag_keys_to_target(
+            state, flag_keys=attr_payload.get("flag_keys"), attribute_id=aid
+        )
         return
 
     if fld.startswith("attribute_remove:"):
