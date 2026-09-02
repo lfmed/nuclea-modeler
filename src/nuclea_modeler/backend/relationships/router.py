@@ -266,6 +266,45 @@ def _entity_labels(sql, source_id: str, target_id: str) -> tuple[str | None, str
     )
 
 
+def _attr_names(sql, attr_ids: list[str]) -> list[str]:
+    """Resolve os NOMES técnicos de uma lista de attribute_ids (mantém a ordem
+    pedida). Best-effort: ids não encontrados são omitidos. Usado só para
+    ENRIQUECER o payload do ticket com rótulos legíveis (não afeta o apply)."""
+    ids = [a for a in (attr_ids or []) if a]
+    if not ids:
+        return []
+    s = get_settings()
+    # IN dinâmico com parâmetros nomeados (a lista é curta — colunas de uma FK).
+    placeholders = ", ".join(f":a{i}" for i in range(len(ids)))
+    rows = delta.fetch_all_params(
+        sql,
+        f"SELECT attribute_id, technical_name FROM {s.fq_table('attributes')} "
+        f"WHERE attribute_id IN ({placeholders})",
+        [delta.param(f"a{i}", a) for i, a in enumerate(ids)],
+    )
+    name_by_id = {r[0]: r[1] for r in rows}
+    return [name_by_id[a] for a in ids if a in name_by_id]
+
+
+def _enrich_rel_payload_labels(sql, rel_payload: dict) -> None:
+    """Bug D (aprovação de ticket ilegível): o payload do relacionamento só tinha
+    IDs (entity_id/attribute_id), então o ticket mostrava `__relationship__.rel-xxx`
+    sem dizer QUAIS tabelas/colunas estão sendo ligadas. Aqui gravamos rótulos
+    legíveis NO PRÓPRIO payload (schema.tabela + nomes das colunas), para a tela de
+    aprovação renderizar "pai → filho (colunas)" sem precisar re-resolver ids.
+    Best-effort: falha de leitura não impede o staging do relacionamento."""
+    try:
+        src_label, tgt_label = _entity_labels(
+            sql, rel_payload.get("source_entity_id"), rel_payload.get("target_entity_id"),
+        )
+        rel_payload["source_label"] = src_label
+        rel_payload["target_label"] = tgt_label
+        rel_payload["source_columns"] = _attr_names(sql, rel_payload.get("source_attr_ids") or [])
+        rel_payload["target_columns"] = _attr_names(sql, rel_payload.get("target_attr_ids") or [])
+    except Exception:  # noqa: BLE001 — rótulos são cosméticos; nunca derrubam o staging
+        pass
+
+
 @router.get("", response_model=list[RelationshipListOut], operation_id="listRelationships")
 def list_relationships(
     sql: SqlDependency,
@@ -335,6 +374,7 @@ def create_relationship(
     ticket_id, diff = get_or_create_session_ticket(sql, actor, payload.system_id)
     rel_payload = _relationship_in_to_payload(payload, origin="MANUAL")
     rel_payload["relationship_id"] = rid
+    _enrich_rel_payload_labels(sql, rel_payload)  # Bug D: rótulos legíveis no ticket
     entry = {
         "op": "add",
         "schema_name": _REL_SCHEMA_MARKER,
@@ -367,6 +407,7 @@ def update_relationship(
     ticket_id, diff = get_or_create_session_ticket(sql, actor, payload.system_id)
     rel_payload = _relationship_in_to_payload(payload)
     rel_payload["relationship_id"] = relationship_id
+    _enrich_rel_payload_labels(sql, rel_payload)  # Bug D: rótulos legíveis no ticket
     entry = {
         "op": "change",
         "schema_name": _REL_SCHEMA_MARKER,
@@ -401,7 +442,9 @@ def delete_relationship(
     actor = _current_email(user_ws) or "unknown"
     row = delta.fetch_one_params(
         sql,
-        f"SELECT system_id FROM {s.fq_table('relationships')} "
+        f"SELECT system_id, source_entity_id, target_entity_id, "
+        f"source_attr_ids, target_attr_ids "
+        f"FROM {s.fq_table('relationships')} "
         f"WHERE relationship_id = :relationship_id",
         [delta.param("relationship_id", relationship_id)],
     )
@@ -409,12 +452,22 @@ def delete_relationship(
         raise HTTPException(404, f"relationship '{relationship_id}' not found")
     system_id = row[0]
     ticket_id, diff = get_or_create_session_ticket(sql, actor, system_id)
+    # Bug D: enriquece o payload de REMOÇÃO com rótulos legíveis (o que será
+    # removido) — o delete só tinha o relationship_id, ilegível na aprovação.
+    del_payload = {
+        "relationship_id": relationship_id,
+        "source_entity_id": row[1],
+        "target_entity_id": row[2],
+        "source_attr_ids": delta.as_str_list(row[3]),  # ARRAY vem como string JSON
+        "target_attr_ids": delta.as_str_list(row[4]),
+    }
+    _enrich_rel_payload_labels(sql, del_payload)
     entry = {
         "op": "remove",
         "schema_name": _REL_SCHEMA_MARKER,
         "technical_name": relationship_id,
         "entity_type": "RELATIONSHIP",
-        "payload": {"relationship_id": relationship_id},
+        "payload": del_payload,
     }
     stage_entity_change(sql, ticket_id, diff, entry)
     return {"deleted": relationship_id, "pending": True, "ticket_id": ticket_id}

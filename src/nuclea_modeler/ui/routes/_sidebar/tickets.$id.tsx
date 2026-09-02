@@ -672,6 +672,28 @@ function DecisionSelect({
   );
 }
 
+/** Bug D: descreve um diff de RELACIONAMENTO (schema "__relationship__") de forma
+ * legível — quais tabelas e colunas estão sendo ligadas — a partir dos rótulos que
+ * o backend grava no payload. Cai num texto neutro se o payload não tiver rótulos
+ * (relacionamentos antigos, criados antes do enriquecimento). */
+function relationshipSummary(entity: DiffEntity): {
+  title: string;
+  columns: string | null;
+} {
+  const p = (entity.payload || {}) as Record<string, unknown>;
+  const src = (p.source_label as string) || "(tabela-pai)";
+  const tgt = (p.target_label as string) || "(tabela-filha)";
+  const relType = (p.rel_type as string) || "";
+  const srcCols = (p.source_columns as string[]) || [];
+  const tgtCols = (p.target_columns as string[]) || [];
+  const title = `${src} → ${tgt}${relType ? `  (${relType})` : ""}`;
+  const columns =
+    srcCols.length || tgtCols.length
+      ? `chaves: ${src}(${srcCols.join(", ") || "?"}) → ${tgt}(${tgtCols.join(", ") || "?"})`
+      : null;
+  return { title, columns };
+}
+
 function DiffRow({
   entity,
   entityAction,
@@ -686,8 +708,15 @@ function DiffRow({
     change: { icon: <RefreshCw className="h-4 w-4 text-amber-600 dark:text-amber-400" />, label: "alterar" },
   }[entity.op];
 
+  // Relacionamento (FK): schema sentinela "__relationship__" + technical_name = id
+  // (ilegível). Renderizamos "pai → filho (colunas)" a partir do payload enriquecido.
+  const isRel = entity.schema_name === "__relationship__";
+  const relInfo = isRel ? relationshipSummary(entity) : null;
+
   const attrsCount = entity.attributes?.length ?? 0;
-  const fcsCount = entity.field_changes?.length ?? 0;
+  // Para relacionamento, o field_changes é só o marcador "relationship_update" —
+  // não é útil listar; o resumo legível acima já cobre. Suprimimos a lista genérica.
+  const fcsCount = isRel ? 0 : (entity.field_changes?.length ?? 0);
   const isChange = entity.op === "change";
 
   return (
@@ -697,17 +726,31 @@ function DiffRow({
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <p className="text-sm">
-              <strong className="font-mono">
-                {entity.schema_name}.{entity.technical_name}
-              </strong>{" "}
-              <span className="text-muted-foreground">— {opConfig.label}</span>
-              {entity.entity_type && entity.entity_type !== "TABLE" && (
-                <Badge variant="outline" className="ml-2 text-xs">{entity.entity_type}</Badge>
+              {isRel ? (
+                <>
+                  <Badge variant="outline" className="mr-2 text-[10px] align-middle">
+                    Relacionamento
+                  </Badge>
+                  <strong className="font-mono">{relInfo!.title}</strong>{" "}
+                  <span className="text-muted-foreground">— {opConfig.label}</span>
+                </>
+              ) : (
+                <>
+                  <strong className="font-mono">
+                    {entity.schema_name}.{entity.technical_name}
+                  </strong>{" "}
+                  <span className="text-muted-foreground">— {opConfig.label}</span>
+                  {entity.entity_type && entity.entity_type !== "TABLE" && (
+                    <Badge variant="outline" className="ml-2 text-xs">{entity.entity_type}</Badge>
+                  )}
+                </>
               )}
             </p>
             {/* Para add/remove de entity inteira, mostrar select aqui.
-                Para change, o select da entity é só fallback — fields têm os próprios. */}
-            {!isChange && (
+                Para change, o select da entity é só fallback — fields têm os próprios.
+                Relacionamento é sempre wholesale (não tem field rows) → mostra o
+                select da entity mesmo em op=change, senão ficaria sem decisão. */}
+            {(!isChange || isRel) && (
               <DecisionSelect
                 value={entityAction}
                 onChange={onEntityAction}
@@ -715,6 +758,11 @@ function DiffRow({
               />
             )}
           </div>
+          {isRel && relInfo!.columns && (
+            <p className="text-xs text-muted-foreground mt-1 font-mono">
+              {relInfo!.columns}
+            </p>
+          )}
           {attrsCount > 0 && (
             <p className="text-xs text-muted-foreground mt-1">
               + {attrsCount} atributo{attrsCount !== 1 ? "s" : ""}
