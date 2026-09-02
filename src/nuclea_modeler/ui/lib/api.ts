@@ -2242,6 +2242,17 @@ export interface DDLImportIn {
   open_ticket: boolean;
 }
 
+// round 6 (follow-up): uma linha do dry-run/preview do import (o que mudaria por
+// objeto). Só vem preenchido em previewDDLImport; vazio no import normal.
+export interface PreviewObject {
+  op: "add" | "change" | "remove";
+  schema_name: string;
+  technical_name: string;
+  entity_type: string;
+  change_count: number;
+  detail?: string | null;
+}
+
 export interface ExtractionResult {
   extraction_id: string;
   status: ExtractionStatus;
@@ -2253,6 +2264,7 @@ export interface ExtractionResult {
   ticket_id?: string | null;
   summary_md: string;
   errors: string[];
+  preview?: PreviewObject[];
 }
 
 export const useListExtractionsSuspense = (
@@ -2292,6 +2304,17 @@ export const useRunDDLImport = (
   useMutation({
     mutationFn: async ({ data }) =>
       (await api.post<ExtractionResult>("/extractions/ddl/run", data)).data,
+    ...opts?.mutation,
+  });
+
+// round 6 (follow-up): dry-run/preview do import DDL — parseia + calcula o diff,
+// SEM abrir ticket nem persistir. Devolve as contagens + `preview` (por objeto).
+export const usePreviewDDLImport = (
+  opts?: Opts<ExtractionResult, { data: DDLImportIn }>,
+) =>
+  useMutation({
+    mutationFn: async ({ data }) =>
+      (await api.post<ExtractionResult>("/extractions/ddl/preview", data)).data,
     ...opts?.mutation,
   });
 

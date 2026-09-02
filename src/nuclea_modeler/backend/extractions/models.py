@@ -170,6 +170,22 @@ class ExtractionOut(ExtractionListOut):
     diff_summary: dict | None = None
 
 
+class PreviewObject(BaseModel):
+    """Uma linha do PREVIEW (dry-run) de import: o que MUDARIA por objeto.
+
+    Preenchido só no dry-run (`run_ddl_import(..., dry_run=True)`), a partir do
+    diff calculado — sem abrir ticket nem persistir. Deixa o cliente conferir
+    antes de importar de verdade (o import "de verdade" não devolve preview)."""
+
+    op: Literal["add", "change", "remove"]
+    schema_name: str
+    technical_name: str
+    entity_type: str = "TABLE"
+    # nº de colunas (add) ou nº de field_changes (change); 0 em remove.
+    change_count: int = 0
+    detail: str | None = None  # resumo curto e legível ("+5 coluna(s)", "removido"…)
+
+
 class ExtractionResult(BaseModel):
     extraction_id: str
     status: ExtractionStatus
@@ -181,3 +197,7 @@ class ExtractionResult(BaseModel):
     ticket_id: str | None = None
     summary_md: str
     errors: list[str] = Field(default_factory=list)
+    # round 6 (follow-up): preenchido só no dry-run/preview do import (lista por
+    # objeto do que mudaria). Vazio no import normal. Campo opcional → compatível
+    # com todos os outros fluxos que devolvem ExtractionResult.
+    preview: list[PreviewObject] = Field(default_factory=list)

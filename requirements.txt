@@ -3,11 +3,19 @@ pydantic-settings>=2.11.0
 uvicorn>=0.37.0
 databricks-sdk>=0.74.0
 databricks-sql-connector>=3.5.0
-sqlglot>=25.0.0
+# PIN EXATO (não `>=`): o parse de DDL depende do AST interno do sqlglot, que
+# muda entre releases. Com `>=25.0.0`, o CI resolvia uma versão e o deploy
+# (Databricks Apps, resolvido em outra data) resolvia OUTRA — foi assim que o
+# `COMMENT ON TABLE` passou no CI e falhou em produção (round 6). Pinar em ==
+# garante CI == produção. Versão atual = a validada no CI + ao vivo (v1.0048).
+# Para promover: suba a versão aqui E no pyproject.toml juntos (check_deps_sync
+# exige spec idêntico), rode o CI e revalide o import no app deployado.
+sqlglot==30.17.0
 # round 6 pt 22: import/export de metadados no formato .xlsx do Embarcadero.
 # Instalado server-side no deploy (Databricks Apps) e no CI. O módulo de
 # round-trip degrada com erro amigável se por acaso não estiver disponível.
-openpyxl>=3.1.0
+# Pinado em == pela mesma razão do sqlglot (reprodutibilidade CI↔deploy).
+openpyxl==3.1.5
 httpx>=0.28.0
 python-multipart>=0.0.20
 python-dotenv>=1.0.0

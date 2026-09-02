@@ -37,6 +37,21 @@ def state(monkeypatch):
             raise RuntimeError("transient warehouse error (simulado)")
         captured["inserts"].append((table, dict(row)))
 
+    def fake_insert_many(sql, table, rows, *, chunk_size=200):
+        # Espelha o warehouse real: se QUALQUER linha do lote for a que deve
+        # falhar, o statement inteiro falha — o código então cai no fallback
+        # linha-a-linha (fake_insert), isolando a linha ruim. No caminho feliz,
+        # anexa cada linha em `inserts` (mesma estrutura de `insert()`) para que
+        # as assertions de nome/ordem/contagem continuem válidas.
+        if (
+            captured["insert_raises_on"]
+            and table.endswith("attributes")
+            and any(r.get("technical_name") == captured["insert_raises_on"] for r in rows)
+        ):
+            raise RuntimeError("transient warehouse error (simulado) [batch]")
+        for r in rows:
+            captured["inserts"].append((table, dict(r)))
+
     def fake_update_by_id(sql, table, key, key_val, fields):
         captured["updates"].append((table, key, key_val, dict(fields)))
 
@@ -66,6 +81,7 @@ def state(monkeypatch):
 
     from nuclea_modeler.backend.core import delta
     monkeypatch.setattr(delta, "insert", fake_insert)
+    monkeypatch.setattr(delta, "insert_many", fake_insert_many)
     monkeypatch.setattr(delta, "update_by_id", fake_update_by_id)
     monkeypatch.setattr(delta, "fetch_one_params", fake_fetch_one_params)
     monkeypatch.setattr(delta, "fetch_all_params", fake_fetch_all_params)
