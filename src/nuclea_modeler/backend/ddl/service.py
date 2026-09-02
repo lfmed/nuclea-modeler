@@ -22,6 +22,7 @@ _ATTR_COLS = [
     "attribute_id", "entity_id", "technical_name", "logical_name",
     "ordinal_position", "native_data_type", "is_nullable", "default_value",
     "is_primary_key", "description_md", "native_comment",
+    "check_constraint",  # round 6 pt 21 — emitido como CHECK (...) no DDL
 ]
 
 _IDX_COLS = [

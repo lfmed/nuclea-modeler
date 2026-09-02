@@ -129,6 +129,7 @@ class AttributeIn(BaseModel):
     sample_value: str | None = None
     glossary_term_id: str | None = None
     native_comment: str | None = None
+    check_constraint: str | None = None  # round 6 pt 21
 
 
 class AttributeOut(BaseModel):
@@ -146,6 +147,7 @@ class AttributeOut(BaseModel):
     sample_value: str | None = None
     glossary_term_id: str | None = None
     native_comment: str | None = None
+    check_constraint: str | None = None  # round 6 pt 21
     created_at: datetime
     created_by: str
     updated_at: datetime

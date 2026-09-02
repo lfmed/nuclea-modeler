@@ -51,6 +51,7 @@ _ATTR_COLS = [
     "is_primary_key", "description_md", "business_rule", "sample_value",
     "glossary_term_id", "native_comment",
     "created_at", "created_by", "updated_at", "updated_by",
+    "check_constraint",  # round 6 pt 21 — anexado no fim p/ não deslocar índices
 ]
 
 # Campos da Entity considerados "field_changes" no DiffEntity (op=change).
@@ -87,6 +88,7 @@ def _attr_row_to_out(r: list) -> AttributeOut:
         description_md=r[9], business_rule=r[10], sample_value=r[11],
         glossary_term_id=r[12], native_comment=r[13],
         created_at=r[14], created_by=r[15], updated_at=r[16], updated_by=r[17],
+        check_constraint=r[18] if len(r) > 18 else None,  # round 6 pt 21
     )
 
 
@@ -96,7 +98,7 @@ def _attr_row_to_out(r: list) -> AttributeOut:
 _ATTR_OVERLAY_FIELDS = (
     "logical_name", "native_data_type", "is_nullable", "default_value",
     "is_primary_key", "ordinal_position", "description_md", "business_rule",
-    "native_comment",
+    "native_comment", "check_constraint",  # round 6 pt 21
 )
 
 
@@ -174,6 +176,7 @@ def _overlay_existing_attrs(
             sample_value=None,
             glossary_term_id=None,
             native_comment=add.get("native_comment"),
+            check_constraint=add.get("check_constraint"),  # round 6 pt 21
             created_at=now, created_by=actor,
             updated_at=now, updated_by=actor,
             pending_op="add",
@@ -284,6 +287,7 @@ def _virtual_attribute_out(
         sample_value=payload.sample_value,
         glossary_term_id=payload.glossary_term_id,
         native_comment=payload.native_comment,
+        check_constraint=payload.check_constraint,  # round 6 pt 21
         created_at=now,
         created_by=actor,
         updated_at=now,
@@ -1137,6 +1141,7 @@ def create_attribute(
         "sample_value": payload.sample_value,
         "glossary_term_id": payload.glossary_term_id,
         "native_comment": payload.native_comment,
+        "check_constraint": payload.check_constraint,  # round 6 pt 21
     }
     field_changes = [
         {
@@ -1189,6 +1194,7 @@ def update_attribute(
         "sample_value": payload.sample_value,
         "glossary_term_id": payload.glossary_term_id,
         "native_comment": payload.native_comment,
+        "check_constraint": payload.check_constraint,  # round 6 pt 21
     }
     # Field-level changes — usa um campo agregado, downstream apply é o
     # responsável por detalhar por sub-field. Para staging basta a intenção.

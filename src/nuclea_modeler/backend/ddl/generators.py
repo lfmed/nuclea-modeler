@@ -235,7 +235,11 @@ def _build_columns_block(
         typ = map_type(a.get("native_data_type"), dialect)
         nul = _col_nullable(a)
         dflt = _col_default(a)
-        line = f"  {col} {typ}{dflt}{nul}"
+        # round 6 pt 21: CHECK inline por coluna (sintaxe portável em todos os
+        # dialetos). `check_constraint` guarda só a expressão (ex.: "situacao IN (0,1)").
+        chk_expr = (a.get("check_constraint") or "").strip()
+        chk = f" CHECK ({chk_expr})" if chk_expr else ""
+        line = f"  {col} {typ}{dflt}{nul}{chk}"
         if inline_column_comments:
             comment = _attr_comment(a)
             if comment:
