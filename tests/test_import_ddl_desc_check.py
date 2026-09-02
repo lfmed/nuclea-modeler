@@ -118,6 +118,51 @@ def test_no_check_stays_none(capture_snapshot):
     assert all(a.check_constraint is None for a in ent.attributes)
 
 
+# ─── DEFAULT no import de DDL COLADO (v1.0050 — achado pelo smoke pós-deploy) ──
+# O caminho de import via texto DDL nunca extraía o DEFAULT (só o Lakebase o
+# fazia); o valor sumia e o fix de aspas do export (v1.0048) nunca disparava.
+# Exercita o round-trip DDL→parse (não lista Python pronta) pra o CI travar a
+# regressão que só aparecia no app deployado.
+
+
+def test_default_value_captured_from_pasted_ddl(capture_snapshot):
+    ddl = """
+    CREATE TABLE conta (
+      id INT PRIMARY KEY,
+      situacao VARCHAR(20) DEFAULT 'ativo',
+      saldo INT DEFAULT 0,
+      criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """
+    _run(ddl, dialect="POSTGRES")
+    ent = _entity(capture_snapshot["snapshot"], "conta")
+    # string → vem quotado do sqlglot ('ativo'); número → cru; keyword → cru.
+    assert _attr(ent, "situacao").default_value == "'ativo'"
+    assert _attr(ent, "saldo").default_value == "0"
+    assert "CURRENT_TIMESTAMP" in (_attr(ent, "criado_em").default_value or "")
+    # coluna sem DEFAULT continua None
+    assert _attr(ent, "id").default_value is None
+
+
+def test_default_roundtrips_through_export(capture_snapshot):
+    """DEFAULT parseado de DDL colado deve re-emergir quotado no export DDL."""
+    _run("CREATE TABLE t (id INT PRIMARY KEY, s VARCHAR(20) DEFAULT 'ativo');",
+         dialect="POSTGRES")
+    ent = _entity(capture_snapshot["snapshot"], "t")
+    s = _attr(ent, "s")
+    # simula o dict que o export recebe (leitura do catálogo) e confirma o render
+    attrs = [
+        {"technical_name": "id", "ordinal_position": 1, "native_data_type": "int",
+         "is_primary_key": True, "is_nullable": False, "default_value": None},
+        {"technical_name": "s", "ordinal_position": 2, "native_data_type": "varchar(20)",
+         "is_primary_key": False, "is_nullable": True, "default_value": s.default_value},
+    ]
+    entity = {"schema_name": "public", "technical_name": "t", "entity_type": "TABLE",
+              "description_md": None, "native_comment": None}
+    ddl_out = GENERATORS["POSTGRES"](entity, attrs, DDLExportRequest(system_id="s", dialect="POSTGRES"))
+    assert "DEFAULT 'ativo'" in ddl_out
+
+
 # ─── pt 21: CHECK re-emitido no export de DDL ─────────────────────────────────
 
 

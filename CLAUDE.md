@@ -132,6 +132,15 @@ documentado para quem mantém depois.** Cumprir em todo PR:
   o gap "CI verde, prod quebrada" (drift de versão). Apaga o sistema no fim.
   Workflow opt-in `smoke-deployed.yml` (`workflow_dispatch`, pula sem o secret
   `SMOKE_DATABRICKS_TOKEN`).
+- **DEFAULT no import de DDL COLADO (v1.0050).** O parse de DDL colado NUNCA
+  extraía o `DEFAULT` da coluna (só o caminho Lakebase preenchia `default_value`);
+  o valor sumia no import e o fix de aspas do export (v1.0048) nunca disparava para
+  DDL colado. Fix: o loop de constraints em `extractions/service.py` agora captura
+  `DefaultColumnConstraint` (checado por `type(kind).__name__`, robusto a versão do
+  sqlglot) e guarda o `.sql()` da expressão. **Achado pelo próprio smoke test
+  pós-deploy no 1º uso** — a prova de que o item vale (o Ck do v1.0048 estava verde
+  e a prod dropava o DEFAULT). Teste que exercita o round-trip DDL→parse→export:
+  `test_import_ddl_desc_check.py::test_default_*`.
 
 ## Package Management
 - **Frontend:** Use `apx bun install` or `apx bun add <dependency>` for frontend package management.
