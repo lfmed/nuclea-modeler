@@ -30,7 +30,9 @@ def call(method, path, body=None):
     if data:
         req.add_header("Content-Type", "application/json")
     try:
-        with urllib.request.urlopen(req, timeout=60) as r:
+        # nosec B310: URL é a constante HTTPS do nosso próprio app (BASE), não
+        # entrada de usuário — script interno de validação, sem schemes file:/custom.
+        with urllib.request.urlopen(req, timeout=60) as r:  # nosec B310
             raw = r.read().decode("utf-8", "replace")
             hdrs = dict(r.headers)
             try:
