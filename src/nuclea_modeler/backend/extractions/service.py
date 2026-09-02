@@ -1100,6 +1100,7 @@ def run_ddl_import(
                     native = dtype.sql() if dtype else ""
                     is_nullable = True
                     col_comment: str | None = None
+                    col_check: str | None = None
                     for cons in (col_expr.args.get("constraints") or []):
                         kind = cons.args.get("kind")
                         if isinstance(kind, exp.PrimaryKeyColumnConstraint):
@@ -1115,9 +1116,16 @@ def run_ddl_import(
                         # Comentário inline: `col INT COMMENT 'texto'`
                         if isinstance(kind, exp.CommentColumnConstraint):
                             col_comment = _ddl_literal_str(kind.this)
-                        # CHECK constraint — ignorado (captura é best-effort; não quebra parse)
-                        # Seria exp.CheckColumnConstraint mas não é suportado por todas
-                        # versões do sqlglot; por segurança, só registramos sem processar.
+                        # CHECK inline: `col INT CHECK (col > 0)` (round 6 pt 21).
+                        # O nome da classe varia entre versões do sqlglot; capturamos
+                        # de forma defensiva (best-effort, nunca derruba o parse) a
+                        # EXPRESSÃO interna do check como texto.
+                        if type(kind).__name__ == "CheckColumnConstraint":
+                            try:
+                                inner = kind.this if kind.this is not None else kind
+                                col_check = inner.sql()
+                            except Exception:  # noqa: BLE001
+                                col_check = None
                     attributes.append(
                         ExtractedAttribute(
                             technical_name=name,
@@ -1126,6 +1134,7 @@ def run_ddl_import(
                             is_nullable=is_nullable,
                             is_primary_key=False,  # set below from pk_cols
                             native_comment=col_comment,
+                            check_constraint=col_check,
                         )
                     )
                 # PK table-level: `PRIMARY KEY (a, b)` (chave composta). Sem
@@ -1148,6 +1157,24 @@ def run_ddl_import(
                         pfk = _ddl_reference_raw(ref, schema_name, tbl_name, local_cols)
                         if pfk:
                             pending_fks.append(pfk)
+                # CHECK table-level: `CONSTRAINT ck CHECK (expr)` (round 6 pt 21).
+                # sqlglot expõe como exp.Check; associamos a expressão ao atributo
+                # referenciado quando o check menciona UMA única coluna conhecida
+                # (cobre o caso comum, ex.: `CHECK (PRINCIPAL IN (0,1))`). Best-effort:
+                # nunca derruba o parse (exp.Check pode não existir em toda versão).
+                try:
+                    attr_by_name = {a.technical_name: a for a in attributes}
+                    for chk in schema_obj.find_all(exp.Check):
+                        expr = chk.this if getattr(chk, "this", None) is not None else chk
+                        refs = {
+                            c.name for c in expr.find_all(exp.Column)
+                            if getattr(c, "name", None)
+                        }
+                        known = [r for r in refs if r in attr_by_name]
+                        if len(known) == 1 and not attr_by_name[known[0]].check_constraint:
+                            attr_by_name[known[0]].check_constraint = expr.sql()
+                except Exception:  # noqa: BLE001
+                    pass
                 # Comentário de tabela: `... COMMENT 'texto'` / `COMMENT = '...'`
                 # aparece como exp.SchemaCommentProperty dentro de properties.
                 # Best-effort: um erro aqui não pode derrubar a extração da tabela.
@@ -1194,10 +1221,20 @@ def run_ddl_import(
         tc = deferred_table_comments.get((e.schema_name, e.technical_name))
         if tc:
             e.native_comment = tc
+        # round 6 pt 15: o COMMENT ON de tabela vira também descrição de negócio.
+        # ExtractedEntity não tem description_md; o apply de entity nova já faz o
+        # fallback native_comment→description_md (tickets/service _apply_op_add),
+        # então o comentário de tabela chega em description_md sem mais nada aqui.
         for a in e.attributes:
             cc = deferred_col_comments.get((e.schema_name, e.technical_name, a.technical_name))
             if cc:
                 a.native_comment = cc
+            # round 6 pt 15: importa o COMMENT ON COLUMN (ou comentário inline) como
+            # DESCRIÇÃO de negócio da coluna (description_md), além do comentário
+            # nativo. É o "descritivo/definição/metadado" que o cliente quer trazer
+            # do DDL para o modelo.
+            if a.native_comment and not a.description_md:
+                a.description_md = a.native_comment
 
     # Falha "silenciosa": o parse não reconheceu nenhum CREATE TABLE/VIEW.
     # Marcamos FAILED com mensagem acionável em vez de devolver SUCCESS com 0

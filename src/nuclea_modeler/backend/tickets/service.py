@@ -816,7 +816,11 @@ def _apply_op_add(state: _ApplyState, ent_change: dict[str, Any]) -> None:
                     "is_nullable": attr.get("is_nullable"),
                     "default_value": attr.get("default_value"),
                     "is_primary_key": bool(attr.get("is_primary_key", False)),
+                    # round 6 pt 15: descrição importada de COMMENT ON COLUMN;
+                    # round 6 pt 21: expressão de CHECK constraint da coluna.
+                    "description_md": attr.get("description_md"),
                     "native_comment": attr.get("native_comment"),
+                    "check_constraint": attr.get("check_constraint"),
                     "created_at": state.now, "created_by": state.applied_by,
                     "updated_at": state.now, "updated_by": state.applied_by,
                 },
@@ -977,6 +981,7 @@ def _dispatch_field_change(
                 "description_md": attr_payload.get("description_md"),
                 "business_rule": attr_payload.get("business_rule"),
                 "native_comment": attr_payload.get("native_comment"),
+                "check_constraint": attr_payload.get("check_constraint"),  # round 6 pt 21
                 "created_at": state.now, "created_by": state.applied_by,
                 "updated_at": state.now, "updated_by": state.applied_by,
             },
@@ -1018,6 +1023,7 @@ def _dispatch_field_change(
                 "description_md": attr_payload.get("description_md"),
                 "business_rule": attr_payload.get("business_rule"),
                 "native_comment": attr_payload.get("native_comment"),
+                "check_constraint": attr_payload.get("check_constraint"),  # round 6 pt 21
             }.items() if v is not None
         }
         if attr_updates:

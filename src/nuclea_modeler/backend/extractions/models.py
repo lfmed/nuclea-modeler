@@ -71,6 +71,11 @@ class ExtractedAttribute(BaseModel):
     default_value: str | None = None
     is_primary_key: bool = False
     native_comment: str | None = None
+    # round 6 pt 15: descrição de negócio importada de COMMENT ON COLUMN.
+    description_md: str | None = None
+    # round 6 pt 21: expressão de CHECK constraint da coluna (texto entre
+    # parênteses, ex.: "situacao IN (0,1)"). Emitida no export DDL.
+    check_constraint: str | None = None
 
 
 class ExtractedIndexColumn(BaseModel):
