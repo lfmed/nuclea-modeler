@@ -10,8 +10,11 @@ dependencies = [
     "uvicorn>=0.37.0",
     "databricks-sdk>=0.74.0",
     "databricks-sql-connector>=3.5.0",
-    "sqlglot>=25.0.0",
-    "openpyxl>=3.1.0",          # round 6 pt 22 — import/export .xlsx (Embarcadero)
+    # PIN EXATO (ver nota no requirements.txt): o AST do sqlglot muda entre
+    # releases; `>=` deixava CI e deploy em versões diferentes e quebrou o
+    # COMMENT ON TABLE em produção (round 6). == mantém CI == deploy.
+    "sqlglot==30.17.0",
+    "openpyxl==3.1.5",          # round 6 pt 22 — import/export .xlsx (Embarcadero); pinado p/ reprodutibilidade
     "httpx>=0.28.0",
     "python-multipart>=0.0.20",
     "python-dotenv>=1.0.0",
