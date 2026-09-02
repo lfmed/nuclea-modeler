@@ -1223,6 +1223,7 @@ def run_ddl_import(
                     is_nullable = True
                     col_comment: str | None = None
                     col_check: str | None = None
+                    col_default: str | None = None
                     for cons in (col_expr.args.get("constraints") or []):
                         kind = cons.args.get("kind")
                         if isinstance(kind, exp.PrimaryKeyColumnConstraint):
@@ -1248,6 +1249,20 @@ def run_ddl_import(
                                 col_check = inner.sql()
                             except Exception:  # noqa: BLE001
                                 col_check = None
+                        # DEFAULT inline: `col VARCHAR(20) DEFAULT 'ativo'` (v1.0050).
+                        # BUG achado pelo smoke test pós-deploy: o parse de DDL COLADO
+                        # NUNCA extraía o DEFAULT (só o caminho Lakebase o fazia), então
+                        # o valor sumia no import e o fix de aspas do export (v1.0048)
+                        # nunca disparava. Guardamos o `.sql()` da expressão — já vem
+                        # quotado p/ string ('ativo'), keyword p/ CURRENT_TIMESTAMP, nº
+                        # cru p/ 0 — exatamente o que `ddl._col_default` espera. Nome de
+                        # classe checado por string (robusto a versão do sqlglot).
+                        if type(kind).__name__ == "DefaultColumnConstraint":
+                            try:
+                                inner = kind.this if kind.this is not None else kind
+                                col_default = inner.sql()
+                            except Exception:  # noqa: BLE001
+                                col_default = None
                     attributes.append(
                         ExtractedAttribute(
                             technical_name=name,
@@ -1255,6 +1270,7 @@ def run_ddl_import(
                             native_data_type=native,
                             is_nullable=is_nullable,
                             is_primary_key=False,  # set below from pk_cols
+                            default_value=col_default,
                             native_comment=col_comment,
                             check_constraint=col_check,
                         )
