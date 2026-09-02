@@ -13,6 +13,7 @@ import pytest
 
 from nuclea_modeler.backend.ddl.generators import (
     GENERATORS,
+    _col_default,
     map_type,
     render_foreign_keys,
 )
@@ -232,6 +233,38 @@ def test_default_value_rendered(cliente_entity, cliente_attrs, default_opts):
     default_opts.dialect = "POSTGRES"
     ddl = GENERATORS["POSTGRES"](cliente_entity, cliente_attrs, default_opts)
     assert "DEFAULT 0" in ddl
+
+
+@pytest.mark.parametrize(
+    "default_value,expected",
+    [
+        # round 6 (follow-up): literal string ganha aspas; número/keyword/função/já-quotado não.
+        ("ativo", " DEFAULT 'ativo'"),
+        ("0", " DEFAULT 0"),
+        ("-3.5", " DEFAULT -3.5"),
+        ("CURRENT_TIMESTAMP", " DEFAULT CURRENT_TIMESTAMP"),
+        ("current_date", " DEFAULT current_date"),
+        ("NULL", " DEFAULT NULL"),
+        ("true", " DEFAULT true"),
+        ("'já'", " DEFAULT 'já'"),           # já quotado — mantém
+        ("nextval('seq')", " DEFAULT nextval('seq')"),  # função — mantém
+        ("O'Hara", " DEFAULT 'O''Hara'"),    # string com aspa — escapa
+        (None, ""),
+        ("", ""),
+    ],
+)
+def test_col_default_quotes_string_literals(default_value, expected):
+    assert _col_default({"default_value": default_value}) == expected
+
+
+def test_string_default_quoted_in_generated_ddl():
+    entity = {"schema_name": "s", "technical_name": "t", "entity_type": "TABLE",
+              "description_md": None, "native_comment": None}
+    attrs = [{"technical_name": "situacao", "ordinal_position": 1,
+              "native_data_type": "varchar(20)", "is_primary_key": False,
+              "is_nullable": True, "default_value": "ativo"}]
+    ddl = GENERATORS["POSTGRES"](entity, attrs, DDLExportRequest(system_id="s", dialect="POSTGRES"))
+    assert "DEFAULT 'ativo'" in ddl and "DEFAULT ativo," not in ddl
 
 
 def test_include_comments_false_omits_entity_comment(cliente_entity, cliente_attrs):
