@@ -4,6 +4,10 @@ uvicorn>=0.37.0
 databricks-sdk>=0.74.0
 databricks-sql-connector>=3.5.0
 sqlglot>=25.0.0
+# round 6 pt 22: import/export de metadados no formato .xlsx do Embarcadero.
+# Instalado server-side no deploy (Databricks Apps) e no CI. O módulo de
+# round-trip degrada com erro amigável se por acaso não estiver disponível.
+openpyxl>=3.1.0
 httpx>=0.28.0
 python-multipart>=0.0.20
 python-dotenv>=1.0.0

@@ -2400,8 +2400,15 @@ export interface CsvImportOut {
   ticket_id?: string | null;
   entities_changed: number;
   columns_changed: number;
+  flags_applied?: number; // round 6 pt 22 — flags LGPD aplicadas do CLASSIFICACAO
   unknown_tables: string[];
   message: string;
+}
+
+// round 6 pt 22 — .xlsx do Embarcadero trafega como base64 (JSON).
+export interface XlsxExportOut {
+  filename: string;
+  xlsx_base64: string;
 }
 
 export const useExportSystemCsv = (opts?: Opts<CsvExportOut, { systemId: string }>) =>
@@ -2419,6 +2426,25 @@ export const useImportSystemCsv = (
       (await api.post<CsvImportOut>("/entities/import/csv", {
         system_id: systemId,
         csv_text: csvText,
+      })).data,
+    ...opts?.mutation,
+  });
+
+export const useExportSystemXlsx = (opts?: Opts<XlsxExportOut, { systemId: string }>) =>
+  useMutation({
+    mutationFn: async ({ systemId }) =>
+      (await api.get<XlsxExportOut>("/entities/export/xlsx", { params: { system_id: systemId } })).data,
+    ...opts?.mutation,
+  });
+
+export const useImportSystemXlsx = (
+  opts?: Opts<CsvImportOut, { systemId: string; xlsxBase64: string }>,
+) =>
+  useMutation({
+    mutationFn: async ({ systemId, xlsxBase64 }) =>
+      (await api.post<CsvImportOut>("/entities/import/xlsx", {
+        system_id: systemId,
+        xlsx_base64: xlsxBase64,
       })).data,
     ...opts?.mutation,
   });

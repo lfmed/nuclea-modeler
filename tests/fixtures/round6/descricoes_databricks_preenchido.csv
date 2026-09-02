@@ -1,0 +1,44 @@
+schema,table,table_logical,table_description,table_domain,table_criticality,column,column_logical,data_type,is_pk,is_nullable,column_description
+dbo,endereco,,Enderecos cadastrados para uma pessoa,,,id,,SMALLINT,true,false,Identificador unico do endereco
+dbo,endereco,,Enderecos cadastrados para uma pessoa,,,tipo_endereco,,TEXT,false,false,Tipo do endereco
+dbo,endereco,,Enderecos cadastrados para uma pessoa,,,logradouro,,TEXT,false,false,Nome do logradouro | CLASSIFICACAO=LGPD_IDENTIFICAVEL
+dbo,endereco,,Enderecos cadastrados para uma pessoa,,,numero,,TEXT,false,true,Numero do imovel | CLASSIFICACAO=LGPD_IDENTIFICAVEL
+dbo,endereco,,Enderecos cadastrados para uma pessoa,,,complemento,,TEXT,false,true,Complemento do endereco | CLASSIFICACAO=LGPD_IDENTIFICAVEL
+dbo,endereco,,Enderecos cadastrados para uma pessoa,,,bairro,,TEXT,false,true,Bairro do endereco | CLASSIFICACAO=LGPD_PESSOAL
+dbo,endereco,,Enderecos cadastrados para uma pessoa,,,cidade,,TEXT,false,false,Cidade do endereco | CLASSIFICACAO=LGPD_PESSOAL
+dbo,endereco,,Enderecos cadastrados para uma pessoa,,,uf,,FLOAT,false,false,Estado do endereco | CLASSIFICACAO=LGPD_PESSOAL
+dbo,endereco,,Enderecos cadastrados para uma pessoa,,,cep,,FLOAT,false,true,CEP do endereco | CLASSIFICACAO=LGPD_PESSOAL
+dbo,escolaridade,,Catalogo de niveis de escolaridade,,,id,,SMALLINT,true,false,Identificador da escolaridade
+dbo,escolaridade,,Catalogo de niveis de escolaridade,,,descricao,,TEXT,false,false,Descricao do nivel de escolaridade
+dbo,formacao,,Catalogo de formacoes academicas,,,id,,SMALLINT,true,false,Identificador da formacao
+dbo,formacao,,Catalogo de formacoes academicas,,,descricao,,TEXT,false,false,Descricao da formacao academica
+dbo,formacao,,Catalogo de formacoes academicas,,,area_conhecimento,,TEXT,false,false,Area de conhecimento da formacao
+dbo,pessoa,,Cadastro principal de cidadãos participantes de programas sociais,,,id,,SMALLINT,true,false,Identificador unico da pessoa
+dbo,pessoa,,Cadastro principal de cidadãos participantes de programas sociais,,,nome_completo,,TEXT,false,false,Nome completo da pessoa | CLASSIFICACAO=LGPD_IDENTIFICAVEL
+dbo,pessoa,,Cadastro principal de cidadãos participantes de programas sociais,,,cpf,,FLOAT,false,false,CPF da pessoa | CLASSIFICACAO=LGPD_IDENTIFICAVEL
+dbo,pessoa,,Cadastro principal de cidadãos participantes de programas sociais,,,data_nascimento,,TIME,false,false,Data de nascimento da pessoa | CLASSIFICACAO=LGPD_PESSOAL
+dbo,pessoa,,Cadastro principal de cidadãos participantes de programas sociais,,,sexo_biologico,,TEXT,false,true,Sexo biologico informado pela pessoa | CLASSIFICACAO=LGPD_SENSIVEL
+dbo,pessoa,,Cadastro principal de cidadãos participantes de programas sociais,,,orientacao_sexual,,TEXT,false,true,Orientacao sexual declarada | CLASSIFICACAO=LGPD_SENSIVEL
+dbo,pessoa,,Cadastro principal de cidadãos participantes de programas sociais,,,identidade_genero,,TEXT,false,true,Identidade de genero declarada | CLASSIFICACAO=LGPD_SENSIVEL
+dbo,pessoa,,Cadastro principal de cidadãos participantes de programas sociais,,,nome_social,,TEXT,false,true,Nome social utilizado pela pessoa | CLASSIFICACAO=LGPD_IDENTIFICAVEL
+dbo,pessoa,,Cadastro principal de cidadãos participantes de programas sociais,,,estado_civil,,TEXT,false,true,Estado civil da pessoa | CLASSIFICACAO=LGPD_PESSOAL
+dbo,pessoa,,Cadastro principal de cidadãos participantes de programas sociais,,,email,,TEXT,false,true,Endereco de email para contato | CLASSIFICACAO=LGPD_IDENTIFICAVEL
+dbo,pessoa,,Cadastro principal de cidadãos participantes de programas sociais,,,telefone,,TEXT,false,true,Telefone para contato | CLASSIFICACAO=LGPD_IDENTIFICAVEL
+dbo,pessoa,,Cadastro principal de cidadãos participantes de programas sociais,,,data_cadastro,,,false,false,Data de cadastro da pessoa no sistema
+dbo,pessoa_escolaridade,,Historico de escolaridade da pessoa,,,id,,SMALLINT,true,false,
+dbo,pessoa_escolaridade,,Historico de escolaridade da pessoa,,,data_inicio,,TIME,false,true,Data de inicio da escolaridade
+dbo,pessoa_escolaridade,,Historico de escolaridade da pessoa,,,data_conclusao,,TIME,false,true,Data de conclusao da escolaridade
+dbo,pessoa_formacao,,Formacoes academicas obtidas pela pessoa,,,id,,SMALLINT,true,false,
+dbo,pessoa_formacao,,Formacoes academicas obtidas pela pessoa,,,instituicao,,TEXT,false,true,Instituicao de ensino frequentada | CLASSIFICACAO=LGPD_PESSOAL
+dbo,pessoa_formacao,,Formacoes academicas obtidas pela pessoa,,,ano_conclusao,,,false,true,Ano de conclusao da formacao
+dbo,pessoa_profissao,,Profissoes exercidas pela pessoa,,,id,,SMALLINT,true,false,
+dbo,pessoa_profissao,,Profissoes exercidas pela pessoa,,,principal,,,false,false,Indica se a profissao e a principal
+dbo,pessoa_profissao,,Profissoes exercidas pela pessoa,,,renda_mensal,,INTEGER,false,true,Renda mensal da atividade profissional | CLASSIFICACAO=LGPD_PESSOAL
+dbo,pessoa_programa_social,,Participacao da pessoa em programas sociais,,,id,,SMALLINT,true,false,
+dbo,pessoa_programa_social,,Participacao da pessoa em programas sociais,,,data_adesao,,TIME,false,false,Data de adesao da pessoa ao programa
+dbo,pessoa_programa_social,,Participacao da pessoa em programas sociais,,,situacao,,TEXT,false,false,Situacao da participacao da pessoa no programa
+dbo,profissao,,Catalogo de profissoes,,,id,,SMALLINT,true,false,Identificador da profissao
+dbo,profissao,,Catalogo de profissoes,,,descricao,,TEXT,false,false,Descricao da profissao
+dbo,programa_social,,Programas sociais disponiveis,,,descricao,,TEXT,false,true,Descricao do programa social
+dbo,programa_social,,Programas sociais disponiveis,,,id,,SMALLINT,true,false,Identificador do programa social
+dbo,programa_social,,Programas sociais disponiveis,,,nome,,TEXT,false,false,Nome do programa social
