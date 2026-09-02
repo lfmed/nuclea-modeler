@@ -56,6 +56,42 @@ def as_bool(value: Any) -> bool:
     return bool(value)
 
 
+def as_str_list(value: Any) -> list[str]:
+    """Coage uma coluna ``ARRAY<STRING>`` vinda do `data_array` para `list[str]`.
+
+    GOTCHA CRÍTICO (mesma família do :func:`as_bool`): a Databricks SQL Statement
+    Execution API devolve TODAS as células como **string** — e uma coluna ARRAY
+    volta como uma **string JSON**, ex.: ``'["attr-1","attr-2"]'`` (ou ``'[]'``).
+    Fazer ``list(value)`` direto sobre essa string a quebra em CARACTERES
+    (``['[', '"', 'a', ...]``), corrompendo silenciosamente o array. Isso fazia,
+    por exemplo, o export de DDL não emitir NENHUMA foreign key (as colunas-FK em
+    ``source_attr_ids``/``target_attr_ids`` viravam lista de chars e não casavam
+    com nenhum ``attribute_id``) e a API de relationships devolver arrays inúteis.
+    Use SEMPRE este helper para colunas ARRAY lidas de resultado de query.
+
+    Aceita: lista nativa (defensivo — devolve os itens como str), string JSON de
+    array, string vazia/``"[]"`` (→ ``[]``) e ``None`` (→ ``[]``). Uma string que
+    não seja um array JSON válido é tratada como um único elemento (defensivo).
+    """
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple)):
+        return [str(v) for v in value]
+    if isinstance(value, str):
+        s = value.strip()
+        if not s:
+            return []
+        try:
+            parsed = json.loads(s)
+        except (json.JSONDecodeError, ValueError):
+            return [s]
+        if isinstance(parsed, list):
+            return [str(v) for v in parsed]
+        # JSON escalar (número/bool/etc.) — trata como único elemento.
+        return [str(parsed)]
+    return [str(value)]
+
+
 def _format_ts(value: datetime) -> str:
     """Format a datetime as a Spark-friendly ISO-8601 timestamp literal body.
 

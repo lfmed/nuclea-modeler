@@ -69,7 +69,7 @@ def _ent_row_to_out(r: list, system_name: str | None = None, attr_count: int | N
         schema_name=r[2], technical_name=r[3], logical_name=r[4],
         description_md=r[5], domain=r[6], business_owner=r[7],
         technical_owner=r[8], criticality=r[9] or None,
-        tags=list(r[10]) if r[10] else [],
+        tags=delta.as_str_list(r[10]),  # ARRAY<STRING> via string JSON
         notes=r[11], entity_type=r[12] or "TABLE",
         native_comment=r[13], row_count_approx=r[14], last_extracted_at=r[15],
         created_at=r[16], created_by=r[17], updated_at=r[18], updated_by=r[19],

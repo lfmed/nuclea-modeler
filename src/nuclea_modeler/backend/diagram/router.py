@@ -249,8 +249,8 @@ def _build_diagram(
             relationship_id=r[0],
             source_entity_id=r[1], target_entity_id=r[2],
             rel_type=r[3], source_cardinality=r[4], target_cardinality=r[5],
-            source_attrs=list(r[6]) if r[6] else [],
-            target_attrs=list(r[7]) if r[7] else [],
+            source_attrs=delta.as_str_list(r[6]),  # ARRAY<STRING> via string JSON
+            target_attrs=delta.as_str_list(r[7]),
             description=r[8], origin=r[9],
         ))
 
