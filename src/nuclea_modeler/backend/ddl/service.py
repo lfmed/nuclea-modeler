@@ -40,9 +40,11 @@ def _entity_row_to_dict(r: list[Any]) -> dict[str, Any]:
 
 def _attr_row_to_dict(r: list[Any]) -> dict[str, Any]:
     d = dict(zip(_ATTR_COLS, r))
+    # GOTCHA: a SQL API devolve BOOLEAN como string ("true"/"false") — bool("false")
+    # é True. Sem as_bool, TODA coluna virava PK/NOT NULL no DDL exportado.
     if d.get("is_nullable") is not None:
-        d["is_nullable"] = bool(d["is_nullable"])
-    d["is_primary_key"] = bool(d.get("is_primary_key"))
+        d["is_nullable"] = delta.as_bool(d["is_nullable"])
+    d["is_primary_key"] = delta.as_bool(d.get("is_primary_key"))
     return d
 
 
@@ -62,8 +64,8 @@ def _idx_row_to_dict(r: list[Any]) -> dict[str, Any]:
         except (json.JSONDecodeError, TypeError):
             cols = []
     d["columns"] = cols
-    d["include_columns"] = list(d.get("include_columns") or [])
-    d["is_unique"] = bool(d.get("is_unique"))
+    d["include_columns"] = delta.as_str_list(d.get("include_columns"))
+    d["is_unique"] = delta.as_bool(d.get("is_unique"))
     return d
 
 
@@ -252,8 +254,11 @@ def fetch_relationships(
     out: list[dict[str, Any]] = []
     for r in rows:
         d = dict(zip(_REL_FK_COLS, r))
-        d["source_attr_ids"] = list(d.get("source_attr_ids") or [])
-        d["target_attr_ids"] = list(d.get("target_attr_ids") or [])
+        # GOTCHA: ARRAY<STRING> volta da SQL API como string JSON ('["attr-1"]').
+        # list() cru quebraria em caracteres → nenhuma coluna-FK casaria e a FK
+        # jamais seria emitida (era o motivo do DDL sair sem NENHUMA foreign key).
+        d["source_attr_ids"] = delta.as_str_list(d.get("source_attr_ids"))
+        d["target_attr_ids"] = delta.as_str_list(d.get("target_attr_ids"))
         out.append(d)
     # Filtra para relacionamentos cujas DUAS pontas estão no conjunto exportado.
     if entity_ids is not None:

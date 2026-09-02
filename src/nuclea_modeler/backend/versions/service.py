@@ -79,7 +79,7 @@ def build_snapshot(sql: Sql, system_id: str) -> dict[str, Any]:
             "business_owner": r[7],
             "technical_owner": r[8],
             "criticality": r[9],
-            "tags": list(r[10]) if r[10] else [],
+            "tags": delta.as_str_list(r[10]),  # ARRAY<STRING> via string JSON
             "notes": r[11],
             "entity_type": r[12] or "TABLE",
             "native_comment": r[13],
@@ -140,8 +140,8 @@ def build_snapshot(sql: Sql, system_id: str) -> dict[str, Any]:
             "system_id": r[1],
             "source_entity_id": r[2],
             "target_entity_id": r[3],
-            "source_attr_ids": list(r[4]) if r[4] else [],
-            "target_attr_ids": list(r[5]) if r[5] else [],
+            "source_attr_ids": delta.as_str_list(r[4]),
+            "target_attr_ids": delta.as_str_list(r[5]),
             "rel_type": r[6],
             "source_cardinality": r[7],
             "target_cardinality": r[8],
@@ -168,7 +168,7 @@ def build_snapshot(sql: Sql, system_id: str) -> dict[str, Any]:
             "view_entity_id": r[0],
             "purpose": r[1],
             "definition_sql": r[2],
-            "base_entity_ids": list(r[3]) if r[3] else [],
+            "base_entity_ids": delta.as_str_list(r[3]),
         }
         for r in views_rows
     ]
@@ -550,7 +550,16 @@ def _load_snapshot(sql: Sql, version_id: str) -> dict[str, Any]:
     try:
         return json.loads(raw)
     except json.JSONDecodeError as exc:
-        raise HTTPException(500, f"invalid snapshot_json for version '{version_id}': {exc}")
+        # Snapshot armazenado corrompido (ex.: registros legados gravados antes do
+        # fix de escaping em _quote_lit). NÃO é erro de servidor — é dado inválido:
+        # devolve 422 com mensagem acionável em vez de 500, pra o diff degradar
+        # gracioso e a UI conseguir explicar em vez de mostrar "erro interno".
+        raise HTTPException(
+            422,
+            f"A versão '{version_id}' tem um snapshot corrompido e não pode ser "
+            f"comparada (JSON inválido: {exc}). Publique uma nova versão para "
+            f"substituí-la ou use o diff contra o modelo atual.",
+        )
 
 
 def _get_version(sql: Sql, version_id: str) -> VersionOut:

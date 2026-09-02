@@ -54,8 +54,8 @@ def _rel_row_to_out(r: list) -> RelationshipOut:
         system_id=r[1],
         source_entity_id=r[2],
         target_entity_id=r[3],
-        source_attr_ids=list(r[4]) if r[4] else [],
-        target_attr_ids=list(r[5]) if r[5] else [],
+        source_attr_ids=delta.as_str_list(r[4]),  # ARRAY vem como string JSON
+        target_attr_ids=delta.as_str_list(r[5]),
         rel_type=r[6] or None,
         source_cardinality=r[7] or None,
         target_cardinality=r[8] or None,

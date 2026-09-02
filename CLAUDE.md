@@ -47,7 +47,22 @@ documentado para quem mantém depois.** Cumprir em todo PR:
   Execution API devolve TODAS as células do `data_array` como string — colunas
   BOOLEAN voltam como `"true"`/`"false"`. **NUNCA** use `bool(r[n])` direto (em Python
   `bool("false")` é `True`!). Use `delta.as_bool(r[n])` para todo campo booleano lido
-  de resultado de query. (Causou o bug "todas as colunas viram PK" — v1.0026.)
+  de resultado de query. (Causou o bug "todas as colunas viram PK" — v1.0026 **e
+  regrediu no export de DDL em v1.0041**, ver abaixo.)
+- **ARRAYS de query vêm como STRING JSON (GOTCHA, v1.0042).** Pela mesma razão, uma
+  coluna `ARRAY<STRING>` volta do `data_array` como **string JSON** (`'["a","b"]'`,
+  ou `'[]'`). **NUNCA** faça `list(r[n])` direto — `list('["a"]')` itera a STRING e
+  devolve uma lista de CARACTERES (`['[','"','a',...]`), corrompendo o array em
+  silêncio. Use `delta.as_str_list(r[n])` para toda coluna ARRAY. Bugs que isso
+  causou no app DEPLOYADO v1.0041 (achados ao validar o Round 5): (1) o export de DDL
+  não emitia NENHUMA foreign key (pt 11) porque `source_attr_ids`/`target_attr_ids`
+  viravam chars e não casavam com `attribute_id`; (2) o `bool()` cru em
+  `ddl/service.py::_attr_row_to_dict` marcava TODA coluna como PK/NOT NULL no DDL.
+  Fix v1.0042: helper `delta.as_str_list` + aplicado em ~10 sites de read (ddl,
+  relationships, diagram, versions, glossary, entities, indexes, code_objects) +
+  `as_bool` no ddl/service. **LIÇÃO:** teste que exercita o round-trip STRING→parse
+  (não só listas Python) — `test_ddl_service_coercion.py`, `test_delta_as_str_list.py`.
+  Foi por testar só com listas prontas que o CI ficou verde com a prod quebrada.
 - **React Flow v12 Handles com IDs explícitos (v1.0027).** O DER usa `@xyflow/react`
   v12.10.2 + `@dagrejs/dagre`. Antes, o EntityNode tinha handles SEM id, causando
   ambiguidade — quando posições relativas mudavam (pan/zoom/refetch), as arestas

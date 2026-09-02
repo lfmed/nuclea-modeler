@@ -64,7 +64,7 @@ def list_views(sql: SqlDependency, system_id: str | None = None) -> list[ViewOut
             entity_label=f"{r[1]}.{r[2]}",
             system_id=r[3], system_name=r[4],
             purpose=r[5], definition_sql=r[6],
-            base_entity_ids=list(r[7]) if r[7] else [],
+            base_entity_ids=delta.as_str_list(r[7]),  # ARRAY<STRING> via string JSON
             created_at=r[8], created_by=r[9],
             updated_at=r[10], updated_by=r[11],
         )
@@ -100,7 +100,7 @@ def get_view(view_entity_id: str, sql: SqlDependency) -> ViewOut:
         entity_label=f"{row[1]}.{row[2]}",
         system_id=row[3], system_name=row[4],
         purpose=row[5], definition_sql=row[6],
-        base_entity_ids=list(row[7]) if row[7] else [],
+        base_entity_ids=delta.as_str_list(row[7]),  # ARRAY<STRING> via string JSON
         created_at=row[8], created_by=row[9],
         updated_at=row[10], updated_by=row[11],
     )
@@ -193,7 +193,7 @@ def _proc_row_to_out(r: list, system_name: str | None = None) -> ProcedureOut:
         procedure_id=r[0], system_id=r[1], system_name=system_name,
         schema_name=r[2], technical_name=r[3], logical_name=r[4],
         behavior_desc=r[5], parameters=params, source_code=r[7],
-        dependent_systems=list(r[8]) if r[8] else [],
+        dependent_systems=delta.as_str_list(r[8]),  # ARRAY<STRING> via string JSON
         change_risk_level=cast(any, r[9]) if r[9] else None,
         created_at=r[10], created_by=r[11],
         updated_at=r[12], updated_by=r[13],
@@ -551,7 +551,7 @@ def _seq_row_to_out(r: list, system_name: str | None = None) -> SequenceOut:
         cache_size=int(r[10]) if r[10] is not None else None,
         is_cycle=delta.as_bool(r[11]) if r[11] is not None else None,
         current_value=int(r[12]) if r[12] is not None else None,
-        used_by_entity_ids=list(r[13]) if r[13] else [],
+        used_by_entity_ids=delta.as_str_list(r[13]),  # ARRAY<STRING> via string JSON
         native_comment=r[14],
         created_at=r[15], created_by=r[16],
         updated_at=r[17], updated_by=r[18],
