@@ -23,6 +23,7 @@ from ..core.sql import Sql
 from ..lakebase.service import open_connection
 from ..tickets.service import open_ticket
 from .embarcadero import parse_dm1
+from .diff import RELATIONSHIP_SCHEMA
 from .diff import compute_diff_against_catalog as compute_diff_against_catalog
 from .models import (
     ExtractedAttribute,
@@ -32,6 +33,7 @@ from .models import (
     ExtractedRelationship,
     ExtractionResult,
     ExtractionSnapshot,
+    PreviewObject,
 )
 
 log = logging.getLogger(__name__)
@@ -1035,6 +1037,50 @@ def _regex_comment_ons(
     return tbl, col
 
 
+def _build_preview(diff: Any) -> list[PreviewObject]:
+    """Constrói o PREVIEW (dry-run) a partir do ``TicketDiff`` calculado.
+
+    Uma linha por objeto que MUDARIA — separando relacionamentos (FK) das
+    tabelas/views para o cliente ler de relance o que o import faria, SEM abrir
+    ticket nem persistir. Best-effort: nunca derruba o import (um diff torto vira
+    preview vazio em vez de erro)."""
+    out: list[PreviewObject] = []
+    try:
+        entities = getattr(diff, "entities", None) or []
+    except Exception:  # noqa: BLE001
+        return out
+    for ent in entities:
+        try:
+            op = getattr(ent, "op", "") or ""
+            schema = getattr(ent, "schema_name", "") or ""
+            name = getattr(ent, "technical_name", "") or ""
+            etype = getattr(ent, "entity_type", "TABLE") or "TABLE"
+            # Relacionamento sintético (FK) — rotula distinto no preview.
+            if schema == RELATIONSHIP_SCHEMA:
+                out.append(PreviewObject(
+                    op=op if op in ("add", "change", "remove") else "add",
+                    schema_name="(relacionamento)", technical_name=name,
+                    entity_type="RELATIONSHIP", detail="chave estrangeira",
+                ))
+                continue
+            if op == "add":
+                n = len(getattr(ent, "attributes", None) or [])
+                detail = f"+{n} coluna(s)" if n else "nova tabela/view"
+                out.append(PreviewObject(op="add", schema_name=schema, technical_name=name,
+                                         entity_type=etype, change_count=n, detail=detail))
+            elif op == "change":
+                fcs = getattr(ent, "field_changes", None) or []
+                out.append(PreviewObject(op="change", schema_name=schema, technical_name=name,
+                                         entity_type=etype, change_count=len(fcs),
+                                         detail=f"{len(fcs)} alteração(ões)"))
+            elif op == "remove":
+                out.append(PreviewObject(op="remove", schema_name=schema, technical_name=name,
+                                         entity_type=etype, detail="removido do catálogo"))
+        except Exception:  # noqa: BLE001 — uma linha torta não invalida o preview
+            continue
+    return out
+
+
 def run_ddl_import(
     sql: Sql,
     *,
@@ -1043,6 +1089,7 @@ def run_ddl_import(
     ddl_text: str,
     actor: str,
     open_ticket_on_diff: bool,
+    dry_run: bool = False,
 ) -> ExtractionResult:
     """Parse DDL com sqlglot, constrói snapshot, compara com catálogo, abre ticket.
 
@@ -1053,6 +1100,11 @@ def run_ddl_import(
       4. Resolve schema de tabelas não-qualificadas por search_path[0]
       5. Dedup de relacionamentos por id determinístico (idempotente)
       6. Cria ticket se houver mudanças (entidades novas/alteradas/removidas)
+
+    ``dry_run=True`` (PREVIEW): faz TODO o parse + diff, mas NÃO abre ticket e NÃO
+    persiste a extração — devolve o ExtractionResult com as contagens + a lista
+    ``preview`` (o que mudaria por objeto). Deixa o cliente conferir antes de
+    importar de verdade. É read-only (não escreve nada no catálogo).
     """
     import sqlglot
     from sqlglot import expressions as exp
@@ -1371,7 +1423,8 @@ def run_ddl_import(
             relationships=[],
         )
         ended_at = ended
-        ext_id = persist_extraction(
+        # dry_run: NÃO persiste a extração — só devolve o diagnóstico (preview vazio).
+        ext_id = "(dry-run)" if dry_run else persist_extraction(
             sql,
             source_kind="DDL_FILE",
             system_id=system_id,
@@ -1504,6 +1557,24 @@ def run_ddl_import(
     # `errors` = problemas de parse; `warnings` = avisos informativos (órfãs etc).
     import_log = format_import_log(errors, warnings)
     summary_md = base_summary + (f"\n\n{import_log}" if import_log else "")
+
+    # dry_run (PREVIEW): NÃO persiste extração NEM abre ticket (o ticket já ficou
+    # de fora porque o router passa open_ticket_on_diff=False). Devolve só as
+    # contagens + a lista `preview` do que mudaria — 100% read-only.
+    if dry_run:
+        return ExtractionResult(
+            extraction_id="(dry-run)",
+            status=status,
+            objects_found=summary["found"],
+            objects_new=summary["new"],
+            objects_changed=summary["changed"],
+            objects_removed=summary["removed"],
+            duration_ms=duration_ms,
+            ticket_id=None,
+            summary_md=summary_md,
+            errors=errors + warnings,
+            preview=_build_preview(diff),
+        )
 
     ext_id = persist_extraction(
         sql,

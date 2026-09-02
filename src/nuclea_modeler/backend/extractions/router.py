@@ -208,6 +208,32 @@ def run_ddl(
 
 
 @router.post(
+    "/ddl/preview",
+    response_model=ExtractionResult,
+    operation_id="previewDDLImport",
+)
+def preview_ddl(
+    payload: DDLImportIn,
+    sql: SqlDependency,
+    user_ws: Dependencies.UserClient,
+) -> ExtractionResult:
+    """Dry-run do import DDL: parseia + calcula o diff vs. catálogo e devolve o que
+    MUDARIA (contagens + lista por objeto em ``preview``), SEM abrir ticket nem
+    persistir a extração. Deixa o cliente conferir antes de importar de verdade.
+    100% read-only (não escreve no catálogo)."""
+    actor = _current_email(user_ws)
+    return run_ddl_import(
+        sql,
+        system_id=payload.system_id,
+        dialect=payload.dialect,
+        ddl_text=payload.ddl_text,
+        actor=actor,
+        open_ticket_on_diff=False,  # preview nunca abre ticket
+        dry_run=True,
+    )
+
+
+@router.post(
     "/embarcadero/run",
     response_model=ExtractionResult,
     operation_id="runEmbarcaderoImport",

@@ -9,6 +9,7 @@ import {
   useListSystemsSuspense,
   useRunLakebaseExtraction,
   useRunDDLImport,
+  usePreviewDDLImport,
   useRunEmbarcaderoImport,
   type ExtractionResult,
 } from "@/lib/api";
@@ -281,9 +282,17 @@ function DDLTab() {
   const qc = useQueryClient();
   const navigate = useNavigate();
 
+  const [systemId, setSystemId] = useState(systems[0]?.system_id || "");
+  const [dialect, setDialect] = useState("POSTGRES");
+  const [ddlText, setDdlText] = useState("");
+  // Prévia (dry-run) fica separada do resultado do import real — um import "de
+  // verdade" substitui a prévia (limpa no onSuccess do runDDL).
+  const [previewResult, setPreviewResult] = useState<ExtractionResult | null>(null);
+
   const { mutate: runDDL, isPending, data: result } = useRunDDLImport({
     mutation: {
       onSuccess: (r) => {
+        setPreviewResult(null);
         qc.invalidateQueries({ queryKey: ["listExtractions"] });
         qc.invalidateQueries({ queryKey: ["listTickets"] });
         if (r.ticket_id) {
@@ -293,9 +302,9 @@ function DDLTab() {
     },
   });
 
-  const [systemId, setSystemId] = useState(systems[0]?.system_id || "");
-  const [dialect, setDialect] = useState("POSTGRES");
-  const [ddlText, setDdlText] = useState("");
+  const { mutate: previewDDL, isPending: isPreviewing } = usePreviewDDLImport({
+    mutation: { onSuccess: (r) => setPreviewResult(r) },
+  });
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -307,6 +316,14 @@ function DDLTab() {
         ddl_text: ddlText,
         open_ticket: true,
       },
+    });
+  };
+
+  // Dry-run: mostra o que MUDARIA sem abrir ticket nem persistir (read-only).
+  const onPreview = () => {
+    if (!ddlText.trim()) return;
+    previewDDL({
+      data: { system_id: systemId, dialect, ddl_text: ddlText, open_ticket: false },
     });
   };
 
@@ -355,7 +372,26 @@ function DDLTab() {
               { label: "DDL preenchido", ok: !!ddlText.trim() },
             ]}
           />
-          <div className="flex justify-end">
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onPreview}
+              disabled={isPreviewing || isPending || !ddlText.trim() || !systemId}
+              title="Mostra o que mudaria sem abrir ticket nem gravar nada"
+            >
+              {isPreviewing ? (
+                <>
+                  <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                  Prevendo...
+                </>
+              ) : (
+                <>
+                  <ScanSearch className="mr-2 h-4 w-4" />
+                  Prever (dry-run)
+                </>
+              )}
+            </Button>
             <Button type="submit" disabled={isPending || !ddlText.trim() || !systemId}>
               {isPending ? (
                 <>
@@ -372,6 +408,7 @@ function DDLTab() {
           </div>
         </form>
 
+        {previewResult && <ResultPanel result={previewResult} isPreview />}
         {result && <ResultPanel result={result} />}
       </CardContent>
     </Card>
@@ -533,7 +570,13 @@ function EmbarcaderoTab() {
   );
 }
 
-function ResultPanel({ result }: { result: ExtractionResult }) {
+function ResultPanel({
+  result,
+  isPreview = false,
+}: {
+  result: ExtractionResult;
+  isPreview?: boolean;
+}) {
   // Avisos quando o import "deu certo" mas não há o que aprovar — senão o
   // usuário vê "sucesso" e não entende por que não apareceu ticket.
   const noObjects = result.objects_found === 0;
@@ -561,6 +604,11 @@ function ResultPanel({ result }: { result: ExtractionResult }) {
           )}
           <strong className="text-sm">{result.summary_md}</strong>
         </div>
+        {isPreview && (
+          <Badge variant="outline" className="border-nuclea-primary/40 text-nuclea-primary">
+            Prévia — nada foi importado
+          </Badge>
+        )}
         {result.ticket_id && (
           <Button size="sm" asChild>
             <Link to="/tickets/$id" params={{ id: result.ticket_id }}>
@@ -570,6 +618,14 @@ function ResultPanel({ result }: { result: ExtractionResult }) {
           </Button>
         )}
       </div>
+
+      {isPreview && (
+        <p className="mt-2 text-xs text-muted-foreground">
+          Isto é um <strong>dry-run</strong>: mostra o que o import faria (abaixo),
+          mas <strong>não</strong> abriu ticket nem gravou nada. Clique em{" "}
+          <strong>Parsear e reconciliar</strong> para importar de verdade.
+        </p>
+      )}
 
       {(noObjects || noChanges) && (
         <div className="mt-3 flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
@@ -596,6 +652,27 @@ function ResultPanel({ result }: { result: ExtractionResult }) {
         <Counter icon={<Minus className="h-3 w-3" />} label="removidos" value={result.objects_removed} tone="negative" />
         <Counter icon={<ScanSearch className="h-3 w-3" />} label="encontrados" value={result.objects_found} tone="neutral" />
       </div>
+      {isPreview && result.preview && result.preview.length > 0 && (
+        <div className="mt-3 rounded-md border bg-background/60">
+          <div className="border-b px-3 py-2 text-xs font-medium text-muted-foreground">
+            O que o import faria ({result.preview.length} objeto(s))
+          </div>
+          <ul className="divide-y max-h-72 overflow-auto">
+            {result.preview.map((p, i) => (
+              <li key={i} className="flex items-center gap-2 px-3 py-1.5 text-sm">
+                <PreviewOpBadge op={p.op} />
+                <span className="font-mono text-xs">
+                  {p.schema_name}.{p.technical_name}
+                </span>
+                {p.detail && (
+                  <span className="text-xs text-muted-foreground">— {p.detail}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {result.errors.length > 0 && (
         <details className="mt-3">
           <summary className="text-xs cursor-pointer">Erros ({result.errors.length})</summary>
@@ -605,6 +682,21 @@ function ResultPanel({ result }: { result: ExtractionResult }) {
         </details>
       )}
     </div>
+  );
+}
+
+/** Badge de operação para uma linha do preview (add / change / remove). */
+function PreviewOpBadge({ op }: { op: "add" | "change" | "remove" }) {
+  const map = {
+    add: { label: "novo", cls: "text-emerald-700 dark:text-emerald-300 border-emerald-500/40" },
+    change: { label: "alterado", cls: "text-amber-700 dark:text-amber-300 border-amber-500/40" },
+    remove: { label: "removido", cls: "text-destructive border-destructive/40" },
+  } as const;
+  const { label, cls } = map[op];
+  return (
+    <Badge variant="outline" className={`shrink-0 text-[10px] ${cls}`}>
+      {label}
+    </Badge>
   );
 }
 
