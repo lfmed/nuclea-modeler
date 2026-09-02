@@ -340,7 +340,8 @@ def _overlay_entity_list(
         consumed.add((it.schema_name, it.technical_name))
         if op == "change":
             ent_updates, _attr_changes, _adds, _removes = field_changes_by_target(entry)
-            for fld in ("logical_name", "domain", "criticality", "entity_type"):
+            for fld in ("logical_name", "domain", "criticality", "entity_type",
+                        "description_md", "native_comment"):  # round 6 follow-up
                 if fld in ent_updates and ent_updates[fld] is not None:
                     setattr(it, fld, ent_updates[fld])
             it.pending_op = "change"
@@ -374,6 +375,7 @@ def _overlay_entity_list(
                 criticality=payload.get("criticality"),
                 attributes_count=len(add_entry.get("attributes") or []),
                 updated_at=datetime.utcnow(),
+                description_md=payload.get("description_md"),  # round 6 follow-up
                 pending_op="add",
                 pending_ticket_id=session_ticket_id,
             )
@@ -451,7 +453,8 @@ def list_entities(
         SELECT e.entity_id, e.system_id, sys.system_name, e.schema_name,
                e.technical_name, e.logical_name, e.entity_type, e.domain,
                e.criticality, e.updated_at,
-               (SELECT COUNT(*) FROM {s.fq_table('attributes')} a WHERE a.entity_id = e.entity_id) AS attrs
+               (SELECT COUNT(*) FROM {s.fq_table('attributes')} a WHERE a.entity_id = e.entity_id) AS attrs,
+               e.description_md, e.native_comment
         FROM {s.fq_table('entities')} e
         LEFT JOIN {s.fq_table('systems')} sys ON sys.system_id = e.system_id
         {where_clause}
@@ -467,6 +470,11 @@ def list_entities(
             domain=r[7], criticality=r[8] or None,
             attributes_count=int(r[10]) if r[10] is not None else 0,
             updated_at=r[9],
+            # round 6 (follow-up): a lista passa a devolver description_md/native_comment
+            # (o modelo já tinha os campos, mas a query não os selecionava → viam None
+            # mesmo com o COMMENT ON TABLE importado). Anexados no fim p/ não deslocar índices.
+            description_md=r[11] if len(r) > 11 else None,
+            native_comment=r[12] if len(r) > 12 else None,
         )
         for r in rows
     ]

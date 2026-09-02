@@ -516,6 +516,16 @@ function EntitiesTable({
                   >
                     {e.technical_name}
                   </Link>
+                  {/* round 6 (follow-up): descrição de negócio (ex.: importada de
+                      COMMENT ON TABLE) agora aparece na lista, truncada, tooltip com o texto. */}
+                  {(e.description_md || e.native_comment) && (
+                    <div
+                      className="mt-0.5 max-w-[22rem] truncate font-sans text-[11px] font-normal text-muted-foreground"
+                      title={e.description_md || e.native_comment || ""}
+                    >
+                      {e.description_md || e.native_comment}
+                    </div>
+                  )}
                 </td>
                 <td className="py-2 pr-3">{e.logical_name || "—"}</td>
                 <td className="py-2 pr-3 text-muted-foreground">
