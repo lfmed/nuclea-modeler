@@ -10,11 +10,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
-pytest.importorskip("sqlglot")  # o módulo importa sqlglot no topo
-
-from nuclea_modeler.backend.extractions.service import _regex_comment_ons  # noqa: E402
+# NB: `_regex_comment_ons` é python puro (regex) — o sqlglot é importado só DENTRO
+# de funções em extractions/service.py, então NÃO precisamos de importorskip aqui
+# (o próprio ponto deste path é funcionar mesmo onde o sqlglot não é confiável).
+from nuclea_modeler.backend.extractions.service import _regex_comment_ons
 
 FIXTURES = Path(__file__).parent / "fixtures" / "round6"
 
@@ -51,3 +50,28 @@ def test_regex_on_client_file_captures_all_tables():
 def test_regex_empty_when_no_comments():
     tbl, col = _regex_comment_ons("CREATE TABLE t (id INT);")
     assert tbl == {} and col == {}
+
+
+# ─── robustez (achados do /review) ────────────────────────────────────────────
+
+
+def test_regex_ignores_commented_out_comment_on():
+    """`-- COMMENT ON TABLE …` (linha comentada) e bloco `/* … */` NÃO viram descrição."""
+    tbl, _ = _regex_comment_ons("-- COMMENT ON TABLE x IS 'velho';\nCREATE TABLE x (id INT);")
+    assert tbl == {}
+    tbl2, _ = _regex_comment_ons("/* COMMENT ON TABLE y IS 'z' */\n")
+    assert tbl2 == {}
+
+
+def test_regex_preserves_double_dash_inside_string():
+    """Um `--` DENTRO da string de descrição não pode ser truncado (só strip de
+    linha-inteira de comentário)."""
+    tbl, _ = _regex_comment_ons("COMMENT ON TABLE x IS 'antes -- depois';")
+    assert tbl[("public", "x")] == "antes -- depois"
+
+
+def test_regex_three_part_and_quoted_names():
+    ddl = 'COMMENT ON TABLE cat.social.pessoa IS \'t\';\nCOMMENT ON COLUMN cat.social.pessoa.nome IS \'c\';'
+    tbl, col = _regex_comment_ons(ddl)
+    assert tbl[("social", "pessoa")] == "t"          # 3 partes → schema=social
+    assert col[("social", "pessoa", "nome")] == "c"  # 4 partes → schema=social

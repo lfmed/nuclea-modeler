@@ -978,16 +978,32 @@ def _resolve_sqlglot_dialect(dialect: str | None) -> str | None:
 # passando. O regex roda como SUPLEMENTO version-agnostic: casa TABLE e COLUMN
 # direto no texto e é a baseline dos deferred comments (o parse do sqlglot ainda
 # roda e sobrescreve com o mesmo valor quando também reconhece).
+# Nome qualificado: aceita 1..3 partes (catalog.schema.table), com aspas opcionais
+# e identificadores unicode (\w cobre acentos em py3). O `IS '<texto>'` pode estar
+# na linha seguinte (o `\s+` cobre quebras); `''` é aspa escapada dentro do texto.
 _RE_COMMENT_TABLE = re.compile(
-    r"COMMENT\s+ON\s+TABLE\s+(?:(?P<schema>[A-Za-z_]\w*)\.)?(?P<table>[A-Za-z_]\w*)"
-    r"\s+IS\s+'(?P<text>(?:[^']|'')*)'",
-    re.IGNORECASE | re.DOTALL,
+    r"COMMENT\s+ON\s+TABLE\s+(?P<name>[\w\".]+)\s+IS\s+'(?P<text>(?:[^']|'')*)'",
+    re.IGNORECASE,
 )
 _RE_COMMENT_COLUMN = re.compile(
-    r"COMMENT\s+ON\s+COLUMN\s+(?:(?P<schema>[A-Za-z_]\w*)\.)?(?P<table>[A-Za-z_]\w*)"
-    r"\.(?P<col>[A-Za-z_]\w*)\s+IS\s+'(?P<text>(?:[^']|'')*)'",
-    re.IGNORECASE | re.DOTALL,
+    r"COMMENT\s+ON\s+COLUMN\s+(?P<name>[\w\".]+)\s+IS\s+'(?P<text>(?:[^']|'')*)'",
+    re.IGNORECASE,
 )
+
+
+def _strip_sql_comments(ddl: str) -> str:
+    """Remove comentários SQL de bloco `/* … */` e de LINHA INTEIRA `-- …` antes do
+    regex de COMMENT ON — senão um `-- COMMENT ON TABLE x IS 'velho'` comentado seria
+    capturado como descrição real (review). Só strip de linha-inteira (`^\\s*--`)
+    para NÃO truncar um `--` legítimo DENTRO de uma string (ex.: IS 'a -- b')."""
+    ddl = re.sub(r"/\*.*?\*/", " ", ddl, flags=re.DOTALL)
+    ddl = re.sub(r"(?m)^\s*--.*$", "", ddl)
+    return ddl
+
+
+def _qual_name(raw: str) -> list[str]:
+    """Quebra um nome qualificado em partes, tirando aspas. `"My"."Tbl"` → ['My','Tbl']."""
+    return [p.strip('"') for p in raw.split(".") if p.strip('"')]
 
 
 def _regex_comment_ons(
@@ -996,15 +1012,26 @@ def _regex_comment_ons(
     """Extrai (deferred_table_comments, deferred_col_comments) do DDL cru via regex.
 
     Schema default 'public' (mesmo default do parser sqlglot). Desescapa `''`→`'`.
+    Cobre nomes 1..3 partes; a última parte é a tabela (TABLE) ou coluna (COLUMN).
     """
+    ddl = _strip_sql_comments(ddl_text)
     tbl: dict[tuple[str, str], str] = {}
     col: dict[tuple[str, str, str], str] = {}
-    for m in _RE_COMMENT_TABLE.finditer(ddl_text):
-        sch = m.group("schema") or "public"
-        tbl[(sch, m.group("table"))] = m.group("text").replace("''", "'")
-    for m in _RE_COMMENT_COLUMN.finditer(ddl_text):
-        sch = m.group("schema") or "public"
-        col[(sch, m.group("table"), m.group("col"))] = m.group("text").replace("''", "'")
+    for m in _RE_COMMENT_TABLE.finditer(ddl):
+        parts = _qual_name(m.group("name"))
+        if not parts:
+            continue
+        table = parts[-1]
+        schema = parts[-2] if len(parts) >= 2 else "public"
+        tbl[(schema, table)] = m.group("text").replace("''", "'")
+    for m in _RE_COMMENT_COLUMN.finditer(ddl):
+        parts = _qual_name(m.group("name"))
+        if len(parts) < 2:
+            continue
+        col_name = parts[-1]
+        table = parts[-2]
+        schema = parts[-3] if len(parts) >= 3 else "public"
+        col[(schema, table, col_name)] = m.group("text").replace("''", "'")
     return tbl, col
 
 
@@ -1259,17 +1286,21 @@ def run_ddl_import(
                 target = stmt.this
                 text = _ddl_literal_str(stmt.args.get("expression"))
                 if text and target is not None:
+                    # setdefault: o REGEX (baseline, rodado antes) é autoritativo —
+                    # o parse do sqlglot para COMMENT ON é declaradamente não-confiável
+                    # neste app, então só PREENCHE chaves que o regex não pegou; nunca
+                    # sobrescreve o valor do regex com uma extração pior (review).
                     if obj_kind == "COLUMN":
                         col = target.name if hasattr(target, "name") else ""
                         tbl = getattr(target, "table", "") or ""
                         sch = getattr(target, "db", "") or "public"
                         if col and tbl:
-                            deferred_col_comments[(sch, tbl, col)] = text
+                            deferred_col_comments.setdefault((sch, tbl, col), text)
                     else:  # TABLE (default)
                         tbl = target.name if hasattr(target, "name") else ""
                         sch = (getattr(target, "db", "") or None) or "public"
                         if tbl:
-                            deferred_table_comments[(sch, tbl)] = text
+                            deferred_table_comments.setdefault((sch, tbl), text)
         except Exception as exc:
             errors.append(f"parse stmt skipped: {exc}")
 

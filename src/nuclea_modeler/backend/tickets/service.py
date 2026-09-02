@@ -942,13 +942,13 @@ def _apply_op_change(
     )
     eid = existing[0] if existing else None
     # round 6 (follow-up): search_path/CREATE SCHEMA pode fazer a entidade viver num
-    # schema diferente do que o entry carrega (ex.: import CSV/xlsx sem schema, ou
-    # DDL com search_path). Fallbacks antes de desistir:
+    # schema diferente do que o entry carrega (ex.: import CSV/xlsx sem schema). Só
+    # um fallback SEGURO: o `target_entity_id` gravado no staging aponta para a
+    # entidade EXATA (por id). NÃO usamos fallback por nome — um change (inclusive
+    # attribute_remove/DELETE) jamais pode cair numa tabela homônima de OUTRO schema
+    # (review): melhor errar "not found" do que corromper a tabela errada.
     if not eid:
-        payload = ent_change.get("payload") or {}
-        # 1) target_entity_id gravado no staging (import CSV/xlsx grava sempre) —
-        #    é a referência mais confiável, independe de schema.
-        tid = payload.get("target_entity_id")
+        tid = (ent_change.get("payload") or {}).get("target_entity_id")
         if tid:
             row = delta.fetch_one_params(
                 state.sql,
@@ -958,16 +958,6 @@ def _apply_op_change(
             )
             if row:
                 eid = row[0]
-    if not eid:
-        # 2) por NOME de tabela quando único no sistema (schema divergente).
-        rows = delta.fetch_all_params(
-            state.sql,
-            f"SELECT entity_id FROM {s.fq_table('entities')} "
-            f"WHERE system_id = :sid AND technical_name = :tech",
-            [delta.param("sid", state.system_id), delta.param("tech", technical_name)],
-        )
-        if len(rows) == 1:
-            eid = rows[0][0]
     if not eid:
         state.errors.append(
             f"change target not found: {schema_name}.{technical_name}"
