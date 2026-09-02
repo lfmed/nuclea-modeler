@@ -101,6 +101,7 @@ import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/apx/empty-state";
 import { AttachmentsPanel } from "@/components/attachments/attachments-panel";
 import { FlagPicker } from "@/components/flags/flag-picker";
+import { FlagKeyPicker } from "@/components/flags/flag-key-picker";
 import { NewSystemWizard } from "@/components/apx/new-system-wizard";
 
 import { EntityNode } from "@/components/diagram/entity-node";
@@ -1586,6 +1587,9 @@ function QuickAddEntityDialog({
   const [technicalName, setTechnicalName] = useState("");
   const [logicalName, setLogicalName] = useState("");
   const [entityType, setEntityType] = useState<"TABLE" | "VIEW">("TABLE");
+  // round 6 pt 16: descrição + flags da tabela já na criação (entram no ticket).
+  const [description, setDescription] = useState("");
+  const [flagKeys, setFlagKeys] = useState<string[]>([]);
   const typeOptions = useMemo(
     () => getTypesForTechnology(systemTechnology),
     [systemTechnology],
@@ -1632,6 +1636,8 @@ function QuickAddEntityDialog({
         technical_name: technicalName,
         logical_name: logicalName || null,
         entity_type: entityType,
+        description_md: description.trim() || null, // round 6 pt 16
+        flag_keys: flagKeys, // round 6 pt 16
         initial_attributes: attrs,
       },
       fks,
@@ -1691,6 +1697,25 @@ function QuickAddEntityDialog({
                 placeholder="Cliente"
               />
             </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-medium block mb-1">Descrição (negócio)</label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Descrição da tabela (opcional) — importada/exibida no catálogo"
+              rows={2}
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-medium block mb-1">Flags da tabela</label>
+            <FlagKeyPicker value={flagKeys} onChange={setFlagKeys} />
+            <p className="text-[11px] text-muted-foreground mt-1">
+              As flags escolhidas entram no ticket e são aplicadas na aprovação.
+            </p>
           </div>
 
           <div>
@@ -2603,6 +2628,10 @@ function AttributesEditor({
   const [newName, setNewName] = useState("");
   const [newType, setNewType] = useState("STRING");
   const [newPk, setNewPk] = useState(false);
+  // round 6 pt 16/21: descrição, flags e CHECK já na criação manual da coluna.
+  const [newDesc, setNewDesc] = useState("");
+  const [newCheck, setNewCheck] = useState("");
+  const [newFlagKeys, setNewFlagKeys] = useState<string[]>([]);
   // FK opcional na criação: marca tabela alvo + coluna alvo
   const [newFkEntity, setNewFkEntity] = useState("");
   const [newFkAttr, setNewFkAttr] = useState("");
@@ -2837,6 +2866,9 @@ function AttributesEditor({
                 native_data_type: newType.trim() || "STRING",
                 is_primary_key: newPk,
                 is_nullable: !newPk,
+                description_md: newDesc.trim() || null, // round 6 pt 16
+                check_constraint: newCheck.trim() || null, // round 6 pt 21
+                flag_keys: newFlagKeys, // round 6 pt 16
               },
             });
             // Se FK marcada, cria relationship na mesma sessão
@@ -2866,6 +2898,9 @@ function AttributesEditor({
             qc.invalidateQueries({ queryKey: ["listAttributes", entityId] });
             onChanged();
             setNewName("");
+            setNewDesc("");
+            setNewCheck("");
+            setNewFlagKeys([]);
             setNewFkEntity("");
             setNewFkAttr("");
             toast.success(
@@ -2901,6 +2936,31 @@ function AttributesEditor({
           <Button type="submit" size="sm" disabled={!newName.trim() || createAttr.isPending || createFkRel.isPending}>
             <Plus className="h-3 w-3" />
           </Button>
+        </div>
+        {/* round 6 pt 16/21: descrição, CHECK e flags da coluna já na criação */}
+        <div className="flex flex-wrap gap-2 items-end">
+          <div className="flex-1 min-w-[200px]">
+            <label className="text-[10px] uppercase tracking-wider text-muted-foreground block">Descrição</label>
+            <Input
+              value={newDesc}
+              onChange={(e) => setNewDesc(e.target.value)}
+              placeholder="descrição de negócio (opcional)"
+              className="h-8 text-xs"
+            />
+          </div>
+          <div className="flex-1 min-w-[160px]">
+            <label className="text-[10px] uppercase tracking-wider text-muted-foreground block">CHECK</label>
+            <Input
+              value={newCheck}
+              onChange={(e) => setNewCheck(e.target.value)}
+              placeholder="ex.: situacao IN ('A','I')"
+              className="h-8 text-xs font-mono"
+            />
+          </div>
+        </div>
+        <div>
+          <label className="text-[10px] uppercase tracking-wider text-muted-foreground block mb-1">Flags</label>
+          <FlagKeyPicker value={newFlagKeys} onChange={setNewFlagKeys} />
         </div>
         <div className="flex flex-wrap gap-2 items-end pl-3 border-l-2 border-nuclea-primary/30">
           <div className="flex-1 min-w-[140px]">

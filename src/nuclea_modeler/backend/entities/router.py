@@ -1142,6 +1142,7 @@ def create_attribute(
         "glossary_term_id": payload.glossary_term_id,
         "native_comment": payload.native_comment,
         "check_constraint": payload.check_constraint,  # round 6 pt 21
+        "flag_keys": payload.flag_keys,  # round 6 pt 16 (aplicadas no apply)
     }
     field_changes = [
         {

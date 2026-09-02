@@ -234,6 +234,7 @@ export interface AttributeOut {
   sample_value?: string | null;
   glossary_term_id?: string | null;
   native_comment?: string | null;
+  check_constraint?: string | null; // round 6 pt 21
   created_at: string;
   created_by: string;
   updated_at: string;
@@ -257,6 +258,8 @@ export interface AttributeIn {
   sample_value?: string | null;
   glossary_term_id?: string | null;
   native_comment?: string | null;
+  check_constraint?: string | null; // round 6 pt 21
+  flag_keys?: string[]; // round 6 pt 16 — flags aplicadas na criação (via ticket)
 }
 
 export interface CurrentUser {
@@ -3452,6 +3455,8 @@ export interface QuickEntityIn {
   logical_name?: string | null;
   entity_type?: "TABLE" | "VIEW" | "MATERIALIZED_VIEW" | "EXTERNAL";
   domain?: string | null;
+  description_md?: string | null; // round 6 pt 16
+  flag_keys?: string[]; // round 6 pt 16 — flags da tabela (aplicadas via ticket)
   initial_attributes?: Array<{
     technical_name: string;
     native_data_type?: string | null;
@@ -3459,6 +3464,9 @@ export interface QuickEntityIn {
     is_nullable?: boolean;
     logical_name?: string | null;
     default_value?: string | null;
+    description_md?: string | null; // round 6 pt 16
+    check_constraint?: string | null; // round 6 pt 21
+    flag_keys?: string[]; // round 6 pt 16
   }>;
 }
 
