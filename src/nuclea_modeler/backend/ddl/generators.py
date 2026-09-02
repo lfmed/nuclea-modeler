@@ -211,11 +211,33 @@ def _col_nullable(attr: dict[str, Any]) -> str:
     return ""
 
 
+# DEFAULTs que NÃO devem ser quotados: números, keywords e funções SQL. Um valor
+# fora disso é tratado como literal string e recebe aspas (round 6 follow-up: um
+# `default_value='ativo'` saía `DEFAULT ativo` — inválido em Postgres/Oracle).
+_DEFAULT_NUM_RE = re.compile(r"^[-+]?\d+(\.\d+)?$")
+_DEFAULT_BARE_KEYWORDS = {
+    "NULL", "TRUE", "FALSE", "CURRENT_TIMESTAMP", "CURRENT_DATE", "CURRENT_TIME",
+    "CURRENT_USER", "SESSION_USER", "SYSDATE", "LOCALTIMESTAMP", "LOCALTIME",
+}
+
+
 def _col_default(attr: dict[str, Any]) -> str:
     dv = attr.get("default_value")
     if dv is None or dv == "":
         return ""
-    return f" DEFAULT {dv}"
+    s = str(dv).strip()
+    # Emite CRU quando: já quotado ('…' ou "…"), número, chamada de função (…),
+    # ou keyword conhecida (CURRENT_TIMESTAMP, NULL, TRUE…). Case-insensitive p/ kw.
+    if (
+        (s.startswith("'") and s.endswith("'"))
+        or (s.startswith('"') and s.endswith('"'))
+        or _DEFAULT_NUM_RE.match(s)
+        or s.endswith(")")
+        or s.upper() in _DEFAULT_BARE_KEYWORDS
+    ):
+        return f" DEFAULT {s}"
+    # Caso contrário é literal string → quota e escapa aspas internas.
+    return " DEFAULT '" + s.replace("'", "''") + "'"
 
 
 # ──────────────────────────────────────────────────────────────────────────────
