@@ -106,6 +106,32 @@ documentado para quem mantém depois.** Cumprir em todo PR:
   `use<Op>Suspense` / `selector()`). Ignore a linha do boilerplate que diz "auto-regenera".
 - **UI só chega ao cliente após merge no `main`**, que dispara `build-dist.yml`
   (rebuild + commit de `src/nuclea_modeler/__dist__`, o bundle prebuilt servido em prod).
+- **Deps sensíveis a versão são PINADAS em `==` (v1.0049).** `sqlglot==30.17.0` e
+  `openpyxl==3.1.5` (em `pyproject.toml` E `requirements.txt` — `check_deps_sync`
+  exige spec idêntico). O parse de DDL depende do AST interno do sqlglot, que muda
+  entre releases: com `>=`, CI e deploy resolviam versões diferentes e o
+  `COMMENT ON TABLE` passou no CI e falhou em produção (round 6). Para promover:
+  suba a versão nos DOIS arquivos, rode o CI e revalide o import no app deployado.
+- **INSERT em LOTE no apply de ticket (v1.0049).** `delta.insert_many()` junta N
+  linhas num único `INSERT ... VALUES (…),(…),…` — cada INSERT é um round-trip
+  completo pela Statement Execution API; aplicar ~10 entidades com dezenas de
+  colunas cada estourava o timeout de 300s. `_apply_op_add` usa o lote e cai num
+  fallback resiliente linha-a-linha se o lote falhar (isola a linha ruim, preserva
+  a auto-cura de re-apply). Contrato do `insert_many`: todas as linhas com o MESMO
+  conjunto de colunas (a 1ª define a ordem; cada linha é projetada por `.get`).
+- **Dry-run / preview do import DDL (v1.0049).** `POST /extractions/ddl/preview`
+  (`previewDDLImport`) = `run_ddl_import(..., dry_run=True)`: faz todo o parse+diff
+  mas NÃO abre ticket NEM persiste (read-only) e devolve `ExtractionResult.preview`
+  (lista por objeto do que mudaria). Hook `usePreviewDDLImport` + botão "Prever
+  (dry-run)" no DDLTab de `extractions.tsx`. O `ddl.tsx` é o EXPORT (M10) — não
+  confundir com o import.
+- **Smoke test pós-deploy: `scripts/smoke_deployed.py` (v1.0049).** Roda LOCAL logo
+  após o deploy manual (`python3 scripts/smoke_deployed.py "$TOKEN"`); cria um
+  sistema descartável `SMOKE-<ts>`, exercita import DDL ponta-a-ponta e confere
+  COMMENT ON→descrição / FK / CHECK / DEFAULT no app JÁ DEPLOYADO — pega justamente
+  o gap "CI verde, prod quebrada" (drift de versão). Apaga o sistema no fim.
+  Workflow opt-in `smoke-deployed.yml` (`workflow_dispatch`, pula sem o secret
+  `SMOKE_DATABRICKS_TOKEN`).
 
 ## Package Management
 - **Frontend:** Use `apx bun install` or `apx bun add <dependency>` for frontend package management.

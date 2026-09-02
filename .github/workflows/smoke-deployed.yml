@@ -1,0 +1,59 @@
+name: Smoke (deployed app)
+
+# Smoke test do app JÁ DEPLOYADO — pega o gap "CI verde, produção quebrada"
+# (ex.: drift de versão do sqlglot no deploy que quebrou o COMMENT ON TABLE).
+#
+# OPT-IN e MANUAL (workflow_dispatch) — NUNCA roda em push/PR, então não
+# interfere no CI normal. Precisa de um token que autentique no Databricks App
+# (Apps exige auth em todos os endpoints). Configure o secret abaixo; sem ele o
+# job PULA com uma mensagem (não falha), pra não poluir o histórico.
+#
+# Secrets/vars esperados (Settings → Secrets and variables → Actions):
+#   - secret SMOKE_DATABRICKS_TOKEN : PAT/OAuth token com acesso ao app
+#   - var    SMOKE_BASE_URL         : (opcional) URL do app; default no script
+#
+# Uso primário: rodar LOCAL logo após o deploy manual —
+#   TOKEN=$(databricks auth token --profile DEFAULT | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
+#   python3 scripts/smoke_deployed.py "$TOKEN"
+
+on:
+  workflow_dispatch:
+    inputs:
+      health_only:
+        description: "Só /version e /readyz (pula o teste de escrita ponta-a-ponta)"
+        type: boolean
+        default: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  smoke:
+    name: Smoke pós-deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Rodar smoke (pula se não houver token configurado)
+        env:
+          DATABRICKS_TOKEN: ${{ secrets.SMOKE_DATABRICKS_TOKEN }}
+          BASE_URL: ${{ vars.SMOKE_BASE_URL }}
+          HEALTH_ONLY: ${{ inputs.health_only }}
+        run: |
+          if [ -z "${DATABRICKS_TOKEN}" ]; then
+            echo "::notice::SMOKE_DATABRICKS_TOKEN não configurado — pulando o smoke."
+            echo "Configure o secret para habilitar o smoke pós-deploy (ver cabeçalho do workflow)."
+            exit 0
+          fi
+          # O script lê DATABRICKS_TOKEN e BASE_URL do ambiente.
+          if [ "${HEALTH_ONLY}" = "true" ]; then
+            python3 scripts/smoke_deployed.py --health-only
+          else
+            python3 scripts/smoke_deployed.py
+          fi
