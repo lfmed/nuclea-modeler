@@ -28,11 +28,80 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 from typing import Any
 
 from ..core import delta
 from ..core._nuclea_config import get_settings
 from ..tickets.session import get_or_create_session_ticket, stage_entity_change
+
+# round 6 pt 22 — o cliente embute a classificação LGPD na própria descrição, como
+# sufixo `… | CLASSIFICACAO=LGPD_*` (nos DDLs COMMENT ON, no CSV e no .xlsx do
+# Embarcadero). No import de metadados, esse token vira uma FLAG LGPD aplicada ao
+# atributo (que já existe → tem attribute_id real) e é REMOVIDO da descrição.
+_CLASSIFICACAO_TO_FLAG = {
+    "LGPD_PESSOAL": "dados-pessoais",
+    "LGPD_SENSIVEL": "dados-sensiveis",
+    "LGPD_IDENTIFICAVEL": "titular-identificado",
+}
+_FLAG_TO_CLASSIFICACAO = {v: k for k, v in _CLASSIFICACAO_TO_FLAG.items()}
+_CLASSIF_RE = re.compile(r"\s*\|\s*CLASSIFICACAO\s*=\s*([A-Za-z_]+)\s*$")
+
+
+def _split_classificacao(text: str | None) -> tuple[str | None, str | None]:
+    """Separa a descrição do sufixo `| CLASSIFICACAO=LGPD_*`.
+
+    Devolve ``(descricao_limpa, flag_key | None)``. Se não houver token, devolve o
+    texto original e ``None``. Token desconhecido → mantém o texto e não flageia.
+    """
+    if not text:
+        return text, None
+    m = _CLASSIF_RE.search(text)
+    if not m:
+        return text, None
+    flag_key = _CLASSIFICACAO_TO_FLAG.get(m.group(1).upper())
+    if not flag_key:
+        return text, None  # token desconhecido: não mexe na descrição
+    clean = _CLASSIF_RE.sub("", text).strip() or None
+    return clean, flag_key
+
+
+def _apply_classificacao_flags(sql, actor: str, intents: list[tuple[str, str]]) -> int:
+    """Aplica as flags LGPD derivadas do CLASSIFICACAO nos atributos existentes.
+
+    `intents`: lista de ``(attribute_id, flag_key)``. Idempotente e com propagação
+    LGPD para a entidade — reusa o core de flags (não duplica a lógica). Flags são
+    aplicadas DIRETAMENTE (não são editoriais/staged, como no resto do app).
+    """
+    if not intents:
+        return 0
+    # Import tardio: evita qualquer ordem de import no boot (flags.router não
+    # importa entities, então não há ciclo, mas mantém o módulo leve).
+    from ..flags.router import _apply_attribute_flag_core, _fetch_flag
+    s = get_settings()
+    flag_cache: dict[str, Any] = {}
+    applied = 0
+    for attribute_id, flag_key in intents:
+        flag = flag_cache.get(flag_key, "MISS")
+        if flag == "MISS":
+            row = delta.fetch_one_params(
+                sql,
+                f"SELECT flag_id FROM {s.fq_table('flags')} WHERE flag_key = :k",
+                [delta.param("k", flag_key)],
+            )
+            flag = _fetch_flag(sql, row[0]) if row else None
+            flag_cache[flag_key] = flag
+        if not flag:
+            continue
+        try:
+            _apply_attribute_flag_core(
+                sql, attribute_id=attribute_id, flag=flag,
+                justification="Importado de CLASSIFICACAO (metadados)", actor=actor,
+            )
+            applied += 1
+        except Exception:  # noqa: BLE001 — uma flag não pode derrubar o import
+            continue
+    return applied
 
 # Cabeçalho canônico do arquivo de round-trip. A ordem é estável (o parser aceita
 # qualquer ordem desde que os nomes batam — usa DictReader).
@@ -91,7 +160,8 @@ def _load_catalog(sql, system_id: str) -> dict[str, dict]:
         SELECT e.entity_id, e.schema_name, e.technical_name, e.logical_name,
                e.description_md, e.domain, e.criticality, e.entity_type,
                a.technical_name, a.logical_name, a.native_data_type,
-               a.is_primary_key, a.is_nullable, a.description_md, a.ordinal_position
+               a.is_primary_key, a.is_nullable, a.description_md, a.ordinal_position,
+               a.attribute_id
         FROM {s.fq_table('entities')} e
         LEFT JOIN {s.fq_table('attributes')} a ON a.entity_id = e.entity_id
         WHERE e.system_id = :sid
@@ -112,6 +182,7 @@ def _load_catalog(sql, system_id: str) -> dict[str, dict]:
                 "is_primary_key": delta.as_bool(r[11]),
                 "is_nullable": (r[12] is None or delta.as_bool(r[12])),
                 "description_md": r[13], "ordinal_position": r[14],
+                "attribute_id": r[15],  # round 6 pt 22 — p/ aplicar flag CLASSIFICACAO
             }
     return cat
 
@@ -139,6 +210,9 @@ def parse_and_stage_csv(sql, actor: str, system_id: str, csv_text: str) -> dict:
     # Acumula por entidade: field_changes + payload de entidade.
     per_entity: dict[str, dict] = {}
     unknown_tables: set[str] = set()
+    # round 6 pt 22: (attribute_id, flag_key) das colunas existentes cuja descrição
+    # trazia `| CLASSIFICACAO=…`. Aplicadas DIRETAMENTE ao fim (flags não são staged).
+    flag_intents: list[tuple[str, str]] = []
 
     for raw in reader:
         schema = _norm(raw.get("schema"))
@@ -176,7 +250,11 @@ def parse_and_stage_csv(sql, actor: str, system_id: str, csv_text: str) -> dict:
         cat_a = cat_ent["attrs"].get(column)
         col_logical = _norm(raw.get("column_logical"))
         data_type = _norm(raw.get("data_type"))
-        col_desc = _norm(raw.get("column_description"))
+        # round 6 pt 22: destaca o token CLASSIFICACAO → flag; a descrição staged
+        # fica LIMPA (sem o sufixo). A flag só se aplica a coluna JÁ existente.
+        col_desc, _classif_key = _split_classificacao(_norm(raw.get("column_description")))
+        if cat_a is not None and _classif_key and cat_a.get("attribute_id"):
+            flag_intents.append((cat_a["attribute_id"], _classif_key))
         is_pk_raw = _norm(raw.get("is_pk"))
         is_null_raw = _norm(raw.get("is_nullable"))
         is_pk = None if is_pk_raw is None else is_pk_raw.lower() in ("true", "1", "sim", "yes")
@@ -246,23 +324,179 @@ def parse_and_stage_csv(sql, actor: str, system_id: str, csv_text: str) -> dict:
             "field_changes": field_changes,
         })
 
+    # Flags LGPD do CLASSIFICACAO aplicadas DIRETAMENTE (idempotente) — independem
+    # de haver mudança de descrição/tipo (a coluna pode já ter a descrição certa e
+    # faltar só a flag). Deduplica (attribute_id, flag_key).
+    flags_applied = _apply_classificacao_flags(sql, actor, sorted(set(flag_intents)))
+
     if not entries:
+        msg = (
+            f"{flags_applied} flag(s) LGPD aplicada(s); nenhuma mudança de descrição/tipo."
+            if flags_applied else "Nenhuma mudança detectada em relação ao catálogo."
+        )
         return {
             "ticket_id": None, "entities_changed": 0, "columns_changed": 0,
+            "flags_applied": flags_applied,
             "unknown_tables": sorted(unknown_tables),
-            "message": "Nenhuma mudança detectada em relação ao catálogo.",
+            "message": msg,
         }
 
     ticket_id, diff = get_or_create_session_ticket(
-        sql, actor, system_id, title_hint="Importação por CSV (round-trip)"
+        sql, actor, system_id, title_hint="Importação de metadados (round-trip)"
     )
     for entry in entries:
         diff = stage_entity_change(sql, ticket_id, diff, entry)
 
+    flag_msg = f" · {flags_applied} flag(s) LGPD aplicada(s)" if flags_applied else ""
     return {
         "ticket_id": ticket_id,
         "entities_changed": n_ent,
         "columns_changed": n_attr,
+        "flags_applied": flags_applied,
         "unknown_tables": sorted(unknown_tables),
-        "message": f"{n_ent} tabela(s) e {n_attr} coluna(s) com ajustes — revise e aprove no ticket.",
+        "message": f"{n_ent} tabela(s) e {n_attr} coluna(s) com ajustes — revise e aprove no ticket.{flag_msg}",
     }
+
+
+# ─── xlsx do Embarcadero (round 6 pt 22) ──────────────────────────────────────
+#
+# Formato do cliente (descricoes_embarcadero.xlsx): sheet única, header
+#   table | table_description | column | column_description
+# — sem coluna de schema. No import resolvemos o schema pelo catálogo (nome de
+# tabela único) e convertemos para o CSV canônico, reusando TODO o parse_and_stage_csv
+# (staging editorial + CLASSIFICACAO→flag). No export geramos o mesmo layout.
+
+
+def _read_xlsx_rows(xlsx_bytes: bytes) -> list[dict[str, str | None]]:
+    """Lê o .xlsx (header table/table_description/column/column_description) em
+    dicts. Aceita qualquer ordem de coluna. openpyxl é dependência (server-side);
+    erro amigável se ausente."""
+    try:
+        from openpyxl import load_workbook
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError(
+            "Suporte a .xlsx indisponível no servidor (openpyxl não instalado)."
+        ) from exc
+    wb = load_workbook(io.BytesIO(xlsx_bytes), read_only=True, data_only=True)
+    ws = wb.active
+    it = ws.iter_rows(values_only=True)
+    try:
+        header = [(str(c).strip().lower() if c is not None else "") for c in next(it)]
+    except StopIteration:
+        wb.close()
+        return []
+    idx = {name: i for i, name in enumerate(header)}
+
+    def cell(row: tuple, name: str) -> str | None:
+        i = idx.get(name)
+        if i is None or i >= len(row) or row[i] is None:
+            return None
+        return str(row[i])
+
+    out: list[dict[str, str | None]] = []
+    for row in it:
+        if row is None or all(c is None for c in row):
+            continue
+        out.append({
+            "table": cell(row, "table"),
+            "table_description": cell(row, "table_description"),
+            "column": cell(row, "column"),
+            "column_description": cell(row, "column_description"),
+        })
+    wb.close()
+    return out
+
+
+def _table_to_schema(cat: dict[str, dict]) -> dict[str, str | None]:
+    """Mapa nome_de_tabela → schema, ou None quando ambíguo (2+ schemas)."""
+    seen: dict[str, str | None] = {}
+    for ent in cat.values():
+        t = ent["technical_name"]
+        seen[t] = ent["schema_name"] if t not in seen else None
+    return seen
+
+
+def parse_and_stage_xlsx(sql, actor: str, system_id: str, xlsx_bytes: bytes) -> dict:
+    """Importa metadados do .xlsx do Embarcadero (pt 22).
+
+    O .xlsx NÃO traz schema; resolvemos pelo catálogo (nome de tabela único),
+    convertemos para o CSV canônico e delegamos a `parse_and_stage_csv` — assim o
+    staging editorial + CLASSIFICACAO→flag são exatamente os mesmos do CSV.
+    """
+    xlsx_rows = _read_xlsx_rows(xlsx_bytes)
+    if not xlsx_rows:
+        return {"ticket_id": None, "entities_changed": 0, "columns_changed": 0,
+                "flags_applied": 0, "unknown_tables": [],
+                "message": "Planilha vazia ou sem cabeçalho reconhecido (table/column)."}
+    tbl_to_schema = _table_to_schema(_load_catalog(sql, system_id))
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(CSV_HEADERS)
+    for r in xlsx_rows:
+        table = (r.get("table") or "").strip()
+        column = (r.get("column") or "").strip()
+        if not table or not column:
+            continue
+        schema = tbl_to_schema.get(table) or ""
+        w.writerow([
+            schema, table, "", r.get("table_description") or "", "", "",
+            column, "", "", "", "", r.get("column_description") or "",
+        ])
+    return parse_and_stage_csv(sql, actor, system_id, buf.getvalue())
+
+
+def export_system_xlsx(sql, system_id: str) -> bytes:
+    """Exporta metadados no formato .xlsx do Embarcadero (pt 22): 4 colunas
+    table|table_description|column|column_description. Reconstrói o sufixo
+    `| CLASSIFICACAO=…` a partir das flags LGPD do atributo (round-trip fiel)."""
+    try:
+        from openpyxl import Workbook
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError(
+            "Suporte a .xlsx indisponível no servidor (openpyxl não instalado)."
+        ) from exc
+    s = get_settings()
+    rows = delta.fetch_all_params(
+        sql,
+        f"""
+        SELECT e.technical_name, e.description_md, a.technical_name, a.description_md,
+               a.ordinal_position, a.attribute_id
+        FROM {s.fq_table('attributes')} a
+        JOIN {s.fq_table('entities')} e ON e.entity_id = a.entity_id
+        WHERE e.system_id = :sid
+        ORDER BY e.schema_name, e.technical_name,
+                 COALESCE(a.ordinal_position, 999999), a.technical_name
+        """,
+        [delta.param("sid", system_id)],
+    )
+    flag_rows = delta.fetch_all_params(
+        sql,
+        f"""
+        SELECT af.attribute_id, f.flag_key
+        FROM {s.fq_table('attribute_flags')} af
+        JOIN {s.fq_table('attributes')} a ON a.attribute_id = af.attribute_id
+        JOIN {s.fq_table('entities')} e ON e.entity_id = a.entity_id
+        JOIN {s.fq_table('flags')} f ON f.flag_id = af.flag_id
+        WHERE e.system_id = :sid
+        """,
+        [delta.param("sid", system_id)],
+    )
+    classif_by_attr: dict[str, str] = {}
+    for aid, fkey in flag_rows:
+        token = _FLAG_TO_CLASSIFICACAO.get(fkey)
+        if token and aid not in classif_by_attr:
+            classif_by_attr[aid] = token
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Planilha1"
+    ws.append(["table", "table_description", "column", "column_description"])
+    for r in rows:
+        desc = r[3] or ""
+        token = classif_by_attr.get(r[5])
+        if token:
+            desc = (desc + f" | CLASSIFICACAO={token}").strip()
+        ws.append([_b(r[0]), _b(r[1]), _b(r[2]), desc])
+    out = io.BytesIO()
+    wb.save(out)
+    return out.getvalue()

@@ -11,6 +11,7 @@ dependencies = [
     "databricks-sdk>=0.74.0",
     "databricks-sql-connector>=3.5.0",
     "sqlglot>=25.0.0",
+    "openpyxl>=3.1.0",          # round 6 pt 22 — import/export .xlsx (Embarcadero)
     "httpx>=0.28.0",
     "python-multipart>=0.0.20",
     "python-dotenv>=1.0.0",
