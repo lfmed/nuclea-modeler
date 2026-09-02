@@ -971,6 +971,43 @@ def _resolve_sqlglot_dialect(dialect: str | None) -> str | None:
     return lowered if lowered in _SQLGLOT_KNOWN_DIALECTS else None
 
 
+# round 6 (follow-up pt 15): extração de COMMENT ON por REGEX do DDL cru.
+# GOTCHA (achado na validação ao vivo): algumas versões do sqlglot NÃO modelam
+# `COMMENT ON TABLE … IS '…'` como `exp.Comment` no AST (só a de COLUMN), então a
+# descrição da TABELA "sumia" no import — mesmo o teste de CI (sqlglot fixado)
+# passando. O regex roda como SUPLEMENTO version-agnostic: casa TABLE e COLUMN
+# direto no texto e é a baseline dos deferred comments (o parse do sqlglot ainda
+# roda e sobrescreve com o mesmo valor quando também reconhece).
+_RE_COMMENT_TABLE = re.compile(
+    r"COMMENT\s+ON\s+TABLE\s+(?:(?P<schema>[A-Za-z_]\w*)\.)?(?P<table>[A-Za-z_]\w*)"
+    r"\s+IS\s+'(?P<text>(?:[^']|'')*)'",
+    re.IGNORECASE | re.DOTALL,
+)
+_RE_COMMENT_COLUMN = re.compile(
+    r"COMMENT\s+ON\s+COLUMN\s+(?:(?P<schema>[A-Za-z_]\w*)\.)?(?P<table>[A-Za-z_]\w*)"
+    r"\.(?P<col>[A-Za-z_]\w*)\s+IS\s+'(?P<text>(?:[^']|'')*)'",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _regex_comment_ons(
+    ddl_text: str,
+) -> tuple[dict[tuple[str, str], str], dict[tuple[str, str, str], str]]:
+    """Extrai (deferred_table_comments, deferred_col_comments) do DDL cru via regex.
+
+    Schema default 'public' (mesmo default do parser sqlglot). Desescapa `''`→`'`.
+    """
+    tbl: dict[tuple[str, str], str] = {}
+    col: dict[tuple[str, str, str], str] = {}
+    for m in _RE_COMMENT_TABLE.finditer(ddl_text):
+        sch = m.group("schema") or "public"
+        tbl[(sch, m.group("table"))] = m.group("text").replace("''", "'")
+    for m in _RE_COMMENT_COLUMN.finditer(ddl_text):
+        sch = m.group("schema") or "public"
+        col[(sch, m.group("table"), m.group("col"))] = m.group("text").replace("''", "'")
+    return tbl, col
+
+
 def run_ddl_import(
     sql: Sql,
     *,
@@ -1048,6 +1085,12 @@ def run_ddl_import(
     # do CREATE — guardamos e aplicamos no fim (chave = schema/tabela[/coluna]).
     deferred_table_comments: dict[tuple[str, str], str] = {}
     deferred_col_comments: dict[tuple[str, str, str], str] = {}
+    # Baseline via REGEX (version-agnostic) — garante COMMENT ON TABLE mesmo quando
+    # o AST do sqlglot não o modela. O parse do sqlglot abaixo pode sobrescrever
+    # (mesmo valor) e cobre variações que o regex não pegue.
+    _rx_tbl, _rx_col = _regex_comment_ons(ddl_text)
+    deferred_table_comments.update(_rx_tbl)
+    deferred_col_comments.update(_rx_col)
     # search_path corrente (lista, na ordem). O 1º item é o schema default de
     # objetos não-qualificados (semântica Postgres: CREATE usa sempre o 1º).
     # A lista completa é usada na resolução de FKs multi-schema. Honra

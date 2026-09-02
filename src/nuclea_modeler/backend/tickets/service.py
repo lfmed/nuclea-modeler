@@ -940,12 +940,39 @@ def _apply_op_change(
             delta.param("technical_name", technical_name),
         ],
     )
-    if not existing:
+    eid = existing[0] if existing else None
+    # round 6 (follow-up): search_path/CREATE SCHEMA pode fazer a entidade viver num
+    # schema diferente do que o entry carrega (ex.: import CSV/xlsx sem schema, ou
+    # DDL com search_path). Fallbacks antes de desistir:
+    if not eid:
+        payload = ent_change.get("payload") or {}
+        # 1) target_entity_id gravado no staging (import CSV/xlsx grava sempre) —
+        #    é a referência mais confiável, independe de schema.
+        tid = payload.get("target_entity_id")
+        if tid:
+            row = delta.fetch_one_params(
+                state.sql,
+                f"SELECT entity_id FROM {s.fq_table('entities')} "
+                f"WHERE entity_id = :id AND system_id = :sid",
+                [delta.param("id", tid), delta.param("sid", state.system_id)],
+            )
+            if row:
+                eid = row[0]
+    if not eid:
+        # 2) por NOME de tabela quando único no sistema (schema divergente).
+        rows = delta.fetch_all_params(
+            state.sql,
+            f"SELECT entity_id FROM {s.fq_table('entities')} "
+            f"WHERE system_id = :sid AND technical_name = :tech",
+            [delta.param("sid", state.system_id), delta.param("tech", technical_name)],
+        )
+        if len(rows) == 1:
+            eid = rows[0][0]
+    if not eid:
         state.errors.append(
             f"change target not found: {schema_name}.{technical_name}"
         )
         return
-    eid = existing[0]
 
     updates: dict[str, Any] = {}
     for fc in ent_change.get("field_changes") or []:
