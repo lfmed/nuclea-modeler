@@ -100,7 +100,11 @@ documentado para quem mantém depois.** Cumprir em todo PR:
   força tinha repulsão fraca (K_REP=50000, MIN_DIST=100 < largura do nó) → tabelas
   encavalavam. FIX em `components/diagram/layout.ts`: raio circular usa o mínimo
   geométrico (corda ≥ maior dimensão + folga); força com K_REP=250000/MIN_DIST=260;
-  e `resolveOverlaps` maxIter 10→60 (para assim que converge) como rede de segurança.
+  e `resolveOverlaps` maxIter 10→**400** (para assim que converge) como rede de
+  segurança. **Medido ao vivo:** a força nasce muito aglomerada e o empurra-pares
+  precisa de ~174 iterações p/ convergir no pior caso (60 deixava 27 pares, 150
+  deixava 12, 300 zerava) — por isso 400 (v1.0052, ajuste do v1.0051). Circular já
+  zerava com o raio geométrico.
 - **Dialeto DDL: vocabulário CANÔNICO único (GOTCHA, v1.0037).** O import de DDL usa
   `sqlglot`; o backend só entende as chaves canônicas `ANSI | POSTGRES | TSQL | PLSQL |
   MYSQL | SPARKSQL | DB2` (ver `extractions/service.py::_resolve_sqlglot_dialect`). Toda

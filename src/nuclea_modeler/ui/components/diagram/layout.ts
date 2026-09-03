@@ -69,12 +69,13 @@ function resolveOverlaps(
   nodes: Node[],
   expanded: boolean,
   gap = 28,
-  // maxIter 10 → 60: com poucos passos, um aglomerado denso (circular/força com
-  // muitos nós encavalados) NÃO terminava de se desempilhar e sobrava aquela
-  // "pequena sobreposição" reportada. Como o laço PARA assim que converge (nenhum
-  // par sobreposto), o custo extra só existe enquanto ainda há colisão — barato
-  // para os diagramas típicos e garante que o resultado final não sobreponha.
-  maxIter = 60,
+  // maxIter 10 → 400. Medido AO VIVO (v1.0051 ainda deixava ~7 sobreposições na
+  // força com 34 nós): a força nasce MUITO aglomerada e o empurra-pares precisa de
+  // ~174 iterações para convergir a partir do pior caso (60 deixava 27 pares; 150
+  // deixava 12; 300 zerava em 174). 400 dá margem. Como o laço PARA assim que
+  // converge (nenhum par sobreposto), o custo extra só existe enquanto ainda há
+  // colisão — trivial para os diagramas típicos e garante zero sobreposição.
+  maxIter = 400,
 ): Node[] {
   if (nodes.length < 2) return nodes;
   const out = nodes.map((n) => ({ ...n, position: { ...n.position } }));
