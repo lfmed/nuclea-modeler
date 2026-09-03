@@ -25,14 +25,31 @@ export type LayoutDirection = "LR" | "TB" | "RL" | "BT";
 export type LayoutMode = "hierarchical" | "tree" | "circular" | "orthogonal" | "force";
 
 /**
- * Altura estimada de um node do DER. Precisa bater com a lógica usada no dagre
- * (nós expandidos crescem com o nº de atributos) para o bounding box do layout
- * incremental ficar correto — senão os nós novos poderiam sobrepor os já
- * organizados.
+ * Altura de um node do DER, para o anti-sobreposição e o bounding box.
+ *
+ * PREFERE a altura REAL medida pelo React Flow (`node.measured.height`), que já
+ * está disponível quando o usuário dispara o Auto-layout (os nós estão na tela).
+ * Isso é crucial: a ESTIMATIVA `80 + attrs*30` não cobre linhas extras que o
+ * EntityNode às vezes renderiza (índices, descrição) — nós com 5 atributos podiam
+ * medir como 7 linhas. Com a estimativa curta, o resolveOverlaps operava num
+ * espaço MENOR que o real e deixava sobreposição vertical (bug da força). Usando a
+ * medida real, o de-overlap acontece no espaço real → zero sobreposição.
+ *
+ * Fallback para a estimativa só quando não há medida (ex.: layout incremental de
+ * import, com nós ainda não renderizados).
  */
 function nodeHeight(node: Node, expanded: boolean): number {
+  const measured = (node as any).measured?.height as number | undefined;
+  if (measured && measured > 0) return measured;
   const attrs = ((node.data as any)?.entity?.attributes?.length as number) ?? 0;
   return expanded ? NODE_HEIGHT_EXPANDED(attrs) : NODE_HEIGHT_COMPACT;
+}
+
+/** Largura de um node — real medida (React Flow) quando disponível; senão a
+ * constante (que já super-estima a real ~240, folga segura no eixo X). */
+function nodeWidth(node: Node): number {
+  const measured = (node as any).measured?.width as number | undefined;
+  return measured && measured > 0 ? measured : NODE_WIDTH;
 }
 
 /**
@@ -53,7 +70,7 @@ function boundingBox(
     const y = n.position.y;
     minX = Math.min(minX, x);
     minY = Math.min(minY, y);
-    maxX = Math.max(maxX, x + NODE_WIDTH);
+    maxX = Math.max(maxX, x + nodeWidth(n));
     maxY = Math.max(maxY, y + nodeHeight(n, expanded));
   }
   return { minX, minY, maxX, maxY };
@@ -94,9 +111,12 @@ function resolveOverlaps(
         const b = out[j];
         const ah = nodeHeight(a, expanded);
         const bh = nodeHeight(b, expanded);
-        // Penetração (positiva = sobrepõe) em cada eixo.
+        const aw = nodeWidth(a);
+        const bw = nodeWidth(b);
+        // Penetração (positiva = sobrepõe) em cada eixo. Usa a largura REAL de
+        // cada nó (medida) — antes assumia NODE_WIDTH fixo p/ ambos.
         const penX =
-          Math.min(a.position.x + NODE_WIDTH, b.position.x + NODE_WIDTH) -
+          Math.min(a.position.x + aw, b.position.x + bw) -
           Math.max(a.position.x, b.position.x);
         const penY =
           Math.min(a.position.y + ah, b.position.y + bh) -
@@ -157,7 +177,7 @@ export function applyDagreLayout(
 
   for (const node of nodes) {
     const height = nodeHeight(node, expanded);
-    g.setNode(node.id, { width: NODE_WIDTH, height });
+    g.setNode(node.id, { width: nodeWidth(node), height });
   }
   for (const edge of edges) {
     // Dagre lança erro se a aresta referencia um node fora do grafo. Ao rodar
@@ -297,8 +317,7 @@ export function applyCircularLayout(nodes: Node[], expanded: boolean = true): No
   // aí e usamos o MAIOR entre o raio adaptativo e esse mínimo geométrico.
   const gap = 64;
   const maxExtent = Math.max(
-    NODE_WIDTH,
-    ...sorted.map((node) => nodeHeight(node, expanded)),
+    ...sorted.map((node) => Math.max(nodeWidth(node), nodeHeight(node, expanded))),
   );
   const minRadiusNoOverlap =
     n > 1 ? (maxExtent + gap) / (2 * Math.sin(Math.PI / n)) : 0;
