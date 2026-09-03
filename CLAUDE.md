@@ -104,7 +104,13 @@ documentado para quem mantém depois.** Cumprir em todo PR:
   segurança. **Medido ao vivo:** a força nasce muito aglomerada e o empurra-pares
   precisa de ~174 iterações p/ convergir no pior caso (60 deixava 27 pares, 150
   deixava 12, 300 zerava) — por isso 400 (v1.0052, ajuste do v1.0051). Circular já
-  zerava com o raio geométrico.
+  zerava com o raio geométrico. **CAUSA RAIZ da força (v1.0053):** a altura por
+  atributo estimada era 24px mas a REAL é ~29-30px (medido via `offsetHeight`,
+  imune ao zoom) → `NODE_HEIGHT_EXPANDED` SUBESTIMAVA 13/34 nós (até 19px) e o
+  resolvedor deixava sobreposição VERTICAL real (~40px) mesmo "convergindo". Fix:
+  `80 + attrs*30` (estimativa ≥ real p/ todos). Lição: a estimativa de tamanho do
+  nó no layout PRECISA bater com/super-estimar o render real, senão o
+  anti-sobreposição opera num espaço menor que a realidade.
 - **Dialeto DDL: vocabulário CANÔNICO único (GOTCHA, v1.0037).** O import de DDL usa
   `sqlglot`; o backend só entende as chaves canônicas `ANSI | POSTGRES | TSQL | PLSQL |
   MYSQL | SPARKSQL | DB2` (ver `extractions/service.py::_resolve_sqlglot_dialect`). Toda
