@@ -3,7 +3,14 @@ import type { Edge, Node } from "@xyflow/react";
 
 const NODE_WIDTH = 280;
 const NODE_HEIGHT_COMPACT = 80;
-const NODE_HEIGHT_EXPANDED = (attrs: number) => 80 + attrs * 24;
+// Altura por atributo: 24 → 30. Medido AO VIVO (offsetHeight, imune ao zoom): cada
+// linha de atributo ocupa ~29px, não 24. Com 24, a estimativa SUBESTIMAVA a altura
+// de 13/34 nós (até 19px cada) → o resolveOverlaps achava que tinha desempilhado,
+// mas sobrava sobreposição vertical REAL (~40px) no layout força. Com 30 a
+// estimativa fica ≥ real para TODOS os nós (super-estima ~1-2 linhas), então o
+// resolvedor deixa folga garantida e não sobra overlap. (A largura 280 já
+// super-estima a real ~240, então o eixo X nunca foi o problema.)
+const NODE_HEIGHT_EXPANDED = (attrs: number) => 80 + attrs * 30;
 
 export type LayoutDirection = "LR" | "TB" | "RL" | "BT";
 
