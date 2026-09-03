@@ -11,6 +11,7 @@ import {
   ReactFlow,
   ReactFlowProvider,
   useReactFlow,
+  useNodesInitialized,
   Background,
   Controls,
   MiniMap,
@@ -728,15 +729,20 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
     () => nodes.map((n) => n.id).sort().join("|"),
     [nodes],
   );
+  // Só reenquadra DEPOIS que o React Flow mediu os nós (nodesInitialized). Antes
+  // era um setTimeout(60ms) fixo que podia disparar ANTES da medição — o fitView
+  // então ajustava para dimensões erradas (ou nada) e o diagrama parecia vazio.
+  // Keyado em nodeIdSig p/ não refazer o fit enquanto o usuário arrasta.
+  const nodesInitialized = useNodesInitialized();
   useEffect(() => {
-    if (nodes.length === 0) return;
+    if (nodes.length === 0 || !nodesInitialized) return;
     const t = window.setTimeout(
       () => fitView({ padding: 0.15, minZoom: 0.1, maxZoom: 1.5, duration: 300 }),
-      60,
+      30,
     );
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodeIdSig, fitView]);
+  }, [nodeIdSig, nodesInitialized, fitView]);
 
   const fitToScreen = useCallback(
     () => fitView({ padding: 0.15, minZoom: 0.1, maxZoom: 1.5, duration: 300 }),
@@ -808,6 +814,9 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
       onSuccess: () => {
         qc.invalidateQueries({ queryKey: ["getDiagram", systemId] });
         qc.invalidateQueries({ queryKey: ["listEntities"] });
+        // Bug C: criação também é staged na sessão → atualiza o indicador de pendência.
+        qc.invalidateQueries({ queryKey: ["getSessionStatus", systemId] });
+        qc.invalidateQueries({ queryKey: ["listTickets"] });
         setShowAddEntity(false);
         toast.success("Entidade adicionada");
       },
@@ -821,6 +830,9 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
       onSuccess: () => {
         qc.invalidateQueries({ queryKey: ["getDiagram", systemId] });
         qc.invalidateQueries({ queryKey: ["listEntities"] });
+        // Bug C: remoção também é staged na sessão → atualiza o indicador de pendência.
+        qc.invalidateQueries({ queryKey: ["getSessionStatus", systemId] });
+        qc.invalidateQueries({ queryKey: ["listTickets"] });
         toast.success("Entidade removida");
       },
       onError: (e) => toast.error(String(e)),
@@ -1242,6 +1254,15 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
           )}
         >
           <ReactFlow
+            // FIX (arestas/tabelas somem ao TROCAR de sistema/recorte): ao trocar
+            // o systemId ou o diagrama, TODO o conjunto de nós é substituído (ids
+            // novos). O React Flow, mantido montado, às vezes não re-media os nós
+            // novos — eles ficavam `visibility:hidden` e, sem medição, NENHUMA
+            // aresta era desenhada (as tabelas e as linhas "sumiam"). Remontar o
+            // React Flow via `key` quando o contexto troca garante medição fresca +
+            // fitView. Filtro/expandir NÃO entram na key (mudança incremental, que
+            // o RF já mede sozinha — remontar ali perderia zoom/scroll à toa).
+            key={`rf-${systemId}-${diagramId || "all"}`}
             nodes={nodesToRender}
             edges={edgesToRender}
             nodeTypes={nodeTypes}
@@ -1294,6 +1315,12 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
             setPendingConn(null);
             qc.invalidateQueries({ queryKey: ["getDiagram", systemId] });
             qc.invalidateQueries({ queryKey: ["listRelationships"] });
+            // Bug C: o relacionamento é STAGED numa sessão/ticket (não aplicado na
+            // hora). Sem invalidar estas duas queries, o banner "alteração pendente"
+            // e o aviso de ticket aberto NÃO apareciam no DER até um reload — o
+            // usuário via a linha nova mas "nenhuma sinalização de pendência".
+            qc.invalidateQueries({ queryKey: ["getSessionStatus", systemId] });
+            qc.invalidateQueries({ queryKey: ["listTickets"] });
           }}
         />
       )}
@@ -1330,6 +1357,7 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
               if (fks.length > 0) {
                 qc.invalidateQueries({ queryKey: ["getDiagram", systemId] });
                 qc.invalidateQueries({ queryKey: ["getSessionStatus", systemId] });
+                qc.invalidateQueries({ queryKey: ["listTickets"] });
                 toast.success(`${fks.length} relacionamento(s) criados`);
               }
             } catch (err) {

@@ -69,7 +69,12 @@ function resolveOverlaps(
   nodes: Node[],
   expanded: boolean,
   gap = 28,
-  maxIter = 10,
+  // maxIter 10 → 60: com poucos passos, um aglomerado denso (circular/força com
+  // muitos nós encavalados) NÃO terminava de se desempilhar e sobrava aquela
+  // "pequena sobreposição" reportada. Como o laço PARA assim que converge (nenhum
+  // par sobreposto), o custo extra só existe enquanto ainda há colisão — barato
+  // para os diagramas típicos e garante que o resultado final não sobreponha.
+  maxIter = 60,
 ): Node[] {
   if (nodes.length < 2) return nodes;
   const out = nodes.map((n) => ({ ...n, position: { ...n.position } }));
@@ -269,15 +274,27 @@ export function layoutWithSavedPositions(
  * - Raio base = 100 + (N-1) * 40 para acomodar mais nós sem sobreposição
  * - Ordem por ID garante layout determinístico entre rerenders
  */
-export function applyCircularLayout(nodes: Node[]): Node[] {
+export function applyCircularLayout(nodes: Node[], expanded: boolean = true): Node[] {
   if (nodes.length === 0) return nodes;
 
   // Ordena por ID para determinismo
   const sorted = [...nodes].sort((a, b) => a.id.localeCompare(b.id));
   const n = sorted.length;
 
-  // Raio adaptativo: quanto mais nós, mais distante para evitar sobreposição
-  const radius = Math.max(100, 100 + (n - 1) * 40);
+  // Raio adaptativo. ANTES era só função de N (100 + (N-1)*40), ignorando a
+  // LARGURA/ALTURA real das tabelas — com nós largos (280px) ou altos (modo
+  // expandido) o círculo ficava apertado e as tabelas encavalavam (bug relatado).
+  // A corda entre dois nós vizinhos no círculo é 2*R*sin(π/N); para não
+  // sobreporem, ela precisa ser ≥ maior dimensão do nó + folga. Resolvemos R por
+  // aí e usamos o MAIOR entre o raio adaptativo e esse mínimo geométrico.
+  const gap = 64;
+  const maxExtent = Math.max(
+    NODE_WIDTH,
+    ...sorted.map((node) => nodeHeight(node, expanded)),
+  );
+  const minRadiusNoOverlap =
+    n > 1 ? (maxExtent + gap) / (2 * Math.sin(Math.PI / n)) : 0;
+  const radius = Math.max(140, 100 + (n - 1) * 40, minRadiusNoOverlap);
 
   // Calcula posições ao longo do círculo
   const positioned = sorted.map((node, i) => {
@@ -451,12 +468,17 @@ export function applyForceLayout(nodes: Node[], edges: Edge[]): Node[] {
     });
   }
 
-  // Parâmetros do algoritmo
-  const K_REP = 50000;     // Constante de repulsão
+  // Parâmetros do algoritmo. K_REP e MIN_DIST foram AUMENTADOS: com repulsão
+  // fraca (50000) e MIN_DIST=100 os nós assentavam a ~150px — MENOS que a largura
+  // de uma tabela (280px) — e ficavam sobrepostos. Como o nó é uma CAIXA (não um
+  // ponto), a distância de equilíbrio precisa superar a maior dimensão do nó.
+  // Elevamos a repulsão e o piso de distância para o layout já nascer arejado; o
+  // resolveOverlaps abaixo é a rede de segurança final.
+  const K_REP = 250000;    // Constante de repulsão (mais forte → mais afastado)
   const K_ATTR = 0.1;      // Constante de atração
-  const DAMPING = 0.95;    // Amortecimento de velocidade
-  const MIN_DIST = 100;    // Distância mínima para evitar singularidade
-  const ITERATIONS = 100;  // Iterações de simulação
+  const DAMPING = 0.9;     // Amortecimento de velocidade
+  const MIN_DIST = 260;    // Piso de distância ~ largura de um nó (evita encavalar)
+  const ITERATIONS = 160;  // Iterações de simulação
 
   // Simulação de forças
   for (let iter = 0; iter < ITERATIONS; iter++) {
@@ -570,7 +592,7 @@ export function applyLayoutByMode(
       laid = applyTreeLayout(nodes, edges, direction, expanded);
       break;
     case "circular":
-      laid = applyCircularLayout(nodes);
+      laid = applyCircularLayout(nodes, expanded);
       break;
     case "orthogonal":
       laid = applyOrthogonalLayout(nodes, edges, expanded);

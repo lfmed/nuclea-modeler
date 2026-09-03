@@ -71,6 +71,36 @@ documentado para quem mantém depois.** Cumprir em todo PR:
   sourceHandle="source-right" e targetHandle="target-left". Isso garante que as linhas
   sempre tocam uma borda real da tabela, independente da navegação. Veja entity-node.tsx
   linhas 265+ e relationshipToEdge() no diagram.tsx ~2040-2075.
+- **DER: remontar o ReactFlow ao TROCAR de sistema/recorte (v1.0051, GOTCHA React
+  Flow).** Ao trocar o `systemId`/`diagramId`, TODO o conjunto de nós é substituído
+  (ids novos). O React Flow, mantido montado, às vezes NÃO re-media os nós novos →
+  eles ficam `visibility:hidden` e, sem medição, NENHUMA aresta é desenhada
+  ("as tabelas e as linhas somem"). FIX: `key={`rf-${systemId}-${diagramId}`}` no
+  `<ReactFlow>` força remontagem (medição fresca + fitView) na troca de contexto —
+  filtro/expandir NÃO entram na key (mudança incremental que o RF já mede sozinho).
+  Além disso, o fit passou a esperar `useNodesInitialized()` (antes era um
+  setTimeout(60ms) que disparava ANTES da medição). Reproduzido/validado ao vivo:
+  DOM tinha 4 nós + handles mas 0 arestas e nós hidden só ao trocar de sistema.
+- **DER: staging na sessão precisa invalidar o indicador de pendência (v1.0051).**
+  Criar/editar/remover relacionamento OU entidade no DER é STAGED numa sessão/ticket
+  (não aplicado na hora). Os callbacks (`onCreated` do CreateRelationshipDialog,
+  `quickAdd`/`deleteEntity` onSuccess, path de FK do QuickAdd) DEVEM invalidar
+  `["getSessionStatus", systemId]` E `["listTickets"]` — senão o banner "alteração
+  pendente" e o aviso de ticket aberto não aparecem até um reload (o usuário via a
+  linha nova mas "nenhuma sinalização de pendência").
+- **Diff de RELACIONAMENTO no ticket carrega rótulos legíveis (v1.0051).** O payload
+  do relacionamento (`__relationship__`) só tinha ids → o ticket mostrava
+  `__relationship__.rel-xxx`, ilegível. `relationships/router` agora grava
+  `source_label`/`target_label`/`source_columns`/`target_columns` no payload
+  (helper `_enrich_rel_payload_labels`, best-effort) em create/update/delete; a tela
+  de aprovação (`tickets.$id.tsx::relationshipSummary`) renderiza "pai → filho
+  (colunas)". Teste: `tests/test_relationship_payload_labels.py`.
+- **Auto-layout força/circular: anti-sobreposição robusta (v1.0051).** O circular
+  calculava o raio só por N (ignorando a largura 280px / altura expandida do nó) e o
+  força tinha repulsão fraca (K_REP=50000, MIN_DIST=100 < largura do nó) → tabelas
+  encavalavam. FIX em `components/diagram/layout.ts`: raio circular usa o mínimo
+  geométrico (corda ≥ maior dimensão + folga); força com K_REP=250000/MIN_DIST=260;
+  e `resolveOverlaps` maxIter 10→60 (para assim que converge) como rede de segurança.
 - **Dialeto DDL: vocabulário CANÔNICO único (GOTCHA, v1.0037).** O import de DDL usa
   `sqlglot`; o backend só entende as chaves canônicas `ANSI | POSTGRES | TSQL | PLSQL |
   MYSQL | SPARKSQL | DB2` (ver `extractions/service.py::_resolve_sqlglot_dialect`). Toda
