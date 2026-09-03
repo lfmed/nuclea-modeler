@@ -600,6 +600,19 @@ function humanizeValue(value: unknown, fieldHint?: string): string {
   if (fieldHint === "row_count_approx" && (value === -1 || value === "-1")) {
     return "sem stats";
   }
+  // Mudança/adição de COLUNA vinda do import CSV/XLSX vem como PAYLOAD (objeto),
+  // não escalar — antes o String(obj) virava "[object Object]" no ticket. Resume
+  // os campos úteis do atributo (tipo · PK · NOT NULL · "descrição" · lógico).
+  if (typeof value === "object") {
+    const o = value as Record<string, unknown>;
+    const parts: string[] = [];
+    if (o.native_data_type) parts.push(String(o.native_data_type));
+    if (o.is_primary_key === true) parts.push("PK");
+    if (o.is_nullable === false) parts.push("NOT NULL");
+    if (o.description_md) parts.push(`“${String(o.description_md)}”`);
+    if (o.logical_name) parts.push(`(${String(o.logical_name)})`);
+    return parts.length ? parts.join(" · ") : JSON.stringify(o);
+  }
   return String(value);
 }
 

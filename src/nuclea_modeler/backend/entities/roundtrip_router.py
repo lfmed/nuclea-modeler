@@ -62,7 +62,8 @@ def export_csv(system_id: str, sql: SqlDependency) -> CsvExportOut:
     if not system_id:
         raise HTTPException(400, "system_id é obrigatório")
     text = roundtrip.export_system_csv(sql, system_id)
-    return CsvExportOut(filename=f"roundtrip-{system_id}.csv", csv=text)
+    # filename com o NOME do sistema (feedback do cliente), não o id opaco.
+    return CsvExportOut(filename=f"{roundtrip.system_slug(sql, system_id)}.csv", csv=text)
 
 
 @router.post("/import/csv", response_model=CsvImportOut, operation_id="importSystemCsv")
@@ -91,7 +92,7 @@ def export_xlsx(system_id: str, sql: SqlDependency) -> XlsxExportOut:
     except ValueError as exc:  # openpyxl ausente
         raise HTTPException(503, str(exc)) from exc
     return XlsxExportOut(
-        filename=f"metadados-{system_id}.xlsx",
+        filename=f"{roundtrip.system_slug(sql, system_id)}.xlsx",
         xlsx_base64=base64.b64encode(data).decode("ascii"),
     )
 

@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Fragment, Suspense, useState } from "react";
+import { Fragment, Suspense, useEffect, useState } from "react";
+import { selectDefaultSystemId, saveLastSystemId } from "@/lib/persist-search";
 import { QueryErrorResetBoundary, useQueryClient } from "@tanstack/react-query";
 import { ErrorBoundary } from "react-error-boundary";
 
@@ -116,7 +117,15 @@ function SyncContent() {
   // Catálogo de destino escolhido pelo admin (v1.0035) — vira o default do sync
   // quando o usuário ainda não tem uma preferência local salva.
   const { data: syncCat } = useSyncCatalogSuspense(selector());
-  const [systemId, setSystemId] = useState<string>(systems[0]?.system_id ?? "");
+  // "Sistema atual" compartilhado (sessionStorage) — antes esta aba caía sempre
+  // no 1º da lista, ignorando o sistema escolhido em outra tela. (O catálogo/schema
+  // de DESTINO continuam com o próprio SYNC_PREFS_KEY em localStorage, abaixo.)
+  const [systemId, setSystemId] = useState<string>(
+    selectDefaultSystemId(undefined, systems),
+  );
+  useEffect(() => {
+    if (systemId) saveLastSystemId(systemId);
+  }, [systemId]);
   const [targetCatalog, setTargetCatalog] = useState<string>(
     prefs.catalog || syncCat.catalog || DEFAULT_TARGET_CATALOG,
   );

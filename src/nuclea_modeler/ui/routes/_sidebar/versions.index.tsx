@@ -1,5 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { selectDefaultSystemId, saveLastSystemId } from "@/lib/persist-search";
 import { QueryErrorResetBoundary, useQueryClient } from "@tanstack/react-query";
 import { ErrorBoundary } from "react-error-boundary";
 
@@ -96,7 +97,14 @@ function VersionsBody() {
   const { data: systems } = useListSystemsSuspense(selector());
   const { data: me } = useMyRolesSuspense(selector());
 
-  const [systemId, setSystemId] = useState<string>(systems[0]?.system_id ?? "");
+  // "Sistema atual" compartilhado entre as telas (sessionStorage) — antes esta
+  // aba caía sempre no 1º da lista, ignorando o sistema escolhido em outra tela.
+  const [systemId, setSystemId] = useState<string>(
+    selectDefaultSystemId(undefined, systems),
+  );
+  useEffect(() => {
+    if (systemId) saveLastSystemId(systemId);
+  }, [systemId]);
   const [fromId, setFromId] = useState<string>("");
   const [toId, setToId] = useState<string>("");
   const [showPublish, setShowPublish] = useState(false);

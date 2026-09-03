@@ -117,6 +117,44 @@ def _b(v: Any) -> str:
     return "" if v is None else str(v)
 
 
+def _slugify(name: str) -> str:
+    """Nome legível → slug seguro para nome de arquivo (a-z0-9 + hífens)."""
+    slug = re.sub(r"[^a-zA-Z0-9]+", "-", (name or "").strip().lower()).strip("-")
+    return slug or "sistema"
+
+
+def system_slug(sql, system_id: str) -> str:
+    """Slug do NOME do sistema, para nomear o arquivo de export (feedback do
+    cliente: o export saía como `roundtrip-<id>.csv`, ilegível). Cai no id se o
+    nome estiver vazio ou a leitura falhar (best-effort — não derruba o export)."""
+    try:
+        s = get_settings()
+        row = delta.fetch_one_params(
+            sql,
+            f"SELECT system_name FROM {s.fq_table('systems')} WHERE system_id = :sid",
+            [delta.param("sid", system_id)],
+        )
+        if row and row[0]:
+            return _slugify(str(row[0]))
+    except Exception:  # noqa: BLE001 — nome de arquivo nunca deve quebrar o export
+        pass
+    return system_id
+
+
+def _unknown_note(cat: dict, unknown_tables: set[str]) -> str:
+    """Mensagem honesta quando linhas do CSV não casaram com nenhuma tabela do
+    modelo. Antes o import dizia "Nenhuma mudança detectada" mesmo tendo derrubado
+    o arquivo inteiro por mismatch de schema — o usuário não sabia o que houve."""
+    if not unknown_tables:
+        return ""
+    model_schemas = sorted({e["schema_name"] for e in cat.values()})
+    return (
+        f" · ATENÇÃO: {len(unknown_tables)} tabela(s) do CSV não reconhecida(s) no "
+        f"modelo (schema(s) do modelo: {', '.join(model_schemas) or '—'}). "
+        f"Confira a coluna 'schema' do arquivo."
+    )
+
+
 def export_system_csv(sql, system_id: str) -> str:
     """Exporta todas as colunas do sistema (com contexto de tabela/esquema) como
     CSV re-importável. Uma linha por coluna."""
@@ -210,6 +248,17 @@ def parse_and_stage_csv(sql, actor: str, system_id: str, csv_text: str) -> dict:
     # Acumula por entidade: field_changes + payload de entidade.
     per_entity: dict[str, dict] = {}
     unknown_tables: set[str] = set()
+    # Índice auxiliar por NOME de tabela (case-insensitive) para o FALLBACK DE
+    # SCHEMA. O CSV às vezes traz um schema diferente do modelo — ex.: o cliente
+    # exporta as descrições com schema `dbo` (default do Embarcadero), mas o DDL
+    # importado pôs as tabelas em `social` (via `SET search_path TO social`). Com
+    # o match estrito `schema.table`, TODAS as linhas caíam em unknown_tables e o
+    # import "não carregava nada" (bug do reteste, validado com os arquivos reais
+    # do cliente). Só casamos por nome quando ele é ÚNICO no modelo — nome
+    # ambíguo entre schemas continua desconhecido (não dá pra adivinhar).
+    by_table: dict[str, list[dict]] = {}
+    for _ent in cat.values():
+        by_table.setdefault(_ent["technical_name"].lower(), []).append(_ent)
     # round 6 pt 22: (attribute_id, flag_key) das colunas existentes cuja descrição
     # trazia `| CLASSIFICACAO=…`. Aplicadas DIRETAMENTE ao fim (flags não são staged).
     flag_intents: list[tuple[str, str]] = []
@@ -222,15 +271,33 @@ def parse_and_stage_csv(sql, actor: str, system_id: str, csv_text: str) -> dict:
             continue
         key = f"{schema}.{table}"
         cat_ent = cat.get(key)
-        if not cat_ent:
-            # Tabela não existe no catálogo — round-trip é para AJUSTE de dados
-            # existentes; criar tabela nova fica para o import de DDL. Registra e ignora.
+        if cat_ent is None:
+            # 1) match exato case-insensitive (schema/tabela diferindo só na caixa,
+            #    ex.: DB2 grava `SOCIAL.PESSOA` e o CSV traz `social.pessoa`).
+            cat_ent = next(
+                (e for e in cat.values()
+                 if e["schema_name"].lower() == schema.lower()
+                 and e["technical_name"].lower() == table.lower()),
+                None,
+            )
+        if cat_ent is None:
+            # 2) fallback por NOME de tabela único (schema divergente — ver by_table).
+            cands = by_table.get(table.lower(), [])
+            if len(cands) == 1:
+                cat_ent = cands[0]
+        if cat_ent is None:
+            # Tabela realmente não existe no catálogo — round-trip é para AJUSTE de
+            # dados existentes; criar tabela nova fica para o import de DDL. Ignora.
             unknown_tables.add(key)
             continue
 
-        acc = per_entity.setdefault(key, {
+        # Chaveia por entity_id (não pelo schema.table do CSV): linhas do mesmo
+        # objeto casadas via fallback não se espalham, e o diff usa o schema/nome
+        # REAIS do catálogo — não os do CSV, que podem divergir.
+        acc = per_entity.setdefault(cat_ent["entity_id"], {
             "entity_id": cat_ent["entity_id"],
-            "schema_name": schema, "technical_name": table,
+            "schema_name": cat_ent["schema_name"],
+            "technical_name": cat_ent["technical_name"],
             "entity_type": cat_ent["entity_type"],
             "ent_changes": {}, "attr_changes": [], "attr_adds": [],
         })
@@ -338,7 +405,7 @@ def parse_and_stage_csv(sql, actor: str, system_id: str, csv_text: str) -> dict:
             "ticket_id": None, "entities_changed": 0, "columns_changed": 0,
             "flags_applied": flags_applied,
             "unknown_tables": sorted(unknown_tables),
-            "message": msg,
+            "message": msg + _unknown_note(cat, unknown_tables),
         }
 
     ticket_id, diff = get_or_create_session_ticket(
@@ -354,7 +421,10 @@ def parse_and_stage_csv(sql, actor: str, system_id: str, csv_text: str) -> dict:
         "columns_changed": n_attr,
         "flags_applied": flags_applied,
         "unknown_tables": sorted(unknown_tables),
-        "message": f"{n_ent} tabela(s) e {n_attr} coluna(s) com ajustes — revise e aprove no ticket.{flag_msg}",
+        "message": (
+            f"{n_ent} tabela(s) e {n_attr} coluna(s) com ajustes — revise e aprove "
+            f"no ticket.{flag_msg}" + _unknown_note(cat, unknown_tables)
+        ),
     }
 
 
