@@ -29,6 +29,7 @@ from __future__ import annotations
 import csv
 import io
 import re
+import unicodedata
 from typing import Any
 
 from ..core import delta
@@ -115,6 +116,65 @@ CSV_HEADERS = [
 
 def _b(v: Any) -> str:
     return "" if v is None else str(v)
+
+
+def _slugify(name: str) -> str:
+    """Nome legível → slug seguro para nome de arquivo (a-z0-9 + hífens).
+
+    Translitera acentos antes de filtrar (`Núclea` → `nuclea`, não `n-clea`) para
+    que nomes acentuados não colapsem/colidam no nome do arquivo.
+    """
+    ascii_name = (
+        unicodedata.normalize("NFKD", name or "")
+        .encode("ascii", "ignore")
+        .decode("ascii")
+    )
+    slug = re.sub(r"[^a-zA-Z0-9]+", "-", ascii_name.strip().lower()).strip("-")
+    return slug or "sistema"
+
+
+def system_slug(sql, system_id: str) -> str:
+    """Slug do NOME do sistema, para nomear o arquivo de export (feedback do
+    cliente: o export saía como `roundtrip-<id>.csv`, ilegível). Cai no id se o
+    nome estiver vazio ou a leitura falhar (best-effort — não derruba o export)."""
+    try:
+        s = get_settings()
+        row = delta.fetch_one_params(
+            sql,
+            f"SELECT system_name FROM {s.fq_table('systems')} WHERE system_id = :sid",
+            [delta.param("sid", system_id)],
+        )
+        if row and row[0]:
+            return _slugify(str(row[0]))
+    except Exception:  # noqa: BLE001 — nome de arquivo nunca deve quebrar o export
+        pass
+    return system_id
+
+
+def _unknown_note(cat: dict, unknown_tables: set[str]) -> str:
+    """Mensagem honesta quando linhas do CSV não casaram com nenhuma tabela do
+    modelo. Antes o import dizia "Nenhuma mudança detectada" mesmo tendo derrubado
+    o arquivo inteiro por mismatch de schema — o usuário não sabia o que houve."""
+    if not unknown_tables:
+        return ""
+    model_schemas = sorted({e["schema_name"] for e in cat.values()})
+    return (
+        f" · ATENÇÃO: {len(unknown_tables)} tabela(s) do CSV não reconhecida(s) no "
+        f"modelo (schema(s) do modelo: {', '.join(model_schemas) or '—'}). "
+        f"Confira a coluna 'schema' do arquivo."
+    )
+
+
+def _remap_note(remapped: list[str]) -> str:
+    """Aviso quando linhas foram casadas por NOME de tabela (schema do CSV ignorado).
+    Torna o remapeamento explícito para o aprovador — evita atribuição silenciosa a
+    uma tabela homônima de outro schema."""
+    if not remapped:
+        return ""
+    return (
+        f" · {len(remapped)} tabela(s) casada(s) por NOME (schema do CSV ignorado): "
+        f"{'; '.join(remapped)}. Confira se é o objeto certo."
+    )
 
 
 def export_system_csv(sql, system_id: str) -> str:
@@ -210,6 +270,23 @@ def parse_and_stage_csv(sql, actor: str, system_id: str, csv_text: str) -> dict:
     # Acumula por entidade: field_changes + payload de entidade.
     per_entity: dict[str, dict] = {}
     unknown_tables: set[str] = set()
+    # Índice auxiliar por NOME de tabela (case-insensitive) para o FALLBACK DE
+    # SCHEMA. O CSV às vezes traz um schema diferente do modelo — ex.: o cliente
+    # exporta as descrições com schema `dbo` (default do Embarcadero), mas o DDL
+    # importado pôs as tabelas em `social` (via `SET search_path TO social`). Com
+    # o match estrito `schema.table`, TODAS as linhas caíam em unknown_tables e o
+    # import "não carregava nada" (bug do reteste, validado com os arquivos reais
+    # do cliente). Só casamos por nome quando ele é ÚNICO no modelo — nome
+    # ambíguo entre schemas continua desconhecido (não dá pra adivinhar).
+    by_table: dict[str, list[dict]] = {}
+    by_key_ci: dict[str, dict] = {}  # (schema.table) minúsculo → evita scan O(N) no path 1
+    model_schemas_lc: set[str] = set()
+    for _ent in cat.values():
+        by_table.setdefault(_ent["technical_name"].lower(), []).append(_ent)
+        by_key_ci[f"{_ent['schema_name'].lower()}.{_ent['technical_name'].lower()}"] = _ent
+        model_schemas_lc.add(_ent["schema_name"].lower())
+    # Tabelas casadas por NOME (schema do CSV ignorado) — reportadas na mensagem.
+    remapped: list[str] = []
     # round 6 pt 22: (attribute_id, flag_key) das colunas existentes cuja descrição
     # trazia `| CLASSIFICACAO=…`. Aplicadas DIRETAMENTE ao fim (flags não são staged).
     flag_intents: list[tuple[str, str]] = []
@@ -222,15 +299,34 @@ def parse_and_stage_csv(sql, actor: str, system_id: str, csv_text: str) -> dict:
             continue
         key = f"{schema}.{table}"
         cat_ent = cat.get(key)
-        if not cat_ent:
-            # Tabela não existe no catálogo — round-trip é para AJUSTE de dados
-            # existentes; criar tabela nova fica para o import de DDL. Registra e ignora.
+        if cat_ent is None:
+            # 1) match exato case-insensitive (DB2 grava `SOCIAL.PESSOA`; CSV `social.pessoa`).
+            cat_ent = by_key_ci.get(f"{schema.lower()}.{table.lower()}")
+        if cat_ent is None and schema.lower() not in model_schemas_lc:
+            # 2) fallback por NOME de tabela ÚNICO — SÓ quando o schema do CSV nem
+            #    existe no modelo (ex.: CSV `dbo` × modelo `social`): sinal de
+            #    convenção de schema divergente, não de tabela ausente. Se o schema
+            #    EXISTE no modelo mas a tabela não, é ausência real → desconhecida
+            #    (não remapeia para uma homônima de outro schema — achado do review).
+            cands = by_table.get(table.lower(), [])
+            if len(cands) == 1:
+                cat_ent = cands[0]
+                remapped.append(
+                    f"{key} → {cat_ent['schema_name']}.{cat_ent['technical_name']}"
+                )
+        if cat_ent is None:
+            # Tabela realmente não existe no catálogo — round-trip é para AJUSTE de
+            # dados existentes; criar tabela nova fica para o import de DDL. Ignora.
             unknown_tables.add(key)
             continue
 
-        acc = per_entity.setdefault(key, {
+        # Chaveia por entity_id (não pelo schema.table do CSV): linhas do mesmo
+        # objeto casadas via fallback não se espalham, e o diff usa o schema/nome
+        # REAIS do catálogo — não os do CSV, que podem divergir.
+        acc = per_entity.setdefault(cat_ent["entity_id"], {
             "entity_id": cat_ent["entity_id"],
-            "schema_name": schema, "technical_name": table,
+            "schema_name": cat_ent["schema_name"],
+            "technical_name": cat_ent["technical_name"],
             "entity_type": cat_ent["entity_type"],
             "ent_changes": {}, "attr_changes": [], "attr_adds": [],
         })
@@ -248,6 +344,15 @@ def parse_and_stage_csv(sql, actor: str, system_id: str, csv_text: str) -> dict:
 
         # --- Column-level ---
         cat_a = cat_ent["attrs"].get(column)
+        real_col = column  # nome REAL da coluna no catálogo (p/ o apply mirar certo)
+        if cat_a is None:
+            # case-insensitive: DB2 grava colunas em CAIXA ALTA e o CSV pode vir
+            # minúsculo. Sem isso, a coluna EXISTENTE viraria attribute_add →
+            # DUPLICATA no apply (a tabela já casa CI, a coluna precisa acompanhar).
+            for _k, _v in cat_ent["attrs"].items():
+                if _k.lower() == column.lower():
+                    cat_a, real_col = _v, _k
+                    break
         col_logical = _norm(raw.get("column_logical"))
         data_type = _norm(raw.get("data_type"))
         # round 6 pt 22: destaca o token CLASSIFICACAO → flag; a descrição staged
@@ -282,7 +387,7 @@ def parse_and_stage_csv(sql, actor: str, system_id: str, csv_text: str) -> dict:
             )
             if changed:
                 acc["attr_changes"].append({
-                    "technical_name": column,
+                    "technical_name": real_col,  # nome real do catálogo (não o do CSV)
                     # valores: CSV quando informado, senão mantém o catálogo
                     "logical_name": col_logical if col_logical is not None else cat_a["logical_name"],
                     "native_data_type": data_type if data_type is not None else cat_a["native_data_type"],
@@ -290,6 +395,15 @@ def parse_and_stage_csv(sql, actor: str, system_id: str, csv_text: str) -> dict:
                     "is_nullable": is_null if is_null is not None else bool(cat_a["is_nullable"]),
                     "description_md": col_desc if col_desc is not None else cat_a["description_md"],
                     "ordinal_position": cat_a["ordinal_position"],
+                    # snapshot do catálogo p/ o ticket mostrar "antes → depois" (o
+                    # apply usa só o `after`; este `__before__` é removido antes).
+                    "__before__": {
+                        "logical_name": cat_a["logical_name"],
+                        "native_data_type": cat_a["native_data_type"],
+                        "is_primary_key": bool(cat_a["is_primary_key"]),
+                        "is_nullable": bool(cat_a["is_nullable"]),
+                        "description_md": cat_a["description_md"],
+                    },
                 })
 
     # --- Monta as entries do ticket (formato editorial) ---
@@ -305,8 +419,10 @@ def parse_and_stage_csv(sql, actor: str, system_id: str, csv_text: str) -> dict:
             })
             n_attr += 1
         for a in acc["attr_changes"]:
+            before = a.pop("__before__", None)  # NÃO vai no payload de apply
             field_changes.append({
-                "field": f"attribute:{a['technical_name']}.update", "before": None, "after": a,
+                "field": f"attribute:{a['technical_name']}.update",
+                "before": before, "after": a,
             })
             n_attr += 1
         if not field_changes:
@@ -338,7 +454,7 @@ def parse_and_stage_csv(sql, actor: str, system_id: str, csv_text: str) -> dict:
             "ticket_id": None, "entities_changed": 0, "columns_changed": 0,
             "flags_applied": flags_applied,
             "unknown_tables": sorted(unknown_tables),
-            "message": msg,
+            "message": msg + _unknown_note(cat, unknown_tables) + _remap_note(remapped),
         }
 
     ticket_id, diff = get_or_create_session_ticket(
@@ -354,7 +470,12 @@ def parse_and_stage_csv(sql, actor: str, system_id: str, csv_text: str) -> dict:
         "columns_changed": n_attr,
         "flags_applied": flags_applied,
         "unknown_tables": sorted(unknown_tables),
-        "message": f"{n_ent} tabela(s) e {n_attr} coluna(s) com ajustes — revise e aprove no ticket.{flag_msg}",
+        "message": (
+            f"{n_ent} tabela(s) e {n_attr} coluna(s) com ajustes — revise e aprove "
+            f"no ticket.{flag_msg}"
+            + _unknown_note(cat, unknown_tables)
+            + _remap_note(remapped)
+        ),
     }
 
 

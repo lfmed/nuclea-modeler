@@ -97,3 +97,144 @@ def test_no_changes_returns_no_ticket(patched):
 def test_missing_required_columns_raises(patched):
     with pytest.raises(ValueError):
         roundtrip.parse_and_stage_csv(object(), "t@n", "sys-1", "foo,bar\n1,2\n")
+
+
+# ─── Fallback de SCHEMA (bug do reteste: CSV `dbo` × modelo `social`) ──────────
+# Reproduzido com os arquivos reais do cliente: o DDL punha as tabelas em `social`
+# (SET search_path) e o CSV trazia `dbo` → match estrito derrubava TUDO em
+# unknown_tables ("não carregou nada"). O fix casa por nome de tabela ÚNICO.
+
+def test_schema_mismatch_matches_by_unique_table_name(patched):
+    # catálogo tem public.cliente; CSV traz o MESMO objeto sob schema 'dbo'.
+    csv_text = (
+        "schema,table,column,column_logical,data_type,is_pk,is_nullable,column_description\n"
+        "dbo,cliente,nome,Nome do cliente,VARCHAR(100),false,true,Nome completo\n"
+    )
+    res = roundtrip.parse_and_stage_csv(object(), "t@n", "sys-1", csv_text)
+    assert res["unknown_tables"] == []  # NÃO caiu em desconhecido
+    assert len(patched["entries"]) == 1
+    entry = patched["entries"][0]
+    # o diff usa o schema/nome REAIS do catálogo, não o 'dbo' do CSV
+    assert entry["schema_name"] == "public"
+    assert entry["technical_name"] == "cliente"
+    assert "attribute:nome.update" in _fields(entry)
+
+
+def test_case_insensitive_schema_and_table_match(patched):
+    # DB2 grava SOCIAL.PESSOA (upper); aqui: catálogo public.cliente, CSV em CAIXA ALTA.
+    csv_text = (
+        "schema,table,column,column_logical,data_type,is_pk,is_nullable,column_description\n"
+        "PUBLIC,CLIENTE,nome,Nome,VARCHAR(100),false,true,Desc\n"
+    )
+    res = roundtrip.parse_and_stage_csv(object(), "t@n", "sys-1", csv_text)
+    assert res["unknown_tables"] == []
+    assert len(patched["entries"]) == 1
+    assert patched["entries"][0]["technical_name"] == "cliente"
+
+
+def test_all_unknown_message_warns_about_schema(patched):
+    # nome de tabela que NÃO existe no modelo → continua desconhecido e a mensagem
+    # avisa (antes dizia enganosamente "nenhuma mudança detectada").
+    csv_text = (
+        "schema,table,column,data_type,is_pk,is_nullable\n"
+        "dbo,inexistente,x,INTEGER,false,true\n"
+    )
+    res = roundtrip.parse_and_stage_csv(object(), "t@n", "sys-1", csv_text)
+    assert res["ticket_id"] is None
+    assert res["unknown_tables"] == ["dbo.inexistente"]
+    assert "não reconhecida" in res["message"]
+    assert "public" in res["message"]  # lista o schema real do modelo
+
+
+def test_ambiguous_table_name_stays_unknown(monkeypatch):
+    # Duas tabelas com o MESMO nome em schemas diferentes → não dá pra adivinhar
+    # qual o CSV (schema divergente) quer: fica desconhecido (seguro).
+    catalog = {
+        "social.pessoa": {
+            "entity_id": "ent-a", "schema_name": "social", "technical_name": "pessoa",
+            "logical_name": None, "description_md": None, "domain": None,
+            "criticality": None, "entity_type": "TABLE",
+            "attrs": {"id": {"logical_name": None, "native_data_type": "INT",
+                             "is_primary_key": True, "is_nullable": False,
+                             "description_md": None, "ordinal_position": 1}},
+        },
+        "outro.pessoa": {
+            "entity_id": "ent-b", "schema_name": "outro", "technical_name": "pessoa",
+            "logical_name": None, "description_md": None, "domain": None,
+            "criticality": None, "entity_type": "TABLE",
+            "attrs": {"id": {"logical_name": None, "native_data_type": "INT",
+                             "is_primary_key": True, "is_nullable": False,
+                             "description_md": None, "ordinal_position": 1}},
+        },
+    }
+    monkeypatch.setattr(roundtrip, "_load_catalog", lambda sql, sid: catalog)
+    csv_text = (
+        "schema,table,column,column_logical,data_type,is_pk,is_nullable,column_description\n"
+        "dbo,pessoa,id,ID,INT,true,false,muda desc\n"
+    )
+    res = roundtrip.parse_and_stage_csv(object(), "t@n", "sys-1", csv_text)
+    assert res["unknown_tables"] == ["dbo.pessoa"]  # ambíguo → não casou
+
+
+def test_column_case_insensitive_is_update_not_add(patched):
+    # Coluna EXISTENTE com caixa diferente (CSV 'NOME' × catálogo 'nome') deve virar
+    # UPDATE da coluna real, NUNCA attribute_add (senão o apply cria coluna duplicada).
+    csv_text = (
+        "schema,table,column,column_logical,data_type,is_pk,is_nullable,column_description\n"
+        "public,cliente,NOME,Nome,VARCHAR(100),false,true,Nova descricao\n"
+    )
+    roundtrip.parse_and_stage_csv(object(), "t@n", "sys-1", csv_text)
+    fields = _fields(patched["entries"][0])
+    assert "attribute:nome.update" in fields          # nome real do catálogo
+    assert "attribute_add:NOME" not in fields          # NÃO duplica
+
+
+def test_attr_update_carries_before_snapshot(patched):
+    # O field_change de update carrega o snapshot 'before' (catálogo) p/ o ticket
+    # mostrar "antes → depois" em vez de "catálogo: —".
+    csv_text = (
+        "schema,table,column,column_logical,data_type,is_pk,is_nullable,column_description\n"
+        "public,cliente,nome,Nome,VARCHAR(100),false,true,Nova descricao\n"
+    )
+    roundtrip.parse_and_stage_csv(object(), "t@n", "sys-1", csv_text)
+    fc = next(f for f in patched["entries"][0]["field_changes"]
+              if f["field"] == "attribute:nome.update")
+    assert isinstance(fc["before"], dict)
+    assert fc["before"]["native_data_type"] == "VARCHAR(100)"
+    assert "__before__" not in fc["after"]  # não vaza p/ o payload de apply
+
+
+def test_fallback_narrowed_when_csv_schema_exists_in_model(monkeypatch):
+    # Narrowing (achado do review): o fallback por nome SÓ vale quando o schema do
+    # CSV nem existe no modelo. Aqui 'dbo' EXISTE (dbo.widget) mas não tem 'pessoa'
+    # → NÃO remapeia p/ social.pessoa; fica desconhecida (evita atribuição errada).
+    catalog = {
+        "social.pessoa": {
+            "entity_id": "ent-p", "schema_name": "social", "technical_name": "pessoa",
+            "logical_name": None, "description_md": None, "domain": None,
+            "criticality": None, "entity_type": "TABLE",
+            "attrs": {"id": {"logical_name": None, "native_data_type": "INT",
+                             "is_primary_key": True, "is_nullable": False,
+                             "description_md": None, "ordinal_position": 1}},
+        },
+        "dbo.widget": {
+            "entity_id": "ent-w", "schema_name": "dbo", "technical_name": "widget",
+            "logical_name": None, "description_md": None, "domain": None,
+            "criticality": None, "entity_type": "TABLE", "attrs": {},
+        },
+    }
+    monkeypatch.setattr(roundtrip, "_load_catalog", lambda sql, sid: catalog)
+    csv_text = (
+        "schema,table,column,column_logical,data_type,is_pk,is_nullable,column_description\n"
+        "dbo,pessoa,id,ID,INT,true,false,muda\n"
+    )
+    res = roundtrip.parse_and_stage_csv(object(), "t@n", "sys-1", csv_text)
+    assert res["unknown_tables"] == ["dbo.pessoa"]  # schema dbo existe → não remapeia
+
+
+def test_slugify():
+    assert roundtrip._slugify("Banco Digital — Lakebase Demo") == "banco-digital-lakebase-demo"
+    # transliteração de acentos (achado do review): não colapsa/colide
+    assert roundtrip._slugify("Núclea/Modeler!!") == "nuclea-modeler"
+    assert roundtrip._slugify("") == "sistema"
+    assert roundtrip._slugify(None) == "sistema"  # type: ignore[arg-type]

@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { selectDefaultSystemId, saveLastSystemId } from "@/lib/persist-search";
 import { QueryErrorResetBoundary } from "@tanstack/react-query";
 import { ErrorBoundary } from "react-error-boundary";
 
@@ -94,7 +95,14 @@ function DdlForm() {
   const { data: systems } = useListSystemsSuspense(selector());
   const { data: dialects } = useListDdlDialectsSuspense(selector());
 
-  const [systemId, setSystemId] = useState<string>(systems[0]?.system_id || "");
+  // "Sistema atual" compartilhado (sessionStorage) — antes esta aba caía sempre
+  // no 1º da lista, ignorando o sistema escolhido em outra tela.
+  const [systemId, setSystemId] = useState<string>(
+    selectDefaultSystemId(undefined, systems),
+  );
+  useEffect(() => {
+    if (systemId) saveLastSystemId(systemId);
+  }, [systemId]);
   const [dialect, setDialect] = useState<DDLDialect>("SPARKSQL");
   const [includeComments, setIncludeComments] = useState(true);
   const [qualifySchema, setQualifySchema] = useState(true);

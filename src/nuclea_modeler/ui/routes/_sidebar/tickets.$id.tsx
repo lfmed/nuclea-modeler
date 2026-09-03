@@ -577,6 +577,15 @@ function humanizeField(field: string): { label: string; hint: string } {
       hint: "A definição de PK no catálogo e na base diferem.",
     };
   }
+  // Update de coluna inteira vindo do round-trip CSV/XLSX (attribute:<col>.update).
+  // Sem este caso, o label caía no fallback cru "attribute:nome.update".
+  if (field.startsWith("attribute:") && field.endsWith(".update")) {
+    const col = field.slice("attribute:".length).replace(/\.update$/, "");
+    return {
+      label: `coluna "${col}"`,
+      hint: "Ajuste de metadados da coluna importado do CSV/XLSX (tipo, PK, nullable, descrição).",
+    };
+  }
   // Campos de entity (top-level)
   const map: Record<string, { label: string; hint: string }> = {
     row_count_approx: {
@@ -599,6 +608,19 @@ function humanizeValue(value: unknown, fieldHint?: string): string {
   // row_count_approx = -1 quando o Postgres nunca rodou ANALYZE na tabela.
   if (fieldHint === "row_count_approx" && (value === -1 || value === "-1")) {
     return "sem stats";
+  }
+  // Mudança/adição de COLUNA vinda do import CSV/XLSX vem como PAYLOAD (objeto),
+  // não escalar — antes o String(obj) virava "[object Object]" no ticket. Resume
+  // os campos úteis do atributo (tipo · PK · NOT NULL · "descrição" · lógico).
+  if (typeof value === "object") {
+    const o = value as Record<string, unknown>;
+    const parts: string[] = [];
+    if (o.native_data_type) parts.push(String(o.native_data_type));
+    if (o.is_primary_key === true) parts.push("PK");
+    if (o.is_nullable === false) parts.push("NOT NULL");
+    if (o.description_md) parts.push(`“${String(o.description_md)}”`);
+    if (o.logical_name) parts.push(`(${String(o.logical_name)})`);
+    return parts.length ? parts.join(" · ") : JSON.stringify(o);
   }
   return String(value);
 }

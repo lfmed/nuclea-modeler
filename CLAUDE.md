@@ -186,6 +186,40 @@ documentado para quem mantém depois.** Cumprir em todo PR:
   pós-deploy no 1º uso** — a prova de que o item vale (o Ck do v1.0048 estava verde
   e a prod dropava o DEFAULT). Teste que exercita o round-trip DDL→parse→export:
   `test_import_ddl_desc_check.py::test_default_*`.
+- **Import CSV: match de tabela tolerante a SCHEMA (v1.0055).** O round-trip de
+  metadados (`entities/roundtrip.py::parse_and_stage_csv`) casava as linhas por
+  `schema.table` ESTRITO. O cliente exporta as descrições com schema `dbo` (default
+  do Embarcadero), mas o DDL importado põe as tabelas em `social` (`SET search_path
+  TO social`) → NENHUMA linha casava, tudo virava `unknown_tables` e o import "não
+  carregava nada" (a mensagem ainda dizia enganosamente "Nenhuma mudança detectada").
+  **Reproduzido ao vivo com os arquivos reais** (`ncleamodelerevoluo/programa_social.sql`
+  + `descricoes_databricks_preenchido.csv`, via `scripts/reproduce_csv_import.py`):
+  CSV `dbo` → 10 unknown_tables; mesmo CSV com schema `social` → 10 tabelas/40 colunas/
+  19 flags. Fix: match em 3 níveis — (1) `schema.table` exato; (2) case-insensitive
+  (DB2 grava `SOCIAL.PESSOA`); (3) fallback por NOME de tabela ÚNICO no modelo (nome
+  ambíguo entre schemas fica desconhecido — não dá pra adivinhar). O diff usa o
+  schema/nome REAIS do catálogo e chaveia por `entity_id`. Mensagem honesta quando há
+  `unknown_tables` (`_unknown_note`). Export agora nomeia o arquivo com o NOME do
+  sistema (`system_slug`, transliterando acentos), não o id. **Endurecido no Isaac
+  Review:** (a) o match de COLUNA também é case-insensitive — senão uma coluna
+  existente com caixa diferente viraria `attribute_add` e DUPLICARIA no apply; o
+  update usa o nome REAL da coluna do catálogo; (b) o fallback por nome só dispara
+  quando o schema do CSV NEM existe no modelo (schema presente + tabela ausente = ausência
+  real, não remapeia para homônima de outro schema) e os remaps são reportados na
+  mensagem (`_remap_note`); (c) o field-change de update carrega o snapshot `before`
+  (catálogo) p/ o ticket mostrar "antes → depois". Testes: `test_csv_roundtrip.py`
+  (fallback, case-insensitive de tabela E coluna, narrowing, ambiguidade, before, slug).
+  **LIÇÃO:** teste o mismatch de schema/caixa real, não só o caminho feliz.
+- **Ticket: valor de field-change nunca deve virar `[object Object]` (v1.0055).** A
+  mudança/adição de COLUNA vinda do CSV/XLSX é encenada como PAYLOAD (objeto) no
+  `field_changes.after`; `tickets.$id.tsx::humanizeValue` fazia `String(obj)` →
+  `[object Object]` na tela de aprovação (bug pré-existente, commit 8007060). Fix:
+  `humanizeValue` resume o objeto (tipo · PK · NOT NULL · "descrição" · lógico).
+- **"Sistema atual" nas abas Versões/Sync/DDL (v1.0055).** Essas 3 abas inicializavam
+  `systemId = systems[0]` e ignoravam o `nuclea.lastSystem` (sessionStorage) — o
+  sistema escolhido em outra tela não era herdado. Fix: usam `selectDefaultSystemId`
+  (valida contra a lista) + `saveLastSystemId` num `useEffect`, como as demais telas
+  de modelagem. (O catálogo/schema de DESTINO do Sync seguem no próprio SYNC_PREFS_KEY.)
 
 ## Package Management
 - **Frontend:** Use `apx bun install` or `apx bun add <dependency>` for frontend package management.
