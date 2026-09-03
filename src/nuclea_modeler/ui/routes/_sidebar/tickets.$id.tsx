@@ -577,6 +577,15 @@ function humanizeField(field: string): { label: string; hint: string } {
       hint: "A definição de PK no catálogo e na base diferem.",
     };
   }
+  // Update de coluna inteira vindo do round-trip CSV/XLSX (attribute:<col>.update).
+  // Sem este caso, o label caía no fallback cru "attribute:nome.update".
+  if (field.startsWith("attribute:") && field.endsWith(".update")) {
+    const col = field.slice("attribute:".length).replace(/\.update$/, "");
+    return {
+      label: `coluna "${col}"`,
+      hint: "Ajuste de metadados da coluna importado do CSV/XLSX (tipo, PK, nullable, descrição).",
+    };
+  }
   // Campos de entity (top-level)
   const map: Record<string, { label: string; hint: string }> = {
     row_count_approx: {

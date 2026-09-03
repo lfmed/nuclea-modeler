@@ -200,9 +200,16 @@ documentado para quem mantém depois.** Cumprir em todo PR:
   ambíguo entre schemas fica desconhecido — não dá pra adivinhar). O diff usa o
   schema/nome REAIS do catálogo e chaveia por `entity_id`. Mensagem honesta quando há
   `unknown_tables` (`_unknown_note`). Export agora nomeia o arquivo com o NOME do
-  sistema (`system_slug`), não o id. Testes: `test_csv_roundtrip.py` (fallback,
-  case-insensitive, ambiguidade, mensagem, slug). **LIÇÃO:** teste que exercita o
-  mismatch de schema real, não só o caminho feliz mesmo-schema.
+  sistema (`system_slug`, transliterando acentos), não o id. **Endurecido no Isaac
+  Review:** (a) o match de COLUNA também é case-insensitive — senão uma coluna
+  existente com caixa diferente viraria `attribute_add` e DUPLICARIA no apply; o
+  update usa o nome REAL da coluna do catálogo; (b) o fallback por nome só dispara
+  quando o schema do CSV NEM existe no modelo (schema presente + tabela ausente = ausência
+  real, não remapeia para homônima de outro schema) e os remaps são reportados na
+  mensagem (`_remap_note`); (c) o field-change de update carrega o snapshot `before`
+  (catálogo) p/ o ticket mostrar "antes → depois". Testes: `test_csv_roundtrip.py`
+  (fallback, case-insensitive de tabela E coluna, narrowing, ambiguidade, before, slug).
+  **LIÇÃO:** teste o mismatch de schema/caixa real, não só o caminho feliz.
 - **Ticket: valor de field-change nunca deve virar `[object Object]` (v1.0055).** A
   mudança/adição de COLUNA vinda do CSV/XLSX é encenada como PAYLOAD (objeto) no
   `field_changes.after`; `tickets.$id.tsx::humanizeValue` fazia `String(obj)` →
