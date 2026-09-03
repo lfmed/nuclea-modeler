@@ -106,11 +106,16 @@ documentado para quem mantém depois.** Cumprir em todo PR:
   deixava 12, 300 zerava) — por isso 400 (v1.0052, ajuste do v1.0051). Circular já
   zerava com o raio geométrico. **CAUSA RAIZ da força (v1.0053):** a altura por
   atributo estimada era 24px mas a REAL é ~29-30px (medido via `offsetHeight`,
-  imune ao zoom) → `NODE_HEIGHT_EXPANDED` SUBESTIMAVA 13/34 nós (até 19px) e o
-  resolvedor deixava sobreposição VERTICAL real (~40px) mesmo "convergindo". Fix:
-  `80 + attrs*30` (estimativa ≥ real p/ todos). Lição: a estimativa de tamanho do
-  nó no layout PRECISA bater com/super-estimar o render real, senão o
-  anti-sobreposição opera num espaço menor que a realidade.
+  imune ao zoom) → `NODE_HEIGHT_EXPANDED` SUBESTIMAVA a altura e o resolvedor
+  deixava sobreposição VERTICAL real (~40px) mesmo "convergindo". **FIX DEFINITIVO
+  (v1.0054):** `nodeHeight`/`nodeWidth` agora PREFEREM a dimensão REAL medida pelo
+  React Flow (`node.measured.height/width`), disponível quando o usuário dispara o
+  Auto-layout (nós já na tela), caindo na estimativa (`80 + attrs*30`) só quando não
+  há medida (layout incremental de import). Nenhuma estimativa cobre TODAS as linhas
+  extras que o EntityNode renderiza (índices, descrição — um nó de 5 atributos
+  media como 7 linhas); usar a medida real faz o de-overlap operar no espaço REAL →
+  zero sobreposição garantida. Lição: quando a medição do React Flow existir,
+  USE-a no layout em vez de estimar o tamanho do nó.
 - **Dialeto DDL: vocabulário CANÔNICO único (GOTCHA, v1.0037).** O import de DDL usa
   `sqlglot`; o backend só entende as chaves canônicas `ANSI | POSTGRES | TSQL | PLSQL |
   MYSQL | SPARKSQL | DB2` (ver `extractions/service.py::_resolve_sqlglot_dialect`). Toda
