@@ -465,17 +465,39 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
   }, [filteredEntities, savedPosOf]);
 
   // Colunas que são FK (round 7, item 14) — para o nó do DER marcá-las com "FK".
-  // Convenção do modelo (ver CLAUDE.md): source = PAI (PK em source_attrs),
-  // target = FILHO (FK em target_attrs). Logo as colunas FK são os `target_attrs`
-  // de TODOS os relacionamentos visíveis (inclui os STAGED, que o backend popula a
-  // partir do payload). O nó só consulta pertinência neste Set.
+  //
+  // O que É uma FK: a coluna REFERENCIADORA (lado filho) que aponta para a PK de
+  // outra tabela. A PK referenciada (lado pai) NÃO é FK — ela é só o alvo. (Bug do
+  // 1º corte: marcávamos `target_attrs` cegamente, o que pintava a PK do PAI como
+  // "FK" — ver feedback do cliente.)
+  //
+  // GOTCHA (por que não dá pra confiar em source/target): a orientação NÃO é
+  // consistente no dado. O app (CreateRelationshipDialog/QuickAdd) cria como
+  // source=PAI(PK)/target=FILHO(FK), MAS há dado legado/seed com o INVERSO
+  // (source=FILHO(FK)/target=PAI(PK)). Então decidimos pela PK, não pelo lado:
+  // o lado REFERENCIADO é o conjunto cujas colunas são PK; o lado FK é o OUTRO.
   const fkAttrIds = useMemo(() => {
+    const isPk = new Map<string, boolean>();
+    for (const e of view.entities)
+      for (const a of e.attributes) isPk.set(a.attribute_id, !!a.is_primary_key);
+
     const s = new Set<string>();
     for (const r of view.relationships) {
-      for (const id of r.target_attrs || []) s.add(id);
+      const src = r.source_attrs || [];
+      const tgt = r.target_attrs || [];
+      const srcAllPk = src.length > 0 && src.every((id) => isPk.get(id));
+      const tgtAllPk = tgt.length > 0 && tgt.every((id) => isPk.get(id));
+      // Lado FK = o que NÃO é a PK referenciada. Se exatamente um lado é todo-PK,
+      // o outro é a FK. Caso ambíguo (ambos ou nenhum todo-PK, ex.: relacionamento
+      // identificador), cai na convenção do app (target = filho = FK).
+      let fkSide: string[];
+      if (srcAllPk && !tgtAllPk) fkSide = tgt;
+      else if (tgtAllPk && !srcAllPk) fkSide = src;
+      else fkSide = tgt;
+      for (const id of fkSide) s.add(id);
     }
     return s;
-  }, [view.relationships]);
+  }, [view.entities, view.relationships]);
 
   const baseNodes = useMemo<Node[]>(() => {
     return filteredEntities.map((e) => {
