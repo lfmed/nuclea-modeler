@@ -117,6 +117,7 @@ import { getTypesForTechnology } from "@/components/diagram/types-by-tech";
 import { TypePicker } from "@/components/diagram/type-picker";
 import { AttrDescriptionCell } from "@/components/attributes/description-cell";
 import { AttrDefaultCell } from "@/components/attributes/default-cell";
+import { AttrCheckCell } from "@/components/attributes/check-cell";
 import {
   PkToggle,
   computePkOrdinals,
@@ -463,6 +464,19 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
     return s;
   }, [filteredEntities, savedPosOf]);
 
+  // Colunas que são FK (round 7, item 14) — para o nó do DER marcá-las com "FK".
+  // Convenção do modelo (ver CLAUDE.md): source = PAI (PK em source_attrs),
+  // target = FILHO (FK em target_attrs). Logo as colunas FK são os `target_attrs`
+  // de TODOS os relacionamentos visíveis (inclui os STAGED, que o backend popula a
+  // partir do payload). O nó só consulta pertinência neste Set.
+  const fkAttrIds = useMemo(() => {
+    const s = new Set<string>();
+    for (const r of view.relationships) {
+      for (const id of r.target_attrs || []) s.add(id);
+    }
+    return s;
+  }, [view.relationships]);
+
   const baseNodes = useMemo<Node[]>(() => {
     return filteredEntities.map((e) => {
       const saved = savedPosOf(e.entity_id);
@@ -473,11 +487,11 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
         // reposicionados pelo layout incremental. Quem decide se um nó é "novo"
         // é positionedIds, não a coordenada (evita o bug do sentinel (0,0)).
         position: saved ?? { x: 0, y: 0 },
-        data: { entity: e, expanded } as any,
+        data: { entity: e, expanded, fkAttrIds } as any,
         draggable: true,
       };
     });
-  }, [filteredEntities, savedPosOf, expanded]);
+  }, [filteredEntities, savedPosOf, expanded, fkAttrIds]);
 
   const baseEdges = useMemo<Edge[]>(() => {
     // As arestas seguem SEMPRE o mesmo conjunto visível dos nós (visibleIds), então
@@ -2011,16 +2025,31 @@ function ValidationDialog({
 /**
  * Nome da coluna FK transportada do pai para a filha (round 5, pt 11).
  *
- * Mantém o nome original da PK do pai; em COLISÃO com uma coluna já existente na
- * filha (ex.: a filha também tem "id"), vira `<nome>_<sufixo>` (rolename), onde o
- * sufixo é editável (default = nome da tabela-pai). Ex.: pai X com PK "id" → "id_x".
- * Garante unicidade incluindo as colunas já criadas neste mesmo lote (`taken`).
- * Comparação case-insensitive para não gerar "ID" e "id" na mesma tabela.
+ * Regra de qualificação (rolename `<nome>_<sufixo>`, sufixo editável = nome do pai):
+ * - `alwaysQualify` (round 7, item 9): quando NÃO há de-para explícito (o usuário não
+ *   marcou colunas de origem → transporta a PK do pai), o nome já nasce QUALIFICADO
+ *   com a tabela de origem (ex.: pai "pessoa" com PK "id" → "id_pessoa"). Assim a FK
+ *   na filha é rastreável à origem sem depender de colisão — pedido do cliente.
+ * - Sem `alwaysQualify` (de-para explícito): mantém o nome original e só qualifica em
+ *   COLISÃO com uma coluna já existente na filha (ex.: a filha também tem "id").
+ * Em qualquer caso garante unicidade incluindo as colunas já criadas neste mesmo lote
+ * (`taken`). Comparação case-insensitive para não gerar "ID" e "id" na mesma tabela.
  */
-function transportedFkName(baseName: string, suffix: string, taken: Set<string>): string {
+function transportedFkName(
+  baseName: string,
+  suffix: string,
+  taken: Set<string>,
+  alwaysQualify = false,
+): string {
   const lower = (s: string) => s.toLowerCase();
   const takenLower = new Set([...taken].map(lower));
-  let name = takenLower.has(lower(baseName)) ? `${baseName}_${suffix}` : baseName;
+  // Não requalifica quando o nome JÁ carrega a origem (evita "pessoa_id_pessoa" para
+  // PKs já prefixadas — achado do Isaac Review). A colisão ainda força o sufixo.
+  const alreadyQualified = lower(baseName).includes(lower(suffix));
+  let name =
+    (alwaysQualify && !alreadyQualified) || takenLower.has(lower(baseName))
+      ? `${baseName}_${suffix}`
+      : baseName;
   let candidate = name;
   let n = 2;
   while (takenLower.has(lower(candidate))) {
@@ -2060,9 +2089,17 @@ function CreateRelationshipDialog({
 
   // ── Transporte de chaves com rolename (round 5, pt 11) ──────────────────────
   // Quando ligado, as colunas da PK do pai (ou as selecionadas em "origem") são
-  // CRIADAS na filha como colunas FK; em colisão de nome, aplica o rolename
-  // (id → id_<sufixo>). O sufixo default é o nome da tabela-pai, editável.
-  const [transport, setTransport] = useState(false);
+  // CRIADAS na filha como colunas FK; o nome aplica o rolename (id → id_<sufixo>).
+  // O sufixo default é o nome da tabela-pai, editável.
+  //
+  // DEFAULT LIGADO (round 7, item 9): o fluxo por cursor (clicar pai→filha) DEVE
+  // "criar o relacionamento E transportar as chaves". Antes o checkbox nascia
+  // DESMARCADO, então a linha aparecia mas NENHUMA coluna FK era criada na filha —
+  // exatamente a queixa "a FK não reflete na tabela-filha". Com default ligado o
+  // transporte acontece por padrão; quem quiser só MAPEAR colunas já existentes
+  // (de-para) desmarca. A criação da coluna é STAGED no ticket (aparece na filha
+  // com o badge "adicionar" após onCreated invalidar a view do DER).
+  const [transport, setTransport] = useState(true);
   const [rolenameSuffix, setRolenameSuffix] = useState("");
   const effectiveSuffix = rolenameSuffix.trim() || (srcEnt?.technical_name ?? "ref");
 
@@ -2071,11 +2108,14 @@ function CreateRelationshipDialog({
     ? (srcEnt?.attributes || []).filter((a) => sourceAttrIds.includes(a.attribute_id))
     : (srcEnt?.attributes || []).filter((a) => a.is_primary_key));
 
-  // Preview do que será criado na filha (from → to), com rolename em colisão.
+  // Preview do que será criado na filha (from → to), com o rolename aplicado.
+  // Sem de-para explícito (nenhuma coluna de origem marcada → transporta a PK do
+  // pai), o nome nasce SEMPRE qualificado com a tabela de origem (item 9): id → id_<pai>.
   const transportPreview = useMemo(() => {
     const taken = new Set((tgtEnt?.attributes || []).map((a) => a.technical_name));
+    const alwaysQualify = sourceAttrIds.length === 0;
     return parentColsForTransport.map((pc) => {
-      const to = transportedFkName(pc.technical_name, effectiveSuffix, taken);
+      const to = transportedFkName(pc.technical_name, effectiveSuffix, taken, alwaysQualify);
       taken.add(to);
       return { from: pc.technical_name, to, type: pc.native_data_type || null, id: pc.attribute_id };
     });
@@ -2281,8 +2321,18 @@ function CreateRelationshipDialog({
               <div className="space-y-2 text-xs">
                 <p className="text-muted-foreground">
                   As colunas de "origem" (ou a PK do pai, se nenhuma) são criadas na
-                  filha. Em colisão de nome, aplica-se o rolename{" "}
-                  <code>nome_{effectiveSuffix}</code>.
+                  filha.{" "}
+                  {sourceAttrIds.length === 0 ? (
+                    <>
+                      Sem de-para explícito, a coluna nasce qualificada com a origem:{" "}
+                      <code>nome_{effectiveSuffix}</code>.
+                    </>
+                  ) : (
+                    <>
+                      Em colisão de nome, aplica-se o rolename{" "}
+                      <code>nome_{effectiveSuffix}</code>.
+                    </>
+                  )}
                 </p>
                 <div className="flex items-center gap-2">
                   <label className="whitespace-nowrap">Sufixo (rolename):</label>
@@ -2730,6 +2780,7 @@ function AttributesEditor({
         // limparia). Ver a mesma nota em entities.$id.tsx.
         description_md: description,
         business_rule: a.business_rule ?? null,
+        check_constraint: a.check_constraint ?? null, // preserva CHECK (item 21)
       },
     });
     toast.success(`Descrição de "${a.technical_name}" staged (pendente)`);
@@ -2753,9 +2804,36 @@ function AttributesEditor({
         is_primary_key: a.is_primary_key,
         description_md: a.description_md ?? null,
         business_rule: a.business_rule ?? null,
+        check_constraint: a.check_constraint ?? null, // preserva CHECK (item 21)
       },
     });
     toast.success(`Valor padrão de "${a.technical_name}" staged (pendente)`);
+  };
+
+  // Stage da CHECK constraint de UMA coluna no DER (round 7, item 21). Mesma
+  // disciplina do saveAttrDefault: reenvia o payload COMPLETO (merge "última
+  // intenção vence" por field-key). Texto CRU: "" limpa (o apply filtra None,
+  // então null nunca limparia — "" passa no filtro e zera). Guarda só a expressão
+  // (sem parênteses) — o export DDL envelopa em `CHECK (...)`.
+  const saveAttrCheck = (a: AttributeOut, checkExpr: string) => {
+    updateAttr.mutate({
+      entityId,
+      attributeId: a.attribute_id,
+      data: {
+        entity_id: entityId,
+        technical_name: a.technical_name,
+        logical_name: a.logical_name ?? null,
+        native_data_type: a.native_data_type || null,
+        ordinal_position: a.ordinal_position ?? null,
+        is_nullable: a.is_nullable,
+        default_value: a.default_value ?? null,
+        is_primary_key: a.is_primary_key,
+        description_md: a.description_md ?? null,
+        business_rule: a.business_rule ?? null,
+        check_constraint: checkExpr,
+      },
+    });
+    toast.success(`CHECK de "${a.technical_name}" staged (pendente)`);
   };
 
   return (
@@ -2792,6 +2870,7 @@ function AttributesEditor({
               <th className="py-1 pr-2 font-medium">Nome</th>
               <th className="py-1 pr-2 font-medium">Tipo</th>
               <th className="py-1 pr-2 font-medium">Padrão</th>
+              <th className="py-1 pr-2 font-medium" title="CHECK constraint — exportada no DDL como CHECK (...)">CHECK</th>
               <th className="py-1 pr-2 font-medium w-20">PK</th>
               <th className="py-1 pr-2 font-medium">Flags</th>
               <th className="py-1 pr-2 font-medium">Descrição</th>
@@ -2812,6 +2891,14 @@ function AttributesEditor({
                     <AttrDefaultCell
                       value={a.default_value}
                       onSave={(v) => saveAttrDefault(a, v)}
+                    />
+                  </td>
+                  <td className="py-1 pr-2 text-muted-foreground max-w-[200px]">
+                    {/* CHECK editável inline (round 7, item 21): descoberto e
+                        testável em colunas EXISTENTES (importadas). */}
+                    <AttrCheckCell
+                      value={a.check_constraint}
+                      onSave={(v) => saveAttrCheck(a, v)}
                     />
                   </td>
                   <td className="py-1 pr-2">
@@ -2840,6 +2927,7 @@ function AttributesEditor({
                             // de descrição feita antes no mesmo ticket.
                             description_md: a.description_md ?? null,
                             business_rule: a.business_rule ?? null,
+                            check_constraint: a.check_constraint ?? null, // item 21
                           },
                         });
                         toast.success(

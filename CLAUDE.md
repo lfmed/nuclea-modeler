@@ -220,6 +220,36 @@ documentado para quem mantém depois.** Cumprir em todo PR:
   sistema escolhido em outra tela não era herdado. Fix: usam `selectDefaultSystemId`
   (valida contra a lista) + `saveLastSystemId` num `useEffect`, como as demais telas
   de modelagem. (O catálogo/schema de DESTINO do Sync seguem no próprio SYNC_PREFS_KEY.)
+- **RODADA 7 — feedback do cliente sobre o DER/CHECK (v1.0056).** Ajustes na
+  revalidação da rodada DER + CHECK:
+  - **Item 9 (FK por cursor transporta chaves por DEFAULT).** O `CreateRelationshipDialog`
+    (`diagram.tsx`) nascia com `transport = false` → clicar pai→filha desenhava a linha
+    mas NÃO criava a coluna FK na filha ("a FK não reflete na filha"). Agora `transport`
+    nasce **ligado**: o fluxo por cursor cria o relacionamento E transporta as chaves
+    (coluna STAGED na filha, badge "adicionar"). Quem quer só MAPEAR colunas existentes
+    (de-para) desmarca. Além disso, `transportedFkName` ganhou `alwaysQualify`: **sem
+    de-para explícito** (transporta a PK do pai) a coluna já nasce **qualificada com a
+    origem** (`id → id_<pai>`), não só em colisão — pedido do cliente.
+  - **Item 14 (marcar FK no DER).** O nó do DER (`entity-node.tsx`) não tinha indicador
+    de FK. Agora `DiagramCanvas` calcula `fkAttrIds = Set(relationships.target_attrs)`
+    (convenção: target = filho = lado FK; inclui staged) e injeta no `data` do nó; o
+    `EntityNode` renderiza o marcador **"FK"** por coluna + um contador `N fk` no
+    cabeçalho (visível mesmo recolhido). É SÓ leitura visual — não altera dados.
+  - **Item 21 (CHECK editável em coluna EXISTENTE + descoberta).** O CHECK só podia ser
+    preenchido no form de "novo atributo" → o cliente "não localizou" para colunas
+    importadas. Nova célula inline `AttrCheckCell` (`components/attributes/check-cell.tsx`,
+    irmã da `AttrDefaultCell`) na tabela de atributos dos DOIS lugares (`entities.$id.tsx`
+    e o `AttributesEditor` do `diagram.tsx`) → preencher/editar CHECK em qualquer coluna →
+    exportar DDL sai `CHECK (...)`. **GOTCHA de staging:** TODO payload de update de
+    atributo agora carrega `check_constraint: a.check_constraint ?? null` (saveAttrDesc,
+    saveAttrDefault, toggle de PK, reorder de PK) pela disciplina "payload completo /
+    última intenção vence por field-key" — omitir arriscava dropar o CHECK staged no mesmo
+    ticket (mesma razão de description_md/default_value serem sempre reenviados). Backend
+    já persistia/exportava CHECK desde o round 6 pt 21 (`entities/router`, `tickets/service`,
+    `ddl/generators`) — a rodada 7 foi só UI/descoberta.
+  - **Item 13 (distribuição das linhas do DER): NÃO mexido** por decisão (risco de
+    regressão nas arestas > valor do polimento). A lógica de handles/`edgesToRender`
+    (v1.0027/v1.0051) segue intocada.
 
 ## Package Management
 - **Frontend:** Use `apx bun install` or `apx bun add <dependency>` for frontend package management.
