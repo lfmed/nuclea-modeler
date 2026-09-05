@@ -42,6 +42,7 @@ import {
 } from "@/components/attributes/pk-controls";
 import { AttrDescriptionCell } from "@/components/attributes/description-cell";
 import { AttrDefaultCell } from "@/components/attributes/default-cell";
+import { AttrCheckCell } from "@/components/attributes/check-cell";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -636,6 +637,7 @@ function AttributesSection({
         // intenção vence" por field-key; omitir apagaria uma edição anterior).
         description_md: a.description_md ?? null,
         business_rule: a.business_rule ?? null,
+        check_constraint: a.check_constraint ?? null, // preserva CHECK (item 21)
       },
     });
     toast.success(
@@ -668,6 +670,7 @@ function AttributesSection({
             is_primary_key: a.is_primary_key,
             description_md: a.description_md ?? null,
             business_rule: a.business_rule ?? null,
+            check_constraint: a.check_constraint ?? null, // preserva CHECK (item 21)
           },
         });
       }
@@ -698,6 +701,7 @@ function AttributesSection({
         // no filtro e zera o texto — assim "apagar a descrição" funciona.
         description_md: description,
         business_rule: a.business_rule ?? null,
+        check_constraint: a.check_constraint ?? null, // preserva CHECK (item 21)
       },
     });
     toast.success(`Descrição de "${a.technical_name}" staged (pendente)`);
@@ -723,9 +727,36 @@ function AttributesSection({
         is_primary_key: a.is_primary_key,
         description_md: a.description_md ?? null,
         business_rule: a.business_rule ?? null,
+        check_constraint: a.check_constraint ?? null, // preserva CHECK (item 21)
       },
     });
     toast.success(`Valor padrão de "${a.technical_name}" staged (pendente)`);
+  };
+
+  // Stage da CHECK constraint de UMA coluna (round 7, item 21). Mesma disciplina do
+  // saveAttrDefault: reenvia o payload COMPLETO (merge "última intenção vence" por
+  // field-key). Texto CRU: "" limpa (o apply filtra None, então null nunca limparia
+  // — "" passa no filtro e zera). Guarda só a expressão; o export DDL envelopa em
+  // `CHECK (...)`.
+  const saveAttrCheck = (a: AttributeOut, checkExpr: string) => {
+    updateAttr({
+      entityId,
+      attributeId: a.attribute_id,
+      data: {
+        entity_id: entityId,
+        technical_name: a.technical_name,
+        logical_name: a.logical_name ?? null,
+        native_data_type: a.native_data_type ?? null,
+        ordinal_position: a.ordinal_position ?? null,
+        is_nullable: a.is_nullable,
+        default_value: a.default_value ?? null,
+        is_primary_key: a.is_primary_key,
+        description_md: a.description_md ?? null,
+        business_rule: a.business_rule ?? null,
+        check_constraint: checkExpr,
+      },
+    });
+    toast.success(`CHECK de "${a.technical_name}" staged (pendente)`);
   };
 
   return (
@@ -834,6 +865,7 @@ function AttributesSection({
                   <th className="py-2 pr-3 font-medium">Nome lógico</th>
                   <th className="py-2 pr-3 font-medium">Tipo</th>
                   <th className="py-2 pr-3 font-medium">Padrão</th>
+                  <th className="py-2 pr-3 font-medium" title="CHECK constraint — exportada no DDL como CHECK (...)">CHECK</th>
                   <th className="py-2 pr-3 font-medium">Nullable</th>
                   <th className="py-2 pr-3 font-medium">Flags</th>
                   <th className="py-2 pr-3 font-medium">Descrição</th>
@@ -895,6 +927,14 @@ function AttributesSection({
                         <AttrDefaultCell
                           value={a.default_value}
                           onSave={(v) => saveAttrDefault(a, v)}
+                        />
+                      </td>
+                      <td className="py-2 pr-3 text-muted-foreground">
+                        {/* CHECK editável inline (round 7, item 21) — descoberto e
+                            testável em colunas EXISTENTES (importadas). */}
+                        <AttrCheckCell
+                          value={a.check_constraint}
+                          onSave={(v) => saveAttrCheck(a, v)}
                         />
                       </td>
                       <td className="py-2 pr-3 text-xs">{a.is_nullable === false ? "NOT NULL" : "NULL"}</td>

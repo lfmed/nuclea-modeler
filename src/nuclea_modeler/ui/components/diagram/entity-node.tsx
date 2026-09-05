@@ -14,6 +14,12 @@ interface EntityNodeData {
   entity: DiagramEntity;
   expanded: boolean;
   highlight?: boolean;
+  /**
+   * IDs das colunas que são FK (round 7, item 14). Calculado no diagram.tsx a
+   * partir dos `target_attrs` de todos os relacionamentos (convenção: target =
+   * filho = lado FK). O nó só consulta pertinência para marcar a coluna com "FK".
+   */
+  fkAttrIds?: Set<string>;
 }
 
 interface EntityNodeProps {
@@ -48,13 +54,17 @@ const pendingLabel = (op?: string | null) => {
 };
 
 export const EntityNode = memo(({ data, selected }: EntityNodeProps) => {
-  const { entity, expanded, highlight } = data;
+  const { entity, expanded, highlight, fkAttrIds } = data;
   const showAttributes = expanded;
   const pendingOp = entity.pending_op ?? null;
   const hasPending = !!pendingOp;
   const isRemove = pendingOp === "remove";
   // PK composta numerada (PK1, PK2…) na ordem de definição — legível de relance.
   const pkOrdinals = computePkOrdinals(entity.attributes);
+  // Colunas FK desta entidade (round 7, item 14). O contador aparece no cabeçalho
+  // (visível mesmo com a tabela recolhida) e o marcador "FK" em cada coluna.
+  const isFk = (attributeId: string) => !!fkAttrIds?.has(attributeId);
+  const fkCount = entity.attributes.filter((a) => isFk(a.attribute_id)).length;
 
   return (
     <div
@@ -144,6 +154,14 @@ export const EntityNode = memo(({ data, selected }: EntityNodeProps) => {
               title={`${entity.indexes_count} índice(s) catalogado(s)`}
             >
               {entity.indexes_count} idx
+            </span>
+          )}
+          {fkCount > 0 && (
+            <span
+              className="text-[10px] rounded px-1.5 py-0.5 border bg-nuclea-primary/10 border-nuclea-primary/30 text-nuclea-primary font-mono"
+              title={`${fkCount} coluna(s) FK (chave estrangeira)`}
+            >
+              {fkCount} fk
             </span>
           )}
           {entity.partition_strategy && entity.partition_strategy !== "NONE" && (
@@ -242,6 +260,16 @@ export const EntityNode = memo(({ data, selected }: EntityNodeProps) => {
                     className="h-3 w-3 text-nuclea-primary shrink-0"
                     aria-label="LGPD"
                   />
+                )}
+                {isFk(attr.attribute_id) && (
+                  // Marcador "FK" (round 7, item 14): identifica a coluna como
+                  // chave estrangeira no DER. Cor da paleta do relacionamento.
+                  <span
+                    className="text-[9px] font-semibold rounded px-1 py-0.5 border bg-nuclea-primary/10 text-nuclea-primary border-nuclea-primary/30 shrink-0 leading-none"
+                    title="Chave estrangeira (FK)"
+                  >
+                    FK
+                  </span>
                 )}
                 {attr.native_data_type && (
                   <span className="text-[10px] text-muted-foreground font-mono shrink-0">
