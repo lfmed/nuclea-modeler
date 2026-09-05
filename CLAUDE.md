@@ -231,10 +231,17 @@ documentado para quem mantém depois.** Cumprir em todo PR:
     de-para explícito** (transporta a PK do pai) a coluna já nasce **qualificada com a
     origem** (`id → id_<pai>`), não só em colisão — pedido do cliente.
   - **Item 14 (marcar FK no DER).** O nó do DER (`entity-node.tsx`) não tinha indicador
-    de FK. Agora `DiagramCanvas` calcula `fkAttrIds = Set(relationships.target_attrs)`
-    (convenção: target = filho = lado FK; inclui staged) e injeta no `data` do nó; o
-    `EntityNode` renderiza o marcador **"FK"** por coluna + um contador `N fk` no
-    cabeçalho (visível mesmo recolhido). É SÓ leitura visual — não altera dados.
+    de FK. `DiagramCanvas` calcula `fkAttrIds` e injeta no `data` do nó; o `EntityNode`
+    renderiza o marcador **"FK"** por coluna + contador `N fk` no cabeçalho. É SÓ leitura
+    visual. **GOTCHA (v1.0057, corrigido no 1º reteste):** NÃO dá pra keyar em
+    `target_attrs` — a orientação source/target dos relacionamentos NÃO é consistente:
+    o app cria `source=PAI(PK)/target=FILHO(FK)`, mas há dado seed/legado com o INVERSO
+    (`source=FILHO(FK)/target=PAI(PK)`). Keyar em target_attrs pintava a **PK do PAI**
+    como "FK" (o cliente pegou na hora). Fix: o lado FK é o que **NÃO é PK** (o
+    referenciador); o lado referenciado é o conjunto todo-PK. Decidir pela PK
+    (`is_primary_key`), não pelo rótulo source/target. **Correlato a investigar:** a
+    emissão de FK no export DDL (v1.0040) assume `source=PAI` — com dado invertido, o
+    `ALTER TABLE … FOREIGN KEY` pode sair trocado; validar quando o cliente exercitar.
   - **Item 21 (CHECK editável em coluna EXISTENTE + descoberta).** O CHECK só podia ser
     preenchido no form de "novo atributo" → o cliente "não localizou" para colunas
     importadas. Nova célula inline `AttrCheckCell` (`components/attributes/check-cell.tsx`,
