@@ -7,7 +7,9 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
-FlagCategory = Literal["LGPD", "USE", "QUALITY", "CUSTOM"]
+# OFP = Operações Fora do Padrão (rodada 8, item 7). Categoria de sistema, como
+# LGPD/USE/QUALITY; CUSTOM segue por último (flags criadas por arquiteto/admin).
+FlagCategory = Literal["LGPD", "USE", "QUALITY", "OFP", "CUSTOM"]
 
 
 # -------------------- Flag catalog --------------------

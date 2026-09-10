@@ -65,6 +65,7 @@ export const Route = createFileRoute("/_sidebar/entities/")({
     entityType?: string;
     criticality?: string;
     flagId?: string;
+    partitioned?: boolean;
     sortBy?: string;
     sortDir?: "asc" | "desc";
     page?: number;
@@ -74,6 +75,7 @@ export const Route = createFileRoute("/_sidebar/entities/")({
     entityType: (search.entityType as string) || undefined,
     criticality: (search.criticality as string) || undefined,
     flagId: (search.flagId as string) || undefined,
+    partitioned: search.partitioned === true || search.partitioned === "true" ? true : undefined,
     sortBy: (search.sortBy as string) || undefined,
     sortDir: (search.sortDir as string as "asc" | "desc") || undefined,
     page: coerceNumber(search.page as string) || undefined,
@@ -111,6 +113,7 @@ function EntitiesPage() {
   const [entityType, setEntityType] = useState(search.entityType || "");
   const [criticality, setCriticality] = useState(search.criticality || "");
   const [flagId, setFlagId] = useState(search.flagId || "");
+  const [partitioned, setPartitioned] = useState<boolean>(!!search.partitioned);
   const [sortBy, setSortBy] = useState(search.sortBy || "updated_at");
   const [sortDir, setSortDir] = useState<"asc" | "desc">(search.sortDir || "desc");
   const [page, setPage] = useState(search.page || 1);
@@ -128,12 +131,13 @@ function EntitiesPage() {
         entityType: entityType || undefined,
         criticality: criticality || undefined,
         flagId: flagId || undefined,
+        partitioned: partitioned || undefined,
         sortBy: sortBy !== "updated_at" ? sortBy : undefined,
         sortDir: sortDir !== "desc" ? sortDir : undefined,
         page: page !== 1 ? page : undefined,
       },
     });
-  }, [q, systemId, entityType, criticality, flagId, sortBy, sortDir, page, navigate]);
+  }, [q, systemId, entityType, criticality, flagId, partitioned, sortBy, sortDir, page, navigate]);
 
   const onSort = (col: string) => {
     if (sortBy === col) {
@@ -158,12 +162,13 @@ function EntitiesPage() {
       entityType: (entityType || undefined) as EntitiesPageParams["entityType"],
       criticality: (criticality || undefined) as EntitiesPageParams["criticality"],
       flagId: flagId || undefined,
+      partitioned: partitioned || undefined,
       sortBy,
       sortDir,
       page,
       pageSize: PAGE_SIZE,
     }),
-    [q, systemId, entityType, criticality, flagId, sortBy, sortDir, page],
+    [q, systemId, entityType, criticality, flagId, partitioned, sortBy, sortDir, page],
   );
 
   return (
@@ -183,6 +188,8 @@ function EntitiesPage() {
             setCriticality={withReset(setCriticality)}
             flagId={flagId}
             setFlagId={withReset(setFlagId)}
+            partitioned={partitioned}
+            setPartitioned={withReset(setPartitioned)}
           />
         </CardHeader>
         <CardContent>
@@ -256,6 +263,8 @@ function Filters(props: {
   setCriticality: (v: string) => void;
   flagId: string;
   setFlagId: (v: string) => void;
+  partitioned: boolean;
+  setPartitioned: (v: boolean) => void;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -280,6 +289,14 @@ function Filters(props: {
       <Suspense fallback={<Skeleton className="h-9 w-40" />}>
         <FlagFilter value={props.flagId} onChange={props.setFlagId} />
       </Suspense>
+      {/* Particionamento (rodada 8, item 2): modelamos o booleano como select "" / "1". */}
+      <FilterSelect
+        value={props.partitioned ? "1" : ""}
+        onChange={(v) => props.setPartitioned(v === "1")}
+        options={[{ value: "1", label: "Só particionadas" }]}
+        placeholder="Particionamento"
+        ariaLabel="Filtrar por particionamento"
+      />
     </div>
   );
 }
@@ -516,6 +533,17 @@ function EntitiesTable({
                   >
                     {e.technical_name}
                   </Link>
+                  {/* Marcador de particionamento (rodada 8, item 2): identifica a
+                      tabela particionada + a estratégia (regra). Derivado de
+                      entity_partitioning; some quando não há particionamento. */}
+                  {e.partition_strategy && (
+                    <span
+                      className="ml-2 inline-flex items-center rounded border border-orange-500/30 bg-orange-500/10 px-1.5 py-0.5 align-middle text-[10px] font-medium text-orange-700 dark:text-orange-300"
+                      title={`Tabela particionada · estratégia ${e.partition_strategy}`}
+                    >
+                      Particionada · {e.partition_strategy}
+                    </span>
+                  )}
                   {/* round 6 (follow-up): descrição de negócio (ex.: importada de
                       COMMENT ON TABLE) agora aparece na lista, truncada, tooltip com o texto. */}
                   {(e.description_md || e.native_comment) && (

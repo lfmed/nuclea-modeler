@@ -21,6 +21,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import {
   AlertCircle,
+  AlertTriangle,
   Plus,
   RefreshCw,
   ShieldCheck,
@@ -55,6 +56,11 @@ const CATEGORY_META: Record<
     description: "Indicadores de validação, criticidade e inconsistências conhecidas.",
     icon: <CheckCircle2 className="h-4 w-4 text-emerald-600" />,
   },
+  OFP: {
+    title: "Operações Fora do Padrão",
+    description: "Sinaliza cargas/operações fora do fluxo ou da janela padrão (manual, sem aprovação, reprocessamento, emergencial).",
+    icon: <AlertTriangle className="h-4 w-4 text-orange-600" />,
+  },
   CUSTOM: {
     title: "Personalizadas",
     description: "Flags criadas por arquitetos/admins para necessidades específicas.",
@@ -62,7 +68,7 @@ const CATEGORY_META: Record<
   },
 };
 
-const CATEGORY_ORDER: FlagCategory[] = ["LGPD", "USE", "QUALITY", "CUSTOM"];
+const CATEGORY_ORDER: FlagCategory[] = ["LGPD", "USE", "QUALITY", "OFP", "CUSTOM"];
 
 function FlagsPage() {
   return (
@@ -175,6 +181,7 @@ function CatalogTab() {
       LGPD: [],
       USE: [],
       QUALITY: [],
+      OFP: [],
       CUSTOM: [],
     };
     for (const f of flags) g[f.category]?.push(f);
