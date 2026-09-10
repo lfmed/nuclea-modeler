@@ -50,6 +50,7 @@ from .core.metrics import MetricsMiddleware
 from .core.security import RateLimitMiddleware, SecurityHeadersMiddleware
 from .search.router import router as search_router
 from .attachments.router import router as attachments_router
+from .compliance.router import router as compliance_router
 
 # Install logging FIRST so every other module's logger inherits the config.
 configure_logging()
@@ -93,6 +94,7 @@ app = create_app(
         admin_router,
         dashboard_router,
         attachments_router,
+        compliance_router,
     ]
 )
 

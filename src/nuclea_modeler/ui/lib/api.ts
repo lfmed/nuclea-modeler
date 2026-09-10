@@ -3777,3 +3777,121 @@ export const useSaveDiagramLayout = (
       (await api.put<DiagramDetailOut>(`/diagrams/${encodeURIComponent(diagramId)}/layout`, data)).data,
     ...opts?.mutation,
   });
+
+// ─── Calendário de conformidade (rodada 8, item 3) ───────────────────────────
+
+export type Recurrence = "MONTHLY" | "QUARTERLY" | "SEMIANNUAL" | "ANNUAL";
+
+export interface ComplianceScheduleOut {
+  calendar_id: string;
+  system_id: string;
+  system_name?: string | null;
+  recurrence: Recurrence;
+  next_due_date: string; // ISO YYYY-MM-DD
+  last_executed_at?: string | null;
+  last_executed_by?: string | null;
+  notes?: string | null;
+  is_due: boolean;
+  days_until?: number | null; // negativo = vencida
+  created_at: string;
+  created_by: string;
+  updated_at: string;
+  updated_by: string;
+}
+
+export interface ComplianceScheduleIn {
+  system_id: string;
+  recurrence: Recurrence;
+  next_due_date: string;
+  notes?: string | null;
+}
+
+export interface ComplianceImportRow {
+  ok: boolean;
+  system: string;
+  recurrence?: string | null;
+  next_due_date?: string | null;
+  error?: string | null;
+}
+
+export interface ComplianceImportResult {
+  total: number;
+  imported: number;
+  updated: number;
+  failed: number;
+  rows: ComplianceImportRow[];
+}
+
+export const useListComplianceSchedulesSuspense = (
+  params: { systemId?: string } = {},
+  s?: Selector<ComplianceScheduleOut[]>,
+) =>
+  useSuspenseQuery({
+    queryKey: ["listComplianceSchedules", params],
+    queryFn: () =>
+      api.get<ComplianceScheduleOut[]>("/compliance/schedules", {
+        params: { system_id: params.systemId },
+      }),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
+// Pop-up: non-suspense (não bloqueia render). within_days=0 = só vencidas/hoje.
+export const useComplianceDue = (withinDays = 0) =>
+  useQuery({
+    queryKey: ["complianceDue", withinDays],
+    queryFn: async () =>
+      (
+        await api.get<ComplianceScheduleOut[]>("/compliance/due", {
+          params: { within_days: withinDays },
+        })
+      ).data,
+  });
+
+export const useUpsertComplianceSchedule = (
+  opts?: Opts<ComplianceScheduleOut, { data: ComplianceScheduleIn }>,
+) =>
+  useMutation({
+    mutationFn: async ({ data }) =>
+      (await api.post<ComplianceScheduleOut>("/compliance/schedules", data)).data,
+    ...opts?.mutation,
+  });
+
+export const useExecuteComplianceSchedule = (
+  opts?: Opts<ComplianceScheduleOut, { calendarId: string }>,
+) =>
+  useMutation({
+    mutationFn: async ({ calendarId }) =>
+      (
+        await api.post<ComplianceScheduleOut>(
+          `/compliance/schedules/${encodeURIComponent(calendarId)}/execute`,
+        )
+      ).data,
+    ...opts?.mutation,
+  });
+
+export const useDeleteComplianceSchedule = (
+  opts?: Opts<{ deleted: string }, { calendarId: string }>,
+) =>
+  useMutation({
+    mutationFn: async ({ calendarId }) =>
+      (
+        await api.delete<{ deleted: string }>(
+          `/compliance/schedules/${encodeURIComponent(calendarId)}`,
+        )
+      ).data,
+    ...opts?.mutation,
+  });
+
+export const useImportComplianceCalendar = (
+  opts?: Opts<ComplianceImportResult, { data: FormData }>,
+) =>
+  useMutation({
+    mutationFn: async ({ data }) =>
+      (
+        await api.post<ComplianceImportResult>("/compliance/import", data, {
+          headers: { "Content-Type": undefined },
+        } as never)
+      ).data,
+    ...opts?.mutation,
+  });
