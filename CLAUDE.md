@@ -275,10 +275,15 @@ documentado para quem mantém depois.** Cumprir em todo PR:
   URL/usuário/senha direto (fim do modelo "chave de secret por conexão + redeploy").
   A senha é cifrada com Fernet (`connections/crypto.py`) e guardada na coluna
   `enc_password` (migration 022); **nunca** volta na API (`ConnectionOut.has_password`
-  só diz se existe). `username` não é sigiloso e fica no `config_json`. Chave-mestra:
-  secret `nuclea-modeler/conn_enc_key` → env `NUCLEA_CONN_ENC_KEY` (recurso `conn-enc-key`
-  no `app.yml`). Falha FECHADO: sem a chave, criar conexão com senha dá 500 (nunca grava
-  em claro). Rotação futura via `MultiFernet` sem mudar schema.
+  só diz se existe). `username` não é sigiloso e fica no `config_json`. **Chave-mestra
+  (v1.0059, corrigido ao vivo):** secret `nuclea-modeler/conn_enc_key`, LIDA EM RUNTIME
+  via SDK pelo SP do app (`crypto.py::_read_from_secrets`, cacheada) — env
+  `NUCLEA_CONN_ENC_KEY` continua como override p/ testes. NÃO usar `valueFrom` no
+  app.yml: o recurso `secret` do app.yml **não é registrado** pelo `apps deploy` (a env
+  não chega) e mexer nos recursos do app é arriscado (incidente do warehouse). O SP do
+  app precisa de **READ no scope** (grant aditivo `secrets put-acl <sp> READ`). Falha
+  FECHADO: sem a chave, criar conexão com senha dá 500 (nunca grava em claro). Rotação
+  futura via `MultiFernet` sem mudar schema.
 - **Deps novas** (pyproject + requirements, specs idênticas p/ `check_deps_sync`):
   `oracledb`, `PyMySQL`, `python-tds`, `ibm-db`, `cryptography` — TODAS com wheel no
   proxy interno `pypi-proxy.cloud.databricks.com/simple/` (cp311/cp312), que é o índice
