@@ -9,7 +9,7 @@
  * Molde do WelcomeTour (pop-up automático). Usa query NÃO-suspense para não
  * bloquear o render do app; em erro/sem dados, renderiza null (degrada silencioso).
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
