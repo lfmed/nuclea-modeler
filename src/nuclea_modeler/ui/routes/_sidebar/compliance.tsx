@@ -295,7 +295,7 @@ function SchedulesTable({
                 <td className="py-2 pr-3">{RECURRENCE_LABEL[s.recurrence]}</td>
                 <td className="py-2 pr-3 font-mono">{s.next_due_date}</td>
                 <td className="py-2 pr-3">
-                  <DueBadge isDue={s.is_due} daysUntil={s.days_until} />
+                  <DueBadge daysUntil={s.days_until} />
                 </td>
                 <td className="py-2 pr-3 text-muted-foreground">
                   {s.last_executed_at ? new Date(s.last_executed_at).toLocaleDateString("pt-BR") : "—"}
@@ -332,8 +332,9 @@ function SchedulesTable({
   );
 }
 
-/** Badge de status: vencida / vence em N dias / em dia. */
-export function DueBadge({ isDue, daysUntil }: { isDue: boolean; daysUntil?: number | null }) {
+/** Badge de status: vencida / vence hoje / vence em N dias / em dia.
+ *  Derivado só de days_until (negativo = vencida, 0 = hoje). */
+export function DueBadge({ daysUntil }: { daysUntil?: number | null }) {
   if (daysUntil == null) return <span className="text-muted-foreground">—</span>;
   if (daysUntil < 0) {
     return (
@@ -342,7 +343,7 @@ export function DueBadge({ isDue, daysUntil }: { isDue: boolean; daysUntil?: num
       </Badge>
     );
   }
-  if (daysUntil === 0 || isDue) {
+  if (daysUntil === 0) {
     return (
       <Badge variant="outline" className="border-amber-500/50 text-amber-700 dark:text-amber-300">
         <Clock className="mr-1 h-3 w-3" /> Vence hoje

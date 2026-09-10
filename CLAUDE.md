@@ -341,6 +341,15 @@ documentado para quem mantém depois.** Cumprir em todo PR:
 - **Decisões do cliente:** recorrência mensal/trimestral/semestral/anual; pop-up avisa +
   registra execução (sem exigir anexo); 1ª carga via planilha. **Anexar o checklist ao
   sistema já funcionava** (módulo de anexos, owner_kind='system') — não refeito aqui.
+- **Fixes do /code-review (v1.0063):** (a) o pop-up só aparece para quem PODE registrar
+  (curadoria) — `useMyRoles` não-suspense + gate `is_admin||DATA_ARCHITECT||DATA_STEWARD`
+  (evita modal bloqueante cuja ação daria 403 p/ viewer); (b) "hoje" é calculado em BRT
+  (UTC-3 fixo, `service.today_br()`), não no UTC do runtime — senão o pop-up dispara 1 dia
+  adiantado à noite; (c) `executeComplianceSchedule` devolve a linha pelo `calendar_id`
+  (não por system_id, que podia devolver linha errada); (d) `wb.active` guardado (xlsx sem
+  aba → 400, não 500); (e) delimitador do CSV decidido pela 1ª linha; (f) testes do módulo
+  (`test_compliance_service.py`: normalize_date, advance_iso c/ clamp, parse_recurrence,
+  due_fields, parse_import CSV/XLSX). a11y do pop-up: role=dialog/aria-modal + Esc + backdrop.
 
 ## Package Management
 - **Frontend:** Use `apx bun install` or `apx bun add <dependency>` for frontend package management.
