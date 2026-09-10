@@ -117,7 +117,7 @@ def _list_query(sql: Sql, where: str, params: list) -> list[ComplianceScheduleOu
         """,
         params,
     )
-    today = date.today()
+    today = service.today_br()
     return [_row_to_out(r[:-1], r[-1], today) for r in rows]
 
 
@@ -144,7 +144,7 @@ def list_due(
     Compara `next_due_date` (string ISO) com a data-limite em SQL (comparação
     lexicográfica de ISO 'YYYY-MM-DD' == comparação cronológica).
     """
-    cutoff = (date.today() + timedelta(days=max(0, int(within_days)))).isoformat()
+    cutoff = (service.today_br() + timedelta(days=max(0, int(within_days)))).isoformat()
     where = "WHERE c.next_due_date <= :cutoff"
     params = [delta.param("cutoff", cutoff)]
     return _list_query(sql, where, params)
@@ -188,9 +188,9 @@ def execute_schedule(
         raise HTTPException(404, f"agendamento '{calendar_id}' não encontrado")
     recurrence, cur_due = row[0], str(row[1])
     now = datetime.utcnow()
-    # Avança a partir da MAIOR entre a data prevista e hoje, para não empilhar
-    # ciclos vencidos numa data passada.
-    base = max(cur_due, date.today().isoformat())
+    # Avança a partir da MAIOR entre a data prevista e hoje (BRT), para não
+    # empilhar ciclos vencidos numa data passada.
+    base = max(cur_due, service.today_br().isoformat())
     next_due = service.advance_iso(base, recurrence)  # type: ignore[arg-type]
     delta.update_by_id(
         sql, s.fq_table("compliance_calendar"), "calendar_id", calendar_id,
@@ -202,12 +202,9 @@ def execute_schedule(
             "updated_by": actor,
         },
     )
-    sid_row = delta.fetch_one_params(
-        sql, f"SELECT system_id FROM {s.fq_table('compliance_calendar')} WHERE calendar_id = :cid",
-        [delta.param("cid", calendar_id)],
-    )
-    out = list_schedules(sql, system_id=sid_row[0] if sid_row else None)
-    return out[0] if out else _list_query(sql, "WHERE c.calendar_id = :cid", [delta.param("cid", calendar_id)])[0]
+    # Devolve exatamente o agendamento atualizado (chave = calendar_id), sem
+    # indireção por system_id (achado do /review: evitava devolver linha errada).
+    return _list_query(sql, "WHERE c.calendar_id = :cid", [delta.param("cid", calendar_id)])[0]
 
 
 @router.delete("/schedules/{calendar_id}", operation_id="deleteComplianceSchedule")

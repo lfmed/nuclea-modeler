@@ -8,9 +8,20 @@ from __future__ import annotations
 import calendar
 import csv
 import io
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 
 from .models import Recurrence
+
+# Fuso do cliente (Núclea, Brasil). Datas de conformidade são "date-only", então
+# "hoje" precisa ser o dia no fuso BR, não no UTC do runtime — senão o pop-up
+# dispara até um dia adiantado à noite (achado do /review). BRT = UTC-3 fixo
+# (sem horário de verão desde 2019); offset fixo evita dependência de tzdata.
+_BR_TZ = timezone(timedelta(hours=-3))
+
+
+def today_br() -> date:
+    """Data de hoje no fuso do cliente (BRT), para as comparações do calendário."""
+    return datetime.now(_BR_TZ).date()
 
 # Passo (em meses) de cada periodicidade.
 _MONTHS_STEP: dict[str, int] = {
@@ -85,8 +96,8 @@ def normalize_date(raw: str | None) -> str | None:
 
 
 def due_fields(iso_date: str, today: date | None = None) -> tuple[bool, int | None]:
-    """(is_due, days_until) a partir de next_due_date vs. hoje. Negativo = vencida."""
-    today = today or date.today()
+    """(is_due, days_until) a partir de next_due_date vs. hoje (BRT). Negativo = vencida."""
+    today = today or today_br()
     try:
         d = date.fromisoformat(iso_date)
     except (ValueError, TypeError):
@@ -112,11 +123,18 @@ def _match_col(header: list[str], names: set[str]) -> int | None:
     return None
 
 
+def _cell(row: list, i: int | None):
+    """Célula segura por índice (None se fora do range ou coluna ausente)."""
+    return row[i] if (i is not None and i < len(row)) else None
+
+
 def _rows_from_csv(data: bytes) -> list[list[str]]:
     text = data.decode("utf-8-sig", errors="replace")
-    # aceita ',' ou ';' (Excel BR costuma exportar com ';')
-    sample = text[:2048]
-    delim = ";" if sample.count(";") > sample.count(",") else ","
+    # aceita ',' ou ';' (Excel BR costuma exportar com ';'). Decide pelo delimitador
+    # do CABEÇALHO (1ª linha) — o corpo pode ter ';'/',' em textos livres e
+    # enviesar a contagem (achado do /review).
+    first_line = text.split("\n", 1)[0]
+    delim = ";" if first_line.count(";") > first_line.count(",") else ","
     return [row for row in csv.reader(io.StringIO(text), delimiter=delim)]
 
 
@@ -125,6 +143,9 @@ def _rows_from_xlsx(data: bytes) -> list[list]:
 
     wb = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
     ws = wb.active
+    if ws is None:  # workbook sem aba ativa → trata como vazio (400, não 500)
+        wb.close()
+        raise ValueError("planilha sem aba ativa")
     rows: list[list] = []
     for r in ws.iter_rows(values_only=True):
         rows.append(list(r))
@@ -155,14 +176,13 @@ def parse_import(data: bytes, filename: str) -> list[dict]:
         )
     out: list[dict] = []
     for r in rows[1:]:
-        def _cell(i: int):
-            return r[i] if i is not None and i < len(r) else None
-
+        c_sys = _cell(r, ci_sys)
+        c_rec = _cell(r, ci_rec)
         out.append(
             {
-                "system": (str(_cell(ci_sys)).strip() if _cell(ci_sys) is not None else ""),
-                "recurrence_raw": (str(_cell(ci_rec)).strip() if _cell(ci_rec) is not None else ""),
-                "date_raw": _cell(ci_dat),
+                "system": (str(c_sys).strip() if c_sys is not None else ""),
+                "recurrence_raw": (str(c_rec).strip() if c_rec is not None else ""),
+                "date_raw": _cell(r, ci_dat),
             }
         )
     return out

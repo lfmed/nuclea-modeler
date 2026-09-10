@@ -929,6 +929,14 @@ export const useMyRolesSuspense = (s?: Selector<MyRolesOut>) =>
     ...s?.query,
   });
 
+// Variante NÃO-suspense (mesmo cache) para componentes que não podem suspender
+// o layout — ex.: o pop-up de conformidade decide se aparece a partir do papel.
+export const useMyRoles = () =>
+  useQuery({
+    queryKey: ["myRoles"],
+    queryFn: async () => (await api.get<MyRolesOut>("/rbac/me")).data,
+  });
+
 export const useListRolesSuspense = (s?: Selector<UserRoleOut[]>) =>
   useSuspenseQuery({
     queryKey: ["listRoles"],
