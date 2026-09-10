@@ -96,6 +96,10 @@ class EntityListOut(BaseModel):
     # negócio (v1.0030). Não são exibidas como coluna na tabela (só exportadas).
     description_md: str | None = None
     native_comment: str | None = None
+    # Marcador de particionamento na listagem (rodada 8, item 2). Derivado de
+    # entity_partitioning; None/"NONE" = não particionada. Só preenchido no
+    # endpoint paginado. A UI mostra badge "Particionada · <estratégia>" e filtro.
+    partition_strategy: str | None = None
     # Coluna de flags nas listagens (ponto 5.3 do plano). Preenchida só nos
     # endpoints paginados que fazem o join agregado; listas "frias" deixam [].
     flags: list[FlagBadge] = Field(default_factory=list)

@@ -164,6 +164,8 @@ export interface EntityListOut {
   // (EntityOut redeclara os mesmos campos — tipos idênticos, sem conflito.)
   description_md?: string | null;
   native_comment?: string | null;
+  // Marcador de particionamento (rodada 8, item 2). null/"NONE" = não particionada.
+  partition_strategy?: string | null;
   // Coluna de flags — só preenchida no endpoint paginado (/entities/page).
   flags?: FlagBadge[];
   // Editorial session — quando há mudança pendente no ticket de sessão
@@ -189,6 +191,7 @@ export interface EntitiesPageParams {
   criticality?: Criticality;
   q?: string;
   flagId?: string;
+  partitioned?: boolean;
   sortBy?: string;
   sortDir?: "asc" | "desc";
   page?: number;
@@ -452,6 +455,7 @@ export const useListEntitiesPaginatedSuspense = (
           criticality: params.criticality,
           q: params.q,
           flag_id: params.flagId,
+          partitioned: params.partitioned ? true : undefined,
           sort_by: params.sortBy,
           sort_dir: params.sortDir,
           page: params.page,
@@ -1324,7 +1328,7 @@ export async function downloadAttachment(
 
 // ─── Flags (Módulo 5) ────────────────────────────────────────────────────────
 
-export type FlagCategory = "LGPD" | "USE" | "QUALITY" | "CUSTOM";
+export type FlagCategory = "LGPD" | "USE" | "QUALITY" | "OFP" | "CUSTOM";
 
 export interface FlagOut {
   flag_id: string;

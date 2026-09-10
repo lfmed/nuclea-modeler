@@ -29,7 +29,7 @@ import { Button } from "@/components/ui/button";
 import { Tag, Trash2 } from "lucide-react";
 import { FlagPickerModal } from "@/components/flags/flag-picker";
 
-const CATEGORY_ORDER: FlagCategory[] = ["LGPD", "USE", "QUALITY", "CUSTOM"];
+const CATEGORY_ORDER: FlagCategory[] = ["LGPD", "USE", "QUALITY", "OFP", "CUSTOM"];
 
 /**
  * Toast padronizado para o resultado de um lote de flags: "X ok · Y falha",
@@ -154,6 +154,7 @@ function FlagRemoveModal({
     LGPD: [],
     USE: [],
     QUALITY: [],
+    OFP: [],
     CUSTOM: [],
   };
   for (const f of flags) grouped[f.category]?.push(f);

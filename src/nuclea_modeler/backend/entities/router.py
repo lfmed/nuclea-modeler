@@ -513,6 +513,7 @@ def list_entities_paginated(
     criticality: str | None = None,
     q: str | None = Query(None, description="Busca textual (nome técnico/lógico)"),
     flag_id: str | None = Query(None, description="Filtra entidades com esta flag"),
+    partitioned: bool = Query(False, description="Só entidades particionadas (rodada 8, item 2)"),
     sort_by: str = Query("updated_at", description="Coluna de ordenação"),
     sort_dir: str = Query("desc", description="asc | desc"),
     page: int = 1,
@@ -566,6 +567,13 @@ def list_entities_paginated(
             f"WHERE ef.entity_id = e.entity_id AND ef.flag_id = :flag_id)"
         )
         params.append(delta.param("flag_id", flag_id))
+    if partitioned:
+        # EXISTS por particionamento efetivo (estratégia != NONE). Aplicado igual
+        # no COUNT e na página para o total bater.
+        where.append(
+            f"EXISTS (SELECT 1 FROM {s.fq_table('entity_partitioning')} ep "
+            f"WHERE ep.entity_id = e.entity_id AND ep.strategy <> 'NONE')"
+        )
     # Esconde entidades de sistemas arquivados (soft-deleted). Subquery (não JOIN)
     # para funcionar também no COUNT do paginado, que não junta `systems`.
     where.append(
@@ -591,7 +599,9 @@ def list_entities_paginated(
                e.technical_name, e.logical_name, e.entity_type, e.domain,
                e.criticality, e.updated_at,
                (SELECT COUNT(*) FROM {s.fq_table('attributes')} a WHERE a.entity_id = e.entity_id) AS attrs,
-               e.description_md, e.native_comment
+               e.description_md, e.native_comment,
+               (SELECT ep.strategy FROM {s.fq_table('entity_partitioning')} ep
+                WHERE ep.entity_id = e.entity_id AND ep.strategy <> 'NONE' LIMIT 1) AS part_strategy
         FROM {s.fq_table('entities')} e
         LEFT JOIN {s.fq_table('systems')} sys ON sys.system_id = e.system_id
         {where_clause}
@@ -609,6 +619,8 @@ def list_entities_paginated(
             updated_at=r[9],
             # r[11]/r[12] adicionados no SELECT (v1.0030) para o export CSV.
             description_md=r[11], native_comment=r[12],
+            # r[13] = estratégia de particionamento (rodada 8, item 2); NULL = não particionada.
+            partition_strategy=r[13] if len(r) > 13 else None,
         )
         for r in rows
     ]

@@ -32,11 +32,12 @@ export interface AppliedFlag {
   is_propagated?: boolean;
 }
 
-const CATEGORY_ORDER: FlagCategory[] = ["LGPD", "USE", "QUALITY", "CUSTOM"];
+const CATEGORY_ORDER: FlagCategory[] = ["LGPD", "USE", "QUALITY", "OFP", "CUSTOM"];
 const CATEGORY_LABEL: Record<FlagCategory, string> = {
   LGPD: "LGPD / Privacidade",
   USE: "Uso do dado",
   QUALITY: "Qualidade",
+  OFP: "Operações Fora do Padrão",
   CUSTOM: "Personalizadas",
 };
 
@@ -166,6 +167,7 @@ export function FlagPickerModal({
       LGPD: [],
       USE: [],
       QUALITY: [],
+      OFP: [],
       CUSTOM: [],
     };
     for (const f of filtered) g[f.category]?.push(f);

@@ -291,6 +291,23 @@ documentado para quem mantém depois.** Cumprir em todo PR:
   wheel manylinux_2_34 — validar o `import` no runtime após deploy (glibc); se não
   carregar, DB2 degrada com mensagem, sem derrubar o app.
 
+## RODADA 8 — Flags OFP + marcador de particionamento (v1.0060, PR-2)
+- **Item 7 (flags OFP):** nova categoria `OFP` (Operações Fora do Padrão) no catálogo.
+  `FlagCategory` (backend `flags/models.py` + `api.ts`) ganhou `"OFP"` → **TODO
+  `Record<FlagCategory,…>` da UI precisa da chave OFP** (senão o tsc reprova):
+  `flags.tsx` (CATEGORY_META/ORDER/grouped), `flag-picker.tsx` (ORDER/LABEL/grouped),
+  `flag-batch-bar.tsx` (ORDER/grouped). Seed em `023_seed_ofp_flags.sql` (MERGE por
+  flag_key, como o 003). **É um conjunto-RASCUNHO** (operacao-manual, fora-de-janela,
+  sem-aprovacao, reprocessamento, carga-emergencial) — nomes a validar com o cliente.
+- **Item 2 (marcador de particionamento):** o DER JÁ mostrava o particionamento
+  (`entity-node.tsx`: badge da estratégia no cabeçalho + estratégia/colunas no expandido,
+  via `DiagramEntity.partition_strategy/columns` populados em `diagram/router.py`). O que
+  faltava era ACHAR tabelas particionadas na LISTA: `list_entities_paginated` ganhou
+  `partition_strategy` (subquery a `entity_partitioning` com `strategy<>'NONE'`) + filtro
+  `partitioned` (EXISTS, no molde do filtro por flag); a lista de Entidades mostra badge
+  "Particionada · <estratégia>" + FilterSelect "Só particionadas". Sem tocar no DER
+  (evita regressão nas arestas). Sem schema novo.
+
 ## Package Management
 - **Frontend:** Use `apx bun install` or `apx bun add <dependency>` for frontend package management.
 - **Python:** Always use `uv` (never `pip`)
