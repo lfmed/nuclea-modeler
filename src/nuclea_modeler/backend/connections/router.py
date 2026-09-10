@@ -77,21 +77,23 @@ def _actor(user_ws: Dependencies.UserClient) -> str:
         return "unknown"
 
 
-def _encrypt_password_or_400(password: str | None) -> str | None:
+def _encrypt_password_or_400(password: str | None, app_ws) -> str | None:
     """Cifra a senha para gravar em `enc_password`. Falha FECHADO.
 
-    Se a senha veio mas a chave-mestra (NUCLEA_CONN_ENC_KEY) não está
-    configurada, devolve 500 claro em vez de gravar em texto plano.
+    A chave-mestra é resolvida via env OU Databricks Secrets usando o SP do app
+    (`app_ws`) — ver crypto.py. Se não houver chave, devolve 500 claro em vez de
+    gravar em texto plano.
     """
     if not password:
         return None
-    if not crypto.is_configured():
+    if not crypto.is_configured(app_ws):
         raise HTTPException(
             500,
-            "NUCLEA_CONN_ENC_KEY não configurada no app — não é possível salvar a "
-            "senha com segurança. Configure o secret 'nuclea-modeler/conn_enc_key'.",
+            "Chave de cifra indisponível — não é possível salvar a senha com "
+            "segurança. Configure o secret 'nuclea-modeler/conn_enc_key' e o READ "
+            "do SP do app no scope.",
         )
-    return crypto.encrypt(password)
+    return crypto.encrypt(password, app_ws)
 
 
 def _fetch_enc_password(sql: SqlDependency, connection_id: str) -> str | None:
@@ -160,6 +162,7 @@ def create_connection(
     payload: ConnectionIn,
     sql: SqlDependency,
     user_ws: Dependencies.UserClient,
+    app_ws: Dependencies.Client,
 ) -> ConnectionOut:
     import json
     s = get_settings()
@@ -180,7 +183,7 @@ def create_connection(
             "secret_key_user": payload.secret_key_user,
             "secret_key_pass": payload.secret_key_pass,
             "secret_key_token": payload.secret_key_token,
-            "enc_password": _encrypt_password_or_400(payload.password),
+            "enc_password": _encrypt_password_or_400(payload.password, app_ws),
             "last_test_status": "never",
             "created_at": now,
             "created_by": actor,
@@ -197,6 +200,7 @@ def update_connection(
     payload: ConnectionIn,
     sql: SqlDependency,
     user_ws: Dependencies.UserClient,
+    app_ws: Dependencies.Client,
 ) -> ConnectionOut:
     import json
     s = get_settings()
@@ -219,7 +223,7 @@ def update_connection(
     #   ""   -> zera (enc_password = NULL)
     #   valor-> cifra e substitui
     if payload.password is not None:
-        fields["enc_password"] = _encrypt_password_or_400(payload.password) if payload.password else None
+        fields["enc_password"] = _encrypt_password_or_400(payload.password, app_ws) if payload.password else None
     delta.update_by_id(sql, s.fq_table("connections"), "connection_id", connection_id, fields)
     return get_connection(connection_id, sql)
 
@@ -269,7 +273,7 @@ def test_connection(
         password: str | None = None
         if enc:
             try:
-                password = crypto.decrypt(enc)
+                password = crypto.decrypt(enc, app_ws)
             except Exception:
                 password = None
         if enc and password is None:

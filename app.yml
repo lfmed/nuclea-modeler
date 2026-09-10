@@ -35,15 +35,6 @@ resources:
       database_name: databricks_postgres
       instance_name: JDBCTESTLAKEBASE
       permission: CAN_CONNECT_AND_CREATE
-  # Chave-mestra (Fernet) que cifra as SENHAS das conexões de banco em repouso
-  # (rodada 8). Injetada como env NUCLEA_CONN_ENC_KEY (abaixo). Ver
-  # connections/crypto.py + migration 022. Secret: nuclea-modeler/conn_enc_key.
-  - name: conn-enc-key
-    description: Chave Fernet para cifrar senhas de conexão em repouso
-    secret:
-      scope: nuclea-modeler
-      key: conn_enc_key
-      permission: READ
 
 env:
   - name: PYTHONPATH
@@ -58,10 +49,10 @@ env:
     value: b8e52268d9828bdd
   - name: NUCLEA_SECRETS_SCOPE
     value: nuclea-modeler
-  # Chave Fernet (do recurso conn-enc-key acima) usada por connections/crypto.py
-  # para cifrar/decifrar as senhas das conexões de banco.
-  - name: NUCLEA_CONN_ENC_KEY
-    valueFrom: conn-enc-key
+  # A chave de cifra das senhas de conexão (Fernet) é LIDA EM RUNTIME de
+  # Databricks Secrets (nuclea-modeler/conn_enc_key) pelo SP do app — ver
+  # connections/crypto.py. Não injetamos por env/valueFrom porque o recurso
+  # secret do app.yml não é registrado pelo `apps deploy` (validado ao vivo).
   - name: DATABRICKS_SQL_WAREHOUSE_ID
     value: b8e52268d9828bdd
   # Migrations rodam 1x no command: antes do uvicorn (evita contention entre
