@@ -18,8 +18,17 @@ dependencies = [
     "httpx>=0.28.0",
     "python-multipart>=0.0.20",
     "python-dotenv>=1.0.0",
-    "psycopg[binary]>=3.3.4",  # Lakebase Postgres connectivity
-    "pyodbc>=5.3.0",            # ODBC connection tests (M1)
+    "psycopg[binary]>=3.3.4",  # Lakebase + conexão Postgres nativa
+    "pyodbc>=5.3.0",            # LEGADO (ODBC não roda no Apps; mantido p/ compat)
+    # Rodada 8 — conexões de banco NATIVAS (drivers Python embutidos, sem anexar
+    # nada). Todos com wheel no proxy interno pypi-proxy.cloud.databricks.com
+    # (cp311/cp312). Import é lazy (connections/testers.py) → se um não carregar
+    # no runtime, só aquele engine falha, o app não cai.
+    "oracledb>=4.0.0",         # Oracle (thin mode; dispensa Oracle client)
+    "PyMySQL>=1.1.0",          # MySQL (Python puro)
+    "python-tds>=1.17.0",      # SQL Server (Python puro)
+    "ibm-db>=3.3.0",           # DB2 (wheel embarca o clidriver nativo)
+    "cryptography>=43.0.0",    # cifra a senha da conexão em repouso (Fernet)
 ]
 
 [project.optional-dependencies]

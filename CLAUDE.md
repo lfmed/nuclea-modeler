@@ -258,6 +258,34 @@ documentado para quem mantém depois.** Cumprir em todo PR:
     regressão nas arestas > valor do polimento). A lógica de handles/`edgesToRender`
     (v1.0027/v1.0051) segue intocada.
 
+## RODADA 8 — Conexões de banco NATIVAS (v1.0058, PR-1)
+- **ODBC não roda no Databricks Apps (RCA confirmada ao vivo).** O teste de conexão
+  ODBC (`pyodbc`) falhava em produção com `"pyodbc not installed…"` porque o wheel do
+  pyodbc depende de `libodbc.so.2` (unixODBC), ausente no runtime do Apps, que roda
+  sem `root`/`apt` — não dá pra instalar driver de sistema. Reproduzido no app
+  deployado (`POST /api/connections/{id}/test`).
+- **Decisão (aprovada pelo cliente): substituir ODBC por drivers Python EMBUTIDOS por
+  engine** — nada a anexar. `connections/testers.py::test_database` despacha por
+  `engine`: POSTGRES→`psycopg` (já comprovado no runtime, mesmo do Lakebase),
+  ORACLE→`oracledb` thin, MYSQL→`PyMySQL`, SQLSERVER→`python-tds`, DB2→`ibm_db`.
+  **Imports LAZY por engine** (`DriverUnavailable`): se um driver não carregar no
+  runtime, só aquele engine falha com mensagem clara — o app não cai. ODBC vira LEGADO
+  (o teste devolve msg de descontinuação; `connection_type` novo = `DATABASE`).
+- **Credenciais self-service, senha CIFRADA EM REPOUSO.** O cliente digita
+  URL/usuário/senha direto (fim do modelo "chave de secret por conexão + redeploy").
+  A senha é cifrada com Fernet (`connections/crypto.py`) e guardada na coluna
+  `enc_password` (migration 022); **nunca** volta na API (`ConnectionOut.has_password`
+  só diz se existe). `username` não é sigiloso e fica no `config_json`. Chave-mestra:
+  secret `nuclea-modeler/conn_enc_key` → env `NUCLEA_CONN_ENC_KEY` (recurso `conn-enc-key`
+  no `app.yml`). Falha FECHADO: sem a chave, criar conexão com senha dá 500 (nunca grava
+  em claro). Rotação futura via `MultiFernet` sem mudar schema.
+- **Deps novas** (pyproject + requirements, specs idênticas p/ `check_deps_sync`):
+  `oracledb`, `PyMySQL`, `python-tds`, `ibm-db`, `cryptography` — TODAS com wheel no
+  proxy interno `pypi-proxy.cloud.databricks.com/simple/` (cp311/cp312), que é o índice
+  que o CI e o deploy usam (o PyPI público está bloqueado nesta máquina). ibm_db usa
+  wheel manylinux_2_34 — validar o `import` no runtime após deploy (glibc); se não
+  carregar, DB2 degrada com mensagem, sem derrubar o app.
+
 ## Package Management
 - **Frontend:** Use `apx bun install` or `apx bun add <dependency>` for frontend package management.
 - **Python:** Always use `uv` (never `pip`)

@@ -13,8 +13,19 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowLeft, AlertCircle, Database, Globe, FileCode } from "lucide-react";
 
-type ConnType = "ODBC" | "REST" | "DDL_IMPORT";
+type ConnType = "DATABASE" | "REST" | "DDL_IMPORT";
 type Env = "HINT" | "HEXT" | "PROD";
+type Engine = "POSTGRES" | "ORACLE" | "MYSQL" | "SQLSERVER" | "DB2";
+
+// Metadados por motor: rótulo, porta padrão e como chamar o campo "banco"
+// (Oracle usa service name). Só apresentação — o backend valida de fato.
+const ENGINE_META: Record<Engine, { label: string; port: string; dbLabel: string; dbPlaceholder: string }> = {
+  POSTGRES: { label: "PostgreSQL", port: "5432", dbLabel: "Banco", dbPlaceholder: "programa_social" },
+  ORACLE: { label: "Oracle", port: "1521", dbLabel: "Service name", dbPlaceholder: "ORCLPDB1" },
+  MYSQL: { label: "MySQL", port: "3306", dbLabel: "Banco", dbPlaceholder: "app" },
+  SQLSERVER: { label: "SQL Server", port: "1433", dbLabel: "Banco", dbPlaceholder: "dw_principal" },
+  DB2: { label: "IBM DB2", port: "50000", dbLabel: "Banco", dbPlaceholder: "BLUDB" },
+};
 
 export const Route = createFileRoute("/_sidebar/connections/new")({
   component: NewConnectionPage,
@@ -88,25 +99,38 @@ function ConnectionForm() {
   const [alias, setAlias] = useState("");
   const [environment, setEnvironment] = useState<Env>("HINT");
   const [systemId, setSystemId] = useState(systems[0]?.system_id || "");
-  const [connType, setConnType] = useState<ConnType>("ODBC");
+  const [connType, setConnType] = useState<ConnType>("DATABASE");
+  // DATABASE (motor nativo): o cliente informa URL/usuário/senha direto — nada
+  // a anexar. A senha é cifrada em repouso no backend (não é secret key).
+  const [engine, setEngine] = useState<Engine>("POSTGRES");
   const [host, setHost] = useState("");
   const [port, setPort] = useState("");
   const [database, setDatabase] = useState("");
-  const [driver, setDriver] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  // REST
   const [baseUrl, setBaseUrl] = useState("");
   const [authType, setAuthType] = useState("BEARER");
-  const [secretKeyUser, setSecretKeyUser] = useState("");
-  const [secretKeyPass, setSecretKeyPass] = useState("");
   const [secretKeyToken, setSecretKeyToken] = useState("");
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    const config =
-      connType === "ODBC"
-        ? { driver, host, port: port ? parseInt(port) : null, database }
-        : connType === "REST"
-          ? { base_url: baseUrl, auth_type: authType, headers: {} }
-          : { notes: null };
+    let config: Record<string, unknown>;
+    let pwd: string | null = null;
+    if (connType === "DATABASE") {
+      config = {
+        engine,
+        host,
+        port: port ? parseInt(port) : null,
+        database: database || null,
+        username: username || null,
+      };
+      pwd = password || null;
+    } else if (connType === "REST") {
+      config = { base_url: baseUrl, auth_type: authType, headers: {} };
+    } else {
+      config = { notes: null };
+    }
     create({
       data: {
         alias,
@@ -114,9 +138,8 @@ function ConnectionForm() {
         system_id: systemId,
         connection_type: connType,
         config,
-        secret_key_user: secretKeyUser || null,
-        secret_key_pass: secretKeyPass || null,
-        secret_key_token: secretKeyToken || null,
+        password: pwd,
+        secret_key_token: connType === "REST" ? secretKeyToken || null : null,
       },
     });
   };
@@ -172,25 +195,47 @@ function ConnectionForm() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-3 gap-3">
-            <TypeButton icon={<Database className="h-5 w-5" />} label="ODBC" active={connType === "ODBC"} onClick={() => setConnType("ODBC")} />
+            <TypeButton icon={<Database className="h-5 w-5" />} label="Banco de dados" active={connType === "DATABASE"} onClick={() => setConnType("DATABASE")} />
             <TypeButton icon={<Globe className="h-5 w-5" />} label="REST" active={connType === "REST"} onClick={() => setConnType("REST")} />
             <TypeButton icon={<FileCode className="h-5 w-5" />} label="Import DDL" active={connType === "DDL_IMPORT"} onClick={() => setConnType("DDL_IMPORT")} />
           </div>
 
-          {connType === "ODBC" && (
-            <div className="grid md:grid-cols-2 gap-4 pt-2">
-              <FormField label="Driver" required>
-                <Input value={driver} onChange={(e) => setDriver(e.target.value)} placeholder="SQL Server" required />
+          {connType === "DATABASE" && (
+            <div className="space-y-4 pt-2">
+              <FormField label="Motor de banco" required>
+                <select
+                  className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                  value={engine}
+                  onChange={(e) => setEngine(e.target.value as Engine)}
+                  required
+                >
+                  {(Object.keys(ENGINE_META) as Engine[]).map((k) => (
+                    <option key={k} value={k}>
+                      {ENGINE_META[k].label}
+                    </option>
+                  ))}
+                </select>
               </FormField>
-              <FormField label="Host" required>
-                <Input value={host} onChange={(e) => setHost(e.target.value)} placeholder="db.internal.nuclea.com.br" required />
-              </FormField>
-              <FormField label="Porta">
-                <Input type="number" value={port} onChange={(e) => setPort(e.target.value)} placeholder="1433" />
-              </FormField>
-              <FormField label="Banco" required>
-                <Input value={database} onChange={(e) => setDatabase(e.target.value)} placeholder="dw_principal" required />
-              </FormField>
+              <div className="grid md:grid-cols-2 gap-4">
+                <FormField label="Host" required>
+                  <Input value={host} onChange={(e) => setHost(e.target.value)} placeholder="db.interno.nuclea.com.br" required />
+                </FormField>
+                <FormField label="Porta">
+                  <Input type="number" value={port} onChange={(e) => setPort(e.target.value)} placeholder={ENGINE_META[engine].port} />
+                </FormField>
+                <FormField label={ENGINE_META[engine].dbLabel} required>
+                  <Input value={database} onChange={(e) => setDatabase(e.target.value)} placeholder={ENGINE_META[engine].dbPlaceholder} required />
+                </FormField>
+                <FormField label="Usuário">
+                  <Input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="app_user" autoComplete="off" />
+                </FormField>
+                <FormField label="Senha">
+                  <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" autoComplete="new-password" />
+                </FormField>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                A senha é <strong>cifrada em repouso</strong> e nunca é exibida de volta. O driver do banco já vem embutido no app — não é preciso anexar nada.
+              </p>
             </div>
           )}
 
@@ -219,30 +264,18 @@ function ConnectionForm() {
         </CardContent>
       </Card>
 
-      {connType !== "DDL_IMPORT" && (
+      {connType === "REST" && (
         <Card>
           <CardHeader>
             <CardTitle>Credenciais (Databricks Secrets)</CardTitle>
             <CardDescription>
-              Informe a <strong>chave</strong> do secret (a app lê o valor de Databricks Secrets em tempo de uso). Nunca cole a senha aqui.
+              Informe a <strong>chave</strong> do secret do token (a app lê o valor de Databricks Secrets em tempo de uso).
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {connType === "ODBC" && (
-              <div className="grid md:grid-cols-2 gap-4">
-                <FormField label="Chave do usuário">
-                  <Input value={secretKeyUser} onChange={(e) => setSecretKeyUser(e.target.value)} placeholder="dw_user_prod" />
-                </FormField>
-                <FormField label="Chave da senha">
-                  <Input value={secretKeyPass} onChange={(e) => setSecretKeyPass(e.target.value)} placeholder="dw_pwd_prod" />
-                </FormField>
-              </div>
-            )}
-            {connType === "REST" && (
-              <FormField label="Chave do token">
-                <Input value={secretKeyToken} onChange={(e) => setSecretKeyToken(e.target.value)} placeholder="api_token_prod" />
-              </FormField>
-            )}
+            <FormField label="Chave do token">
+              <Input value={secretKeyToken} onChange={(e) => setSecretKeyToken(e.target.value)} placeholder="api_token_prod" />
+            </FormField>
           </CardContent>
         </Card>
       )}

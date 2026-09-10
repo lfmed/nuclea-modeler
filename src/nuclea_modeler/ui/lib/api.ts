@@ -49,7 +49,11 @@ type Selector<T> = {
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type Environment = "HINT" | "HEXT" | "PROD";
-export type ConnectionType = "ODBC" | "REST" | "DDL_IMPORT";
+// DATABASE = conexão de banco nativa (rodada 8). ODBC é LEGADO (não roda no
+// runtime do Databricks Apps). Ver connections/models.py.
+export type ConnectionType = "DATABASE" | "ODBC" | "REST" | "DDL_IMPORT";
+// Motores com driver Python embutido (nada a anexar).
+export type DatabaseEngine = "POSTGRES" | "ORACLE" | "MYSQL" | "SQLSERVER" | "DB2";
 export type TestStatus = "success" | "failure" | "never";
 
 export type SystemEnvironment = "DEV" | "HINT" | "PRD";
@@ -97,6 +101,7 @@ export interface ConnectionListOut {
 
 export interface ConnectionOut extends ConnectionListOut {
   config: Record<string, unknown>;
+  has_password?: boolean;
   secret_scope?: string | null;
   secret_key_user?: string | null;
   secret_key_pass?: string | null;
@@ -114,6 +119,9 @@ export interface ConnectionIn {
   system_id: string;
   connection_type: ConnectionType;
   config: Record<string, unknown>;
+  // Senha em texto plano — SOMENTE no request de create/update. Cifrada em
+  // repouso no backend; nunca volta no ConnectionOut. Ver connections/crypto.py.
+  password?: string | null;
   secret_scope?: string | null;
   secret_key_user?: string | null;
   secret_key_pass?: string | null;

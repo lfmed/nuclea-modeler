@@ -101,7 +101,7 @@ function Header() {
           <Badge variant="outline" className="font-mono">M1</Badge>
         </div>
         <p className="text-muted-foreground max-w-2xl">
-          Cadastre conexões ODBC, REST ou import de DDL para os ambientes HINT, HEXT e PROD.
+          Cadastre conexões de banco (Postgres, Oracle, MySQL, SQL Server, DB2), REST ou import de DDL para os ambientes HINT, HEXT e PROD.
           Credenciais são armazenadas em Databricks Secrets, nunca em texto puro.
         </p>
       </div>
@@ -335,10 +335,15 @@ function ConnectionDetailSheet({
                   </pre>
                   <Separator className="my-4" />
                   <div className="space-y-2 text-sm">
-                    <KV label="Secrets scope" value={conn.secret_scope || "—"} />
-                    <KV label="Chave usuário" value={conn.secret_key_user || "—"} />
-                    <KV label="Chave senha" value={conn.secret_key_pass ? "•••••" : "—"} />
-                    <KV label="Chave token" value={conn.secret_key_token ? "•••••" : "—"} />
+                    {conn.connection_type === "DATABASE" && (
+                      <KV label="Senha" value={conn.has_password ? "definida (cifrada em repouso)" : "—"} />
+                    )}
+                    {conn.connection_type === "REST" && (
+                      <>
+                        <KV label="Secrets scope" value={conn.secret_scope || "—"} />
+                        <KV label="Chave token" value={conn.secret_key_token ? "•••••" : "—"} />
+                      </>
+                    )}
                   </div>
                 </CardContent>
               </Card>
