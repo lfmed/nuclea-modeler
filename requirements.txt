@@ -20,7 +20,18 @@ httpx>=0.28.0
 python-multipart>=0.0.20
 python-dotenv>=1.0.0
 psycopg[binary]>=3.3.4
-# Optional: ODBC connection tests (Módulo 1). Requires unixodbc on the runtime.
-# The connection tester handles ImportError gracefully — if pyodbc isn't
-# installed, ODBC tests return a friendly failure rather than crashing.
+# LEGADO: ODBC não roda no runtime do Databricks Apps (sem unixODBC/driver, sem
+# root para instalar). Mantido só por compat de registros antigos — o teste de
+# ODBC devolve mensagem de descontinuação. Substituído pelos drivers nativos
+# abaixo. O tester ainda trata ImportError com graça.
 pyodbc>=5.3.0
+# Rodada 8 — conexões de banco NATIVAS (drivers Python embutidos, sem anexar
+# nada). Wheels no proxy interno pypi-proxy.cloud.databricks.com (cp311/cp312).
+# Import lazy em connections/testers.py: se um driver não carregar no runtime,
+# só aquele engine falha (o app não cai). Specs IDÊNTICAS ao pyproject.toml
+# (check_deps_sync exige).
+oracledb>=4.0.0
+PyMySQL>=1.1.0
+python-tds>=1.17.0
+ibm-db>=3.3.0
+cryptography>=43.0.0

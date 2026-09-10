@@ -158,3 +158,48 @@ def test_odbc_empty_config_fails():
     # Both are acceptable failures — the point is that we don't crash.
     assert out.status == "failure"
     assert out.error is not None
+
+
+# ─── DATABASE (multi-engine nativo, v1.0058) ─────────────────────────────────
+#
+# Não conectamos a bancos reais no CI — exercitamos o DESPACHO e o tratamento de
+# erro (engine inválido, host ausente, driver indisponível, erro genérico), que
+# são a garantia de que uma falha nunca derruba o app. O teste real ponta-a-ponta
+# acontece no app deployado com um banco alcançável.
+
+
+def test_database_unknown_engine_fails():
+    out = testers.test_database(engine="MONGODB", config={"host": "h"}, username="u", password="p")
+    assert out.status == "failure"
+    assert "não suportado" in (out.error or "")
+
+
+def test_database_missing_host_fails():
+    out = testers.test_database(engine="POSTGRES", config={}, username="u", password="p")
+    assert out.status == "failure"
+    assert "host" in (out.error or "")
+
+
+def test_database_driver_unavailable_is_graceful(monkeypatch):
+    """Driver ausente no runtime → falha amigável, sem stacktrace/crash."""
+
+    def _boom(*_a, **_k):
+        raise testers.DriverUnavailable("driver Postgres (psycopg) indisponível no runtime")
+
+    monkeypatch.setitem(testers._ENGINE_PROBES, "POSTGRES", _boom)
+    out = testers.test_database(engine="POSTGRES", config={"host": "h"}, username="u", password="p")
+    assert out.status == "failure"
+    assert "indisponível" in (out.error or "")
+
+
+def test_database_generic_error_is_caught_and_labeled(monkeypatch):
+    """Erro de conexão/rede vira failure rotulado (driver carregou de fato)."""
+
+    def _boom(*_a, **_k):
+        raise ConnectionRefusedError("connection refused")
+
+    # também confirma que o engine é case-insensitive ("postgres" -> POSTGRES)
+    monkeypatch.setitem(testers._ENGINE_PROBES, "POSTGRES", _boom)
+    out = testers.test_database(engine="postgres", config={"host": "h"}, username="u", password="p")
+    assert out.status == "failure"
+    assert "ConnectionRefusedError" in (out.error or "")

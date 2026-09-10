@@ -92,6 +92,9 @@ function ConnectionDetailPage() {
               <div className="flex items-center gap-2 mt-2">
                 <EnvBadge env={conn.environment} />
                 <Badge variant="outline">{conn.connection_type}</Badge>
+                {conn.connection_type === "DATABASE" && conn.config?.engine ? (
+                  <Badge variant="secondary">{String(conn.config.engine)}</Badge>
+                ) : null}
                 <span className="text-sm text-muted-foreground">·</span>
                 <span className="text-sm text-muted-foreground">
                   {conn.system_name || conn.system_id}
@@ -144,10 +147,15 @@ function ConnectionDetailPage() {
                 </pre>
                 <Separator className="my-4" />
                 <div className="space-y-2 text-sm">
-                  <KV label="Secrets scope" value={conn.secret_scope || "—"} />
-                  <KV label="Chave usuário" value={conn.secret_key_user || "—"} />
-                  <KV label="Chave senha" value={conn.secret_key_pass ? "•••••" : "—"} />
-                  <KV label="Chave token" value={conn.secret_key_token ? "•••••" : "—"} />
+                  {conn.connection_type === "DATABASE" && (
+                    <KV label="Senha" value={conn.has_password ? "definida (cifrada em repouso)" : "—"} />
+                  )}
+                  {conn.connection_type === "REST" && (
+                    <>
+                      <KV label="Secrets scope" value={conn.secret_scope || "—"} />
+                      <KV label="Chave token" value={conn.secret_key_token ? "•••••" : "—"} />
+                    </>
+                  )}
                 </div>
               </CardContent>
             </Card>

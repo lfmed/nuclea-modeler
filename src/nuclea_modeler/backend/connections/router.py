@@ -10,7 +10,7 @@ from ..core import Dependencies
 from ..core._nuclea_config import get_settings
 from ..core import delta
 from ..core.sql import SqlDependency
-from . import testers
+from . import crypto, testers
 from .models import (
     ConnectionIn,
     ConnectionListOut,
@@ -29,6 +29,10 @@ _COLUMNS = [
     "last_test_status", "last_test_at", "last_test_latency_ms",
     "last_test_db_version", "last_test_error",
     "created_at", "created_by", "updated_at", "updated_by",
+    # enc_password (v1.0058): APÊNDICE no fim para não deslocar os índices que o
+    # _row_to_out mapeia por posição. É o cifrado da senha (Fernet) — NUNCA é
+    # devolvido; só vira o booleano has_password.
+    "enc_password",
 ]
 
 
@@ -60,6 +64,8 @@ def _row_to_out(row: list, system_name: str | None = None) -> ConnectionOut:
         created_by=row[16],
         updated_at=row[17],
         updated_by=row[18],
+        # row[19] = enc_password (cifrado) → expõe só se HÁ senha, nunca o valor.
+        has_password=bool(len(row) > 19 and row[19]),
     )
 
 
@@ -69,6 +75,34 @@ def _actor(user_ws: Dependencies.UserClient) -> str:
         return me.user_name or me.display_name or "unknown"
     except Exception:
         return "unknown"
+
+
+def _encrypt_password_or_400(password: str | None) -> str | None:
+    """Cifra a senha para gravar em `enc_password`. Falha FECHADO.
+
+    Se a senha veio mas a chave-mestra (NUCLEA_CONN_ENC_KEY) não está
+    configurada, devolve 500 claro em vez de gravar em texto plano.
+    """
+    if not password:
+        return None
+    if not crypto.is_configured():
+        raise HTTPException(
+            500,
+            "NUCLEA_CONN_ENC_KEY não configurada no app — não é possível salvar a "
+            "senha com segurança. Configure o secret 'nuclea-modeler/conn_enc_key'.",
+        )
+    return crypto.encrypt(password)
+
+
+def _fetch_enc_password(sql: SqlDependency, connection_id: str) -> str | None:
+    """Lê o cifrado da senha direto da tabela (get_connection não o expõe)."""
+    s = get_settings()
+    row = delta.fetch_one_params(
+        sql,
+        f"SELECT enc_password FROM {s.fq_table('connections')} WHERE connection_id = :cid",
+        [delta.param("cid", connection_id)],
+    )
+    return row[0] if row and row[0] else None
 
 
 @router.get("", response_model=list[ConnectionListOut], operation_id="listConnections")
@@ -146,6 +180,7 @@ def create_connection(
             "secret_key_user": payload.secret_key_user,
             "secret_key_pass": payload.secret_key_pass,
             "secret_key_token": payload.secret_key_token,
+            "enc_password": _encrypt_password_or_400(payload.password),
             "last_test_status": "never",
             "created_at": now,
             "created_by": actor,
@@ -166,25 +201,26 @@ def update_connection(
     import json
     s = get_settings()
     actor = _actor(user_ws)
-    delta.update_by_id(
-        sql,
-        s.fq_table("connections"),
-        "connection_id",
-        connection_id,
-        {
-            "alias": payload.alias,
-            "environment": payload.environment,
-            "system_id": payload.system_id,
-            "connection_type": payload.connection_type,
-            "config_json": json.dumps(payload.config, ensure_ascii=False),
-            "secret_scope": payload.secret_scope or s.secrets_scope,
-            "secret_key_user": payload.secret_key_user,
-            "secret_key_pass": payload.secret_key_pass,
-            "secret_key_token": payload.secret_key_token,
-            "updated_at": datetime.utcnow(),
-            "updated_by": actor,
-        },
-    )
+    fields: dict = {
+        "alias": payload.alias,
+        "environment": payload.environment,
+        "system_id": payload.system_id,
+        "connection_type": payload.connection_type,
+        "config_json": json.dumps(payload.config, ensure_ascii=False),
+        "secret_scope": payload.secret_scope or s.secrets_scope,
+        "secret_key_user": payload.secret_key_user,
+        "secret_key_pass": payload.secret_key_pass,
+        "secret_key_token": payload.secret_key_token,
+        "updated_at": datetime.utcnow(),
+        "updated_by": actor,
+    }
+    # Semântica da senha no update (evita apagar sem querer a senha já salva):
+    #   None -> OMITE o campo (mantém a senha atual)
+    #   ""   -> zera (enc_password = NULL)
+    #   valor-> cifra e substitui
+    if payload.password is not None:
+        fields["enc_password"] = _encrypt_password_or_400(payload.password) if payload.password else None
+    delta.update_by_id(sql, s.fq_table("connections"), "connection_id", connection_id, fields)
     return get_connection(connection_id, sql)
 
 
@@ -208,14 +244,16 @@ def test_connection(
 ) -> ConnectionTestResult:
     """Test a connection by actually probing the target.
 
-    - ODBC: opens a pyodbc connection with a 10s login timeout, runs a version
-      probe and closes the connection.
+    - DATABASE (v1.0058): opens a real connection via the embedded Python driver
+      of the chosen engine (Postgres/Oracle/MySQL/SQL Server/DB2), runs a version
+      probe and closes it. The password is decrypted at this moment from
+      `enc_password` (Fernet, see crypto.py) — never stored/returned in clear.
+    - ODBC (LEGADO): não suportado no runtime do Databricks Apps → devolve
+      mensagem de descontinuação pedindo recadastro como DATABASE.
     - REST: issues a single GET to `config.base_url` with timeout=10s. 2xx/3xx
-      = success. Credentials read from Databricks Secrets.
+      = success. Token read from Databricks Secrets via the APP service principal
+      (`app_ws`), because user OBO tokens typically lack the `secrets` scope.
     - DDL_IMPORT: trivially successful — no remote target.
-
-    Uses the APP service principal (`app_ws`) to read secrets, because user OBO
-    tokens typically lack the `secrets` scope.
     """
     conn = get_connection(connection_id, sql)
     s = get_settings()
@@ -223,13 +261,38 @@ def test_connection(
     # Resolve secret_scope: per-connection override → app-wide default.
     scope = conn.secret_scope or s.secrets_scope
 
-    if conn.connection_type == "ODBC":
-        outcome = testers.test_odbc(
-            ws=app_ws,
-            config=conn.config or {},
-            secret_scope=scope,
-            secret_key_user=conn.secret_key_user,
-            secret_key_pass=conn.secret_key_pass,
+    if conn.connection_type == "DATABASE":
+        # Motor nativo (v1.0058): decifra a senha guardada e testa via driver
+        # Python embutido do engine. username não é sigiloso e vem no config.
+        cfg = conn.config or {}
+        enc = _fetch_enc_password(sql, connection_id)
+        password: str | None = None
+        if enc:
+            try:
+                password = crypto.decrypt(enc)
+            except Exception:
+                password = None
+        if enc and password is None:
+            # Só cai aqui se havia senha salva e a decifragem falhou (chave
+            # trocada / dado corrompido) — mensagem acionável.
+            outcome = testers.TesterOutcome(
+                status="failure",
+                latency_ms=1,
+                error="Não foi possível decifrar a senha salva (chave alterada ou dado corrompido). Edite a conexão e informe a senha novamente.",
+            )
+        else:
+            outcome = testers.test_database(
+                engine=str(cfg.get("engine") or ""),
+                config=cfg,
+                username=cfg.get("username"),
+                password=password,
+            )
+    elif conn.connection_type == "ODBC":
+        # LEGADO — não roda no Databricks Apps (sem unixODBC). Ver DatabaseEngine.
+        outcome = testers.TesterOutcome(
+            status="failure",
+            latency_ms=1,
+            error="Conexão ODBC foi descontinuada (não suportada no runtime do Databricks Apps). Recadastre como conexão de banco nativa (Postgres, Oracle, MySQL, SQL Server ou DB2).",
         )
     elif conn.connection_type == "REST":
         outcome = testers.test_rest(
