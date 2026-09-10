@@ -53,6 +53,7 @@ export function FlagBatchBar({
   onApply,
   onRemove,
   noun = "item",
+  systemId,
 }: {
   count: number;
   busy: boolean;
@@ -63,6 +64,8 @@ export function FlagBatchBar({
   onRemove: (flagIds: string[]) => void;
   /** Palavra usada no texto ("entidade", "atributo"). */
   noun?: string;
+  /** Escopo (rodada 8, item 4): mostra globais + flags deste sistema. */
+  systemId?: string;
 }) {
   const [mode, setMode] = useState<"apply" | "remove" | null>(null);
 
@@ -97,6 +100,7 @@ export function FlagBatchBar({
             subtitle="As flags marcadas serão aplicadas a todos os selecionados. A justificativa é opcional (recomendada em flags LGPD)."
             onClose={() => setMode(null)}
             applying={busy}
+            systemId={systemId}
             onApply={(specs) => {
               onApply(specs);
               setMode(null);
@@ -110,6 +114,7 @@ export function FlagBatchBar({
             noun={noun}
             count={count}
             busy={busy}
+            systemId={systemId}
             onClose={() => setMode(null)}
             onRemove={(flagIds) => {
               onRemove(flagIds);
@@ -132,14 +137,16 @@ function FlagRemoveModal({
   busy,
   onClose,
   onRemove,
+  systemId,
 }: {
   count: number;
   noun: string;
   busy?: boolean;
   onClose: () => void;
   onRemove: (flagIds: string[]) => void;
+  systemId?: string;
 }) {
-  const { data: flags } = useListFlagsSuspense({}, selector());
+  const { data: flags } = useListFlagsSuspense({ systemId }, selector());
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const toggle = (id: string) =>

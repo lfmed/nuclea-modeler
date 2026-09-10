@@ -835,6 +835,7 @@ function AttributesSection({
               count={selected.size}
               busy={applyingFlags || removingFlags}
               noun="atributo"
+              systemId={systemId}
               onClear={clearSelection}
               onApply={onApplyFlags}
               onRemove={onRemoveFlags}

@@ -474,6 +474,7 @@ function EntitiesTable({
           count={selected.size}
           busy={applying || removing}
           noun="entidade"
+          systemId={params.systemId}
           onClear={clearSelection}
           onApply={onApply}
           onRemove={onRemove}

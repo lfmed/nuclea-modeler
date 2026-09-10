@@ -118,6 +118,7 @@ export function FlagPickerModal({
   applying,
   title = "Aplicar flags",
   subtitle,
+  systemId,
 }: {
   /** Flags já aplicadas ao alvo — omitidas da lista (evita ruído). Em lote,
    *  deixe vazio: os alvos têm conjuntos de flags diferentes. */
@@ -127,8 +128,10 @@ export function FlagPickerModal({
   applying?: boolean;
   title?: string;
   subtitle?: string;
+  /** Escopo (rodada 8, item 4): globais + flags deste sistema. */
+  systemId?: string;
 }) {
-  const { data: flags } = useListFlagsSuspense({ isActive: true }, selector());
+  const { data: flags } = useListFlagsSuspense({ isActive: true, systemId }, selector());
   const [search, setSearch] = useState("");
   // Map de flag_id → { flag, justificativa }. Ordem de inserção preservada.
   const [selected, setSelected] = useState<
