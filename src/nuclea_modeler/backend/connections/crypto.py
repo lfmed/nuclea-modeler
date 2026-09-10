@@ -114,7 +114,7 @@ def _fernet(ws: Any = None):
         return Fernet(key.encode("utf-8"))
     except Exception as exc:
         raise RuntimeError(
-            f"chave de cifra inválida: esperado uma Fernet key "
+            "chave de cifra inválida: esperado uma Fernet key "
             "(base64 urlsafe de 32 bytes)."
         ) from exc
 
