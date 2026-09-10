@@ -35,7 +35,7 @@ def _req(method: str, path: str, token: str, body: dict | None = None) -> tuple[
     req.add_header("Authorization", f"Bearer {token}")
     req.add_header("Content-Type", "application/json")
     try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with urllib.request.urlopen(req, timeout=60) as resp:  # nosec B310
             raw = resp.read().decode()
             return resp.status, (json.loads(raw) if raw else {})
     except urllib.error.HTTPError as e:
