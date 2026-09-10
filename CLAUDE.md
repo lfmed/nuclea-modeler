@@ -323,6 +323,25 @@ documentado para quem mantém depois.** Cumprir em todo PR:
   (entities.index `params.systemId`; entities.$id/AttributesSection `systemId`).
   **Follow-up conhecido:** `FlagKeyPicker` (quick-add de tabela/coluna) ainda lista TODAS.
 
+## RODADA 8 — Calendário de conformidade + pop-up (v1.0062, PR-4, item 3)
+- **Novo módulo `backend/compliance/`** (models/service/router) + migration 025
+  (`compliance_calendar`: 1 agendamento por sistema; `next_due_date` é STRING ISO p/
+  evitar casting de DATE na Statement Execution API). Registrado no `app.py`
+  (`compliance_router`). Endpoints: `listComplianceSchedules`, `listComplianceDue`
+  (pop-up), `upsertComplianceSchedule`, `executeComplianceSchedule` (grava execução +
+  AVANÇA next_due_date pela recorrência — a partir do max(prevista, hoje)),
+  `deleteComplianceSchedule`, `importComplianceCalendar` (multipart CSV/XLSX, upsert por
+  sistema). Recorrências: MONTHLY/QUARTERLY/SEMIANNUAL/ANNUAL (add_months com clamp de
+  dia). Mutações exigem _MUTATORS (steward/architect/admin).
+- **UI:** página `_sidebar/compliance.tsx` (lista + import de planilha + cadastro manual +
+  "Registrar execução"); item "Conformidade" no menu Governança. Pop-up
+  `components/apx/compliance-reminder.tsx` (molde WelcomeTour, query NÃO-suspense) montado
+  no `_sidebar/route.tsx` — avisa vencidas/hoje, "Registrar execução" por sistema,
+  dispensável na sessão (sessionStorage). Hooks à mão em api.ts.
+- **Decisões do cliente:** recorrência mensal/trimestral/semestral/anual; pop-up avisa +
+  registra execução (sem exigir anexo); 1ª carga via planilha. **Anexar o checklist ao
+  sistema já funcionava** (módulo de anexos, owner_kind='system') — não refeito aqui.
+
 ## Package Management
 - **Frontend:** Use `apx bun install` or `apx bun add <dependency>` for frontend package management.
 - **Python:** Always use `uv` (never `pip`)

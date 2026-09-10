@@ -1,4 +1,5 @@
 import SidebarLayout from "@/components/apx/sidebar-layout";
+import { ComplianceReminder } from "@/components/apx/compliance-reminder";
 import { createFileRoute, Link, useLocation } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
 import {
@@ -27,6 +28,7 @@ import {
   Columns2,
   Columns3,
   ListTree,
+  CalendarCheck,
 } from "lucide-react";
 import {
   SidebarGroup,
@@ -147,6 +149,12 @@ function Layout() {
           match: (p) => p.startsWith("/flags"),
         },
         {
+          to: "/compliance",
+          label: "Conformidade",
+          icon: <CalendarCheck size={16} />,
+          match: (p) => p.startsWith("/compliance"),
+        },
+        {
           to: "/glossary",
           label: "Dicionário",
           icon: <BookOpenText size={16} />,
@@ -251,6 +259,10 @@ function Layout() {
 
   return (
     <SidebarLayout>
+      {/* Pop-up de lembrete de conformidade (rodada 8, item 3): aparece quando
+          houver avaliação vencida/vencendo. Fixed-position, então a posição no
+          tree não importa. */}
+      <ComplianceReminder />
       {sections.map((section) => (
         <SidebarGroup key={section.label}>
           <SidebarGroupLabel>{section.label}</SidebarGroupLabel>
