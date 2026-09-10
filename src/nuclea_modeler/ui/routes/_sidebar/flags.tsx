@@ -8,8 +8,10 @@ import {
   useCreateCustomFlag,
   useToggleFlag,
   useMyRolesSuspense,
+  useListSystemsSuspense,
   type FlagCategory,
   type FlagOut,
+  type SystemListOut,
 } from "@/lib/api";
 import selector from "@/lib/selector";
 
@@ -176,6 +178,15 @@ function CatalogTab() {
 
   const canManage = roles.is_admin || roles.roles.includes("DATA_ARCHITECT");
 
+  // Mapa system_id → nome para exibir o escopo das flags específicas de sistema
+  // (rodada 8, item 4).
+  const { data: systems } = useListSystemsSuspense(selector());
+  const systemNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const sys of systems as SystemListOut[]) m.set(sys.system_id, sys.system_name);
+    return m;
+  }, [systems]);
+
   const grouped = useMemo(() => {
     const g: Record<FlagCategory, FlagOut[]> = {
       LGPD: [],
@@ -228,7 +239,12 @@ function CatalogTab() {
               <CardContent>
                 <div className="grid gap-3 md:grid-cols-2">
                   {list.map((f) => (
-                    <FlagCard key={f.flag_id} flag={f} canManage={canManage} />
+                    <FlagCard
+                      key={f.flag_id}
+                      flag={f}
+                      canManage={canManage}
+                      systemName={f.system_id ? systemNameById.get(f.system_id) ?? f.system_id : undefined}
+                    />
                   ))}
                 </div>
               </CardContent>
@@ -240,7 +256,15 @@ function CatalogTab() {
   );
 }
 
-function FlagCard({ flag, canManage }: { flag: FlagOut; canManage: boolean }) {
+function FlagCard({
+  flag,
+  canManage,
+  systemName,
+}: {
+  flag: FlagOut;
+  canManage: boolean;
+  systemName?: string;
+}) {
   const qc = useQueryClient();
   const { mutate: toggle, isPending } = useToggleFlag({
     mutation: {
@@ -277,6 +301,16 @@ function FlagCard({ flag, canManage }: { flag: FlagOut; canManage: boolean }) {
             {!flag.is_active && (
               <Badge variant="outline" className="text-[10px] border-destructive/40 text-destructive">
                 inativa
+              </Badge>
+            )}
+            {/* Escopo por sistema (rodada 8, item 4): flag válida só neste sistema. */}
+            {systemName && (
+              <Badge
+                variant="outline"
+                className="text-[10px] border-nuclea-primary/40 text-nuclea-primary"
+                title={`Flag específica do sistema: ${systemName}`}
+              >
+                só: {systemName}
               </Badge>
             )}
           </div>
@@ -354,11 +388,14 @@ export function FlagChip({
 
 function NewCustomFlagForm({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
+  const { data: systems } = useListSystemsSuspense(selector());
   const [key, setKey] = useState("");
   const [name, setName] = useState("");
   const [desc, setDesc] = useState("");
   const [color, setColor] = useState("#6C757D");
   const [requires, setRequires] = useState(false);
+  // Escopo (rodada 8, item 4): "" = global; um system_id = flag só daquele sistema.
+  const [systemId, setSystemId] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const { mutate, isPending } = useCreateCustomFlag({
@@ -381,6 +418,7 @@ function NewCustomFlagForm({ onClose }: { onClose: () => void }) {
         description: desc.trim() || null,
         color_hex: color,
         requires_justification: requires,
+        system_id: systemId || null,
       },
     });
   };
@@ -415,6 +453,22 @@ function NewCustomFlagForm({ onClose }: { onClose: () => void }) {
             value={desc}
             onChange={(e) => setDesc(e.target.value)}
           />
+          {/* Escopo (rodada 8, item 4): Global (padrão) ou específica de um sistema. */}
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-muted-foreground">Escopo</span>
+            <select
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+              value={systemId}
+              onChange={(e) => setSystemId(e.target.value)}
+            >
+              <option value="">Global (todos os sistemas)</option>
+              {(systems as SystemListOut[]).map((sys) => (
+                <option key={sys.system_id} value={sys.system_id}>
+                  Só o sistema: {sys.system_name}
+                </option>
+              ))}
+            </select>
+          </label>
           <div className="flex items-center gap-4 text-sm">
             <label className="flex items-center gap-2">
               <span className="text-muted-foreground">Cor:</span>

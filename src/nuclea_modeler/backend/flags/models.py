@@ -25,6 +25,9 @@ class FlagOut(BaseModel):
     is_system: bool = False
     is_active: bool = True
     uc_tag_key: str | None = None
+    # Escopo por sistema (rodada 8, item 4). None = global; preenchido = só naquele
+    # sistema. Ver migration 024.
+    system_id: str | None = None
 
 
 class FlagIn(BaseModel):
@@ -36,6 +39,8 @@ class FlagIn(BaseModel):
     description: str | None = None
     color_hex: str | None = Field(default="#6C757D")
     requires_justification: bool = False
+    # None = flag global; preenchido = flag válida só para este sistema.
+    system_id: str | None = None
 
 
 class FlagPatch(BaseModel):

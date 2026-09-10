@@ -1341,6 +1341,8 @@ export interface FlagOut {
   is_system: boolean;
   is_active: boolean;
   uc_tag_key?: string | null;
+  // Escopo por sistema (rodada 8, item 4). null = global; preenchido = só naquele sistema.
+  system_id?: string | null;
 }
 
 export interface FlagIn {
@@ -1350,6 +1352,8 @@ export interface FlagIn {
   description?: string | null;
   color_hex?: string | null;
   requires_justification?: boolean;
+  // null/omitido = flag global; preenchido = flag válida só para este sistema.
+  system_id?: string | null;
 }
 
 export interface FlagPatch {
@@ -1394,7 +1398,7 @@ export interface AttributeFlagOut {
 }
 
 export const useListFlagsSuspense = (
-  params: { category?: FlagCategory; isActive?: boolean } = {},
+  params: { category?: FlagCategory; isActive?: boolean; systemId?: string } = {},
   s?: Selector<FlagOut[]>,
 ) =>
   useSuspenseQuery({
@@ -1404,6 +1408,8 @@ export const useListFlagsSuspense = (
         params: {
           category: params.category,
           is_active: params.isActive,
+          // Escopo por sistema (item 4): globais + do sistema atual. Sem systemId, todas.
+          system_id: params.systemId,
         },
       }),
     select: (r) => r.data,

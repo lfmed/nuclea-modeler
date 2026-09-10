@@ -48,10 +48,13 @@ relationship_router = APIRouter(prefix=f"{api_prefix}/relationships", tags=["fla
 FLAG_ADMINS = (ROLE_DATA_ARCHITECT, ROLE_ADMIN)
 
 
-# Column order used everywhere we build a FlagOut.
+# Column order used everywhere we build a FlagOut. `system_id` (rodada 8, item 4)
+# fica por ÚLTIMO — assim os slices que reusam _FLAG_COLS (joins de entity/attribute/
+# relationship flags) se ajustam por len() sem deslocar os índices anteriores.
 _FLAG_COLS = [
     "flag_id", "flag_key", "category", "display_name", "description",
     "color_hex", "requires_justification", "is_system", "is_active", "uc_tag_key",
+    "system_id",
 ]
 
 
@@ -67,6 +70,7 @@ def _flag_row_to_out(r: list) -> FlagOut:
         is_system=delta.as_bool(r[7]),
         is_active=delta.as_bool(r[8]),
         uc_tag_key=r[9],
+        system_id=r[10] if len(r) > 10 else None,
     )
 
 
@@ -90,6 +94,11 @@ def list_flags(
     sql: SqlDependency,
     category: FlagCategory | None = Query(None),
     is_active: bool | None = Query(None),
+    system_id: str | None = Query(
+        None,
+        description="Escopo (rodada 8, item 4): retorna GLOBAIS + as deste sistema. "
+        "Sem o param, retorna todas (visão de catálogo).",
+    ),
 ) -> list[FlagOut]:
     s = get_settings()
     where: list[str] = []
@@ -100,6 +109,11 @@ def list_flags(
     if is_active is not None:
         where.append("is_active = :is_active")
         params.append(delta.param("is_active", is_active))
+    if system_id:
+        # Globais (system_id NULL) + as específicas deste sistema. Sem o param, a
+        # visão de catálogo (aba Flags) mostra TODAS, com selo do sistema.
+        where.append("(system_id IS NULL OR system_id = :sys)")
+        params.append(delta.param("sys", system_id))
     where_clause = ("WHERE " + " AND ".join(where)) if where else ""
     rows = delta.fetch_all_params(
         sql,
@@ -109,7 +123,7 @@ def list_flags(
         {where_clause}
         ORDER BY
           CASE category WHEN 'LGPD' THEN 0 WHEN 'USE' THEN 1
-            WHEN 'QUALITY' THEN 2 WHEN 'CUSTOM' THEN 3 ELSE 4 END,
+            WHEN 'QUALITY' THEN 2 WHEN 'OFP' THEN 3 WHEN 'CUSTOM' THEN 4 ELSE 5 END,
           display_name
         """,
         params,
@@ -143,6 +157,8 @@ def create_custom_flag(
             "is_system": False,
             "is_active": True,
             "uc_tag_key": None,
+            # Escopo por sistema (item 4): None = global; preenchido = só neste sistema.
+            "system_id": payload.system_id,
             "created_at": now,
             "created_by": actor,
             "updated_at": now,

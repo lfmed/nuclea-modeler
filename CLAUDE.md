@@ -308,6 +308,21 @@ documentado para quem mantém depois.** Cumprir em todo PR:
   "Particionada · <estratégia>" + FilterSelect "Só particionadas". Sem tocar no DER
   (evita regressão nas arestas). Sem schema novo.
 
+## RODADA 8 — Flags custom por SISTEMA (v1.0061, PR-3, item 4)
+- **Escopo por sistema no catálogo de flags.** `flags` ganhou coluna `system_id`
+  (migration 024): NULL = global (comportamento atual); preenchido = flag CUSTOM válida
+  só naquele sistema. `_FLAG_COLS` (flags/router.py) ganhou `system_id` NO FIM (os slices
+  dos joins de entity/attribute/relationship flags se ajustam por `len()`) e
+  `_flag_row_to_out` mapeia `r[10]`. `createCustomFlag` grava `system_id`; `listFlags`
+  aceita `system_id` → `WHERE system_id IS NULL OR system_id = :sys` (globais + do sistema).
+  ORDER BY do catálogo corrigido p/ incluir OFP (LGPD0/USE1/QUALITY2/OFP3/CUSTOM4).
+- **UI:** form "Nova flag personalizada" (flags.tsx) ganhou seletor **Escopo** (Global /
+  "Só o sistema: X"); o card do catálogo mostra badge **"só: <sistema>"**. Os PICKERS de
+  aplicar/remover em lote (`FlagBatchBar`→`FlagPickerModal`/`FlagRemoveModal`) ganharam
+  prop `systemId` (opcional) e listam globais + do sistema atual — wired nos 2 call sites
+  (entities.index `params.systemId`; entities.$id/AttributesSection `systemId`).
+  **Follow-up conhecido:** `FlagKeyPicker` (quick-add de tabela/coluna) ainda lista TODAS.
+
 ## Package Management
 - **Frontend:** Use `apx bun install` or `apx bun add <dependency>` for frontend package management.
 - **Python:** Always use `uv` (never `pip`)
