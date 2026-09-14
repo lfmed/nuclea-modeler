@@ -13,7 +13,7 @@ dependencies = [
     # PIN EXATO (ver nota no requirements.txt): o AST do sqlglot muda entre
     # releases; `>=` deixava CI e deploy em versões diferentes e quebrou o
     # COMMENT ON TABLE em produção (round 6). == mantém CI == deploy.
-    "sqlglot==30.17.0",
+    "sqlglot==30.18.0",
     "openpyxl==3.1.5",          # round 6 pt 22 — import/export .xlsx (Embarcadero); pinado p/ reprodutibilidade
     "httpx>=0.28.0",
     "python-multipart>=0.0.20",
