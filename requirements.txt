@@ -10,7 +10,7 @@ databricks-sql-connector>=3.5.0
 # garante CI == produção. Versão atual = a validada no CI + ao vivo (v1.0048).
 # Para promover: suba a versão aqui E no pyproject.toml juntos (check_deps_sync
 # exige spec idêntico), rode o CI e revalide o import no app deployado.
-sqlglot==30.17.0
+sqlglot==30.18.0
 # round 6 pt 22: import/export de metadados no formato .xlsx do Embarcadero.
 # Instalado server-side no deploy (Databricks Apps) e no CI. O módulo de
 # round-trip degrada com erro amigável se por acaso não estiver disponível.
