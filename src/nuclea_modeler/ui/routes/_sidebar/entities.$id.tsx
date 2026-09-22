@@ -24,6 +24,7 @@ import {
   useGetDiagramSuspense,
   useGetSessionStatusSuspense,
   useGetSessionStateSuspense,
+  useGetEntityPartitioningSuspense,
   type BatchFlagSpec,
   type AttributeOut,
   type EntityOut,
@@ -124,6 +125,13 @@ function EntityDetail() {
             <Badge variant="outline">{entity.entity_type}</Badge>
             {entity.domain && <Badge variant="secondary">{entity.domain}</Badge>}
             {entity.criticality && <CriticalityBadge value={entity.criticality} />}
+            {/* Tag de particionamento na PRÓPRIA visão da tabela (feedback rodada 8):
+                antes só aparecia na lista de Entidades e no nó do DER. Suspense com
+                fallback nulo p/ não travar o cabeçalho; usa a MESMA queryKey da
+                PartitioningSection abaixo → deduplica no cache (sem fetch extra). */}
+            <Suspense fallback={null}>
+              <PartitionHeaderBadge entityId={id} />
+            </Suspense>
           </div>
           <h1 className="text-3xl font-bold tracking-tight font-mono">
             {entity.schema_name}.{entity.technical_name}
@@ -196,6 +204,34 @@ function EntityDetail() {
 
       <AttachmentsPanel ownerKind="entity" ownerId={id} label="Anexos da tabela" />
     </div>
+  );
+}
+
+/**
+ * Tag de particionamento exibida no cabeçalho da tabela.
+ *
+ * Feedback (rodada 8): o particionamento deve aparecer na PRÓPRIA visão da tabela,
+ * não só na lista de Entidades. O nó do DER já mostrava; a tela de detalhe só tinha
+ * a `PartitioningSection` (editor) lá no rodapé. Aqui damos um indicador rápido junto
+ * do título.
+ *
+ * Reusa `useGetEntityPartitioningSuspense` — MESMA queryKey (["getEntityPartitioning",
+ * entityId]) da PartitioningSection renderizada mais abaixo, então o React Query
+ * deduplica: uma única requisição e o MESMO shape nos dois observers (invariante que
+ * evita o bug de cache do v1.0064).
+ */
+function PartitionHeaderBadge({ entityId }: { entityId: string }) {
+  const { data: part } = useGetEntityPartitioningSuspense(entityId, selector());
+  if (!part || part.strategy === "NONE") return null;
+  const cols = part.columns?.length ? ` (${part.columns.join(", ")})` : "";
+  return (
+    <Badge
+      variant="outline"
+      className="border-violet-500/40 bg-violet-500/10 font-mono text-violet-700 dark:text-violet-300"
+      title={`Particionamento: ${part.strategy}${cols}`}
+    >
+      Particionada · {part.strategy}
+    </Badge>
   );
 }
 

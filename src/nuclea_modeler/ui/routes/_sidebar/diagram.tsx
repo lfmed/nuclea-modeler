@@ -17,6 +17,8 @@ import {
   MiniMap,
   applyNodeChanges,
   applyEdgeChanges,
+  getNodesBounds,
+  getViewportForBounds,
   type Node,
   type Edge,
   type NodeChange,
@@ -787,12 +789,56 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
 
   const exportPng = useCallback(async () => {
     if (!canvasRef.current) return;
-    const dataUrl = await toPng(canvasRef.current, { backgroundColor: "#ffffff" });
+    if (nodes.length === 0) {
+      toast.error("Nada para exportar — o diagrama está vazio");
+      return;
+    }
+    // Exporta o MODELO COMPLETO, não só o viewport visível. Antes,
+    // `toPng(canvasRef.current)` capturava apenas o DOM na tela → a imagem saía
+    // recortada (só o que o pan/zoom atual mostrava). Agora calculamos os limites
+    // de TODOS os nós (getNodesBounds) e um transform que enquadra tudo numa
+    // imagem do tamanho do modelo, e renderizamos o `.react-flow__viewport` com
+    // esse transform — independente da navegação atual. (Receita "download image"
+    // do React Flow v12.)
+    const viewportEl =
+      canvasRef.current.querySelector<HTMLElement>(".react-flow__viewport");
+    if (!viewportEl) {
+      toast.error("Canvas do diagrama não encontrado");
+      return;
+    }
+    const MAX_PX = 6000; // teto p/ não estourar limite de canvas do browser / OOM
+    const MARGIN = 48; // respiro (unidades do modelo, ~zoom 1) ao redor do todo
+    const bounds = getNodesBounds(nodes);
+    const imageWidth = Math.min(MAX_PX, Math.ceil(bounds.width) + MARGIN * 2);
+    const imageHeight = Math.min(MAX_PX, Math.ceil(bounds.height) + MARGIN * 2);
+    // Enquadra o modelo inteiro na imagem (padding 5%); minZoom baixo garante que
+    // modelos gigantes caibam mesmo com o teto de MAX_PX (só reduz a resolução).
+    const { x, y, zoom } = getViewportForBounds(
+      bounds,
+      imageWidth,
+      imageHeight,
+      0.05,
+      2,
+      0.05,
+    );
+    // pixelRatio 2 p/ nitidez; cai p/ 1 em modelos grandes p/ não estourar memória.
+    const pixelRatio = imageWidth > 3500 || imageHeight > 3500 ? 1 : 2;
+    const dataUrl = await toPng(viewportEl, {
+      backgroundColor: "#ffffff",
+      width: imageWidth,
+      height: imageHeight,
+      pixelRatio,
+      style: {
+        width: `${imageWidth}px`,
+        height: `${imageHeight}px`,
+        transform: `translate(${x}px, ${y}px) scale(${zoom})`,
+      },
+    });
     const link = document.createElement("a");
     link.href = dataUrl;
     link.download = `nuclea-der-${view.system_name || systemId}.png`;
     link.click();
-  }, [view.system_name, systemId]);
+  }, [nodes, view.system_name, systemId]);
 
   // Item 4: exportar como imagem UM objeto (a tabela selecionada no canvas).
   const selectedNodeId = useMemo(
