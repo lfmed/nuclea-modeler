@@ -164,12 +164,20 @@ export const EntityNode = memo(({ data, selected }: EntityNodeProps) => {
               {fkCount} fk
             </span>
           )}
+          {/* Marcador de particionamento no cabeçalho do nó. Feedback (rodada 8):
+              antes mostrava só a estratégia crua ("RANGE"), ambígua, em violeta —
+              agora rotula "Particionada · <estratégia>" e usa a MESMA cor laranja da
+              aba Entidades (entities.index.tsx) p/ ficar consistente entre as telas. */}
           {entity.partition_strategy && entity.partition_strategy !== "NONE" && (
             <span
-              className="text-[10px] rounded px-1.5 py-0.5 border bg-violet-500/10 border-violet-500/30 font-mono"
-              title={`Particionamento: ${entity.partition_strategy}`}
+              className="text-[10px] rounded px-1.5 py-0.5 border border-orange-500/30 bg-orange-500/10 text-orange-700 dark:text-orange-300 font-medium"
+              title={`Tabela particionada · estratégia ${entity.partition_strategy}${
+                entity.partition_columns?.length
+                  ? ` (${entity.partition_columns.join(", ")})`
+                  : ""
+              }`}
             >
-              {entity.partition_strategy}
+              Particionada · {entity.partition_strategy}
             </span>
           )}
           {hasPending && (
@@ -324,7 +332,7 @@ export const EntityNode = memo(({ data, selected }: EntityNodeProps) => {
               className="flex items-center gap-1.5 text-[10px] font-mono"
               title={`Particionamento ${entity.partition_strategy}`}
             >
-              <GitBranch className="h-2.5 w-2.5 text-violet-500 shrink-0" />
+              <GitBranch className="h-2.5 w-2.5 text-orange-500 shrink-0" />
               <span className="text-muted-foreground truncate">
                 <span className="text-foreground">{entity.partition_strategy}</span>
                 {(entity.partition_columns?.length ?? 0) > 0 && (

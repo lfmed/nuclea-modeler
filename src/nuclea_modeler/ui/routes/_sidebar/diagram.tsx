@@ -117,6 +117,7 @@ import {
 } from "@/components/diagram/layout";
 import { getTypesForTechnology } from "@/components/diagram/types-by-tech";
 import { TypePicker } from "@/components/diagram/type-picker";
+import { PartitioningSection } from "@/components/diagram/partitioning-section";
 import { AttrDescriptionCell } from "@/components/attributes/description-cell";
 import { AttrDefaultCell } from "@/components/attributes/default-cell";
 import { AttrCheckCell } from "@/components/attributes/check-cell";
@@ -2786,6 +2787,19 @@ function EditEntityDialog({
               candidateEntities={candidateEntities}
               relationships={relationships}
               onChanged={() => qc.invalidateQueries({ queryKey: ["getDiagram"] })}
+            />
+          </div>
+
+          {/* Particionamento — feedback (rodada 8): o modal do DER não mostrava o
+              particionamento (só dava pra ver/editar na página de detalhe). Reusa a
+              MESMA seção (editável) do detalhe da tabela; o PartitioningSection já
+              auto-suspende internamente. Ao salvar aqui, invalida o diagrama p/ o nó
+              refletir o marcador. */}
+          <div className="space-y-3 pt-4 border-t">
+            <h3 className="text-sm font-semibold">Particionamento</h3>
+            <PartitioningSection
+              entityId={entity.entity_id}
+              technology={systemTechnology ?? null}
             />
           </div>
 
