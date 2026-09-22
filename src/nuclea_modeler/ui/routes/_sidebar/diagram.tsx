@@ -677,7 +677,7 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
     setPendingConn({ source: conn.source, target: conn.target });
   }, []);
 
-  const { fitView } = useReactFlow();
+  const { fitView, getNodes } = useReactFlow();
 
   const autoLayout = useCallback(() => {
     setNodes((nds) => applyLayoutByMode(nds, edges, layoutMode, direction, expanded));
@@ -789,7 +789,11 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
 
   const exportPng = useCallback(async () => {
     if (!canvasRef.current) return;
-    if (nodes.length === 0) {
+    // getNodes() (React Flow) em vez do estado local: traz as dimensões REAIS
+    // medidas dos nós (node.measured), essenciais p/ getNodesBounds calcular a
+    // área certa do modelo (o estado local pode não ter tamanho medido).
+    const rfNodes = getNodes();
+    if (rfNodes.length === 0) {
       toast.error("Nada para exportar — o diagrama está vazio");
       return;
     }
@@ -806,39 +810,61 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
       toast.error("Canvas do diagrama não encontrado");
       return;
     }
-    const MAX_PX = 6000; // teto p/ não estourar limite de canvas do browser / OOM
     const MARGIN = 48; // respiro (unidades do modelo, ~zoom 1) ao redor do todo
-    const bounds = getNodesBounds(nodes);
-    const imageWidth = Math.min(MAX_PX, Math.ceil(bounds.width) + MARGIN * 2);
-    const imageHeight = Math.min(MAX_PX, Math.ceil(bounds.height) + MARGIN * 2);
-    // Enquadra o modelo inteiro na imagem (padding 5%); minZoom baixo garante que
-    // modelos gigantes caibam mesmo com o teto de MAX_PX (só reduz a resolução).
+    const bounds = getNodesBounds(rfNodes);
+    // Dimensões em CSS px (~zoom 1); o transform enquadra o modelo com 5% de padding.
+    const cssWidth = Math.ceil(bounds.width) + MARGIN * 2;
+    const cssHeight = Math.ceil(bounds.height) + MARGIN * 2;
     const { x, y, zoom } = getViewportForBounds(
       bounds,
-      imageWidth,
-      imageHeight,
+      cssWidth,
+      cssHeight,
       0.05,
-      2,
+      4,
       0.05,
     );
-    // pixelRatio 2 p/ nitidez; cai p/ 1 em modelos grandes p/ não estourar memória.
-    const pixelRatio = imageWidth > 3500 || imageHeight > 3500 ? 1 : 2;
-    const dataUrl = await toPng(viewportEl, {
+    // QUALIDADE (feedback: texto "estoura" ao dar zoom no PNG). O texto é
+    // rasterizado, então a nitidez ao ampliar depende dos pixels REAIS =
+    // css * pixelRatio. Miramos 3x, mas respeitando os limites do browser:
+    // nenhum lado passa de ~12k px e a área fica sob ~50 MP (senão o canvas
+    // estoura memória / volta em branco). Modelos grandes caem gradualmente
+    // até 1x em vez de falhar — sempre com o modelo COMPLETO.
+    const MAX_SIDE = 12000;
+    const MAX_AREA = 50_000_000; // ~50 MP (~200 MB de canvas) — teto seguro
+    let pixelRatio = 3;
+    pixelRatio = Math.min(pixelRatio, MAX_SIDE / cssWidth, MAX_SIDE / cssHeight);
+    pixelRatio = Math.min(pixelRatio, Math.sqrt(MAX_AREA / (cssWidth * cssHeight)));
+    pixelRatio = Math.max(1, pixelRatio);
+    const opts = {
       backgroundColor: "#ffffff",
-      width: imageWidth,
-      height: imageHeight,
-      pixelRatio,
+      width: cssWidth,
+      height: cssHeight,
       style: {
-        width: `${imageWidth}px`,
-        height: `${imageHeight}px`,
+        width: `${cssWidth}px`,
+        height: `${cssHeight}px`,
         transform: `translate(${x}px, ${y}px) scale(${zoom})`,
       },
-    });
+    };
+    let dataUrl: string;
+    try {
+      dataUrl = await toPng(viewportEl, { ...opts, pixelRatio });
+    } catch {
+      // Fallback resiliente: se o canvas em alta resolução estourar memória,
+      // tenta 1x (ainda com o modelo completo) antes de desistir.
+      try {
+        dataUrl = await toPng(viewportEl, { ...opts, pixelRatio: 1 });
+      } catch {
+        toast.error(
+          "Falha ao gerar o PNG (modelo muito grande). Tente exportar um recorte/objeto.",
+        );
+        return;
+      }
+    }
     const link = document.createElement("a");
     link.href = dataUrl;
     link.download = `nuclea-der-${view.system_name || systemId}.png`;
     link.click();
-  }, [nodes, view.system_name, systemId]);
+  }, [getNodes, view.system_name, systemId]);
 
   // Item 4: exportar como imagem UM objeto (a tabela selecionada no canvas).
   const selectedNodeId = useMemo(
