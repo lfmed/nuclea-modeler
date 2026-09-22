@@ -227,7 +227,7 @@ function PartitionHeaderBadge({ entityId }: { entityId: string }) {
   return (
     <Badge
       variant="outline"
-      className="border-violet-500/40 bg-violet-500/10 font-mono text-violet-700 dark:text-violet-300"
+      className="border-orange-500/40 bg-orange-500/10 font-medium text-orange-700 dark:text-orange-300"
       title={`Particionamento: ${part.strategy}${cols}`}
     >
       Particionada · {part.strategy}
