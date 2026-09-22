@@ -929,12 +929,27 @@ export const useMyRolesSuspense = (s?: Selector<MyRolesOut>) =>
     ...s?.query,
   });
 
-// Variante NÃO-suspense (mesmo cache) para componentes que não podem suspender
+// Variante NÃO-suspense (MESMO cache) para componentes que não podem suspender
 // o layout — ex.: o pop-up de conformidade decide se aparece a partir do papel.
+//
+// GOTCHA (v1.0064) — CONSISTÊNCIA DE FORMATO NO CACHE COMPARTILHADO: esta variante
+// e `useMyRolesSuspense` compartilham a MESMA queryKey ["myRoles"], então PRECISAM
+// cachear o MESMO formato. A suspense guarda o AxiosResponse inteiro e desembrulha
+// no observer via `select: (r) => r.data`. Antes, esta variante desembrulhava no
+// próprio queryFn (cacheava o MyRolesOut CRU). Como o React Query deduplica por
+// key, o PRIMEIRO hook a popular o cache definia o formato: quando o pop-up de
+// conformidade (não-suspense, montado no layout da sidebar → roda em TODA página)
+// populava ["myRoles"] com o objeto cru, o `useMyRolesSuspense` aplicava
+// `select: r => r.data` sobre um MyRolesOut SEM `.data` → `data` virava `undefined`
+// → `me.can_apply_tickets`/`me.is_admin` estourava em Navegador/Flags/Versões/Sync/
+// Auditoria/Papéis (todos gate por papel). Fix: cachear o AxiosResponse aqui também
+// e desembrulhar por `select`, idêntico à suspense. Regra: hooks que dividem key
+// guardam o mesmo shape.
 export const useMyRoles = () =>
   useQuery({
     queryKey: ["myRoles"],
-    queryFn: async () => (await api.get<MyRolesOut>("/rbac/me")).data,
+    queryFn: () => api.get<MyRolesOut>("/rbac/me"),
+    select: (r) => r.data,
   });
 
 export const useListRolesSuspense = (s?: Selector<UserRoleOut[]>) =>
