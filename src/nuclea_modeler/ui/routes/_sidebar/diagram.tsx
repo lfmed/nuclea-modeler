@@ -17,6 +17,8 @@ import {
   MiniMap,
   applyNodeChanges,
   applyEdgeChanges,
+  getNodesBounds,
+  getViewportForBounds,
   type Node,
   type Edge,
   type NodeChange,
@@ -26,7 +28,7 @@ import {
   MarkerType,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { toPng } from "html-to-image";
+import { toPng, toSvg } from "html-to-image";
 
 import {
   useCreateRelationship,
@@ -675,7 +677,7 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
     setPendingConn({ source: conn.source, target: conn.target });
   }, []);
 
-  const { fitView } = useReactFlow();
+  const { fitView, getNodes } = useReactFlow();
 
   const autoLayout = useCallback(() => {
     setNodes((nds) => applyLayoutByMode(nds, edges, layoutMode, direction, expanded));
@@ -785,14 +787,112 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
     [fitView],
   );
 
-  const exportPng = useCallback(async () => {
-    if (!canvasRef.current) return;
-    const dataUrl = await toPng(canvasRef.current, { backgroundColor: "#ffffff" });
+  // Calcula o "frame" para exportar o MODELO COMPLETO (não só o viewport visível):
+  // elemento-alvo + dimensões + transform que enquadra TODOS os nós. Antes,
+  // `toPng(canvasRef.current)` capturava só o DOM na tela → a imagem saía recortada
+  // (apenas o pan/zoom atual). Compartilhado por exportPng e exportSvg para ambos
+  // enquadrarem o modelo do MESMO jeito. Usa getNodes() do React Flow (dimensões
+  // REAIS medidas dos nós — o estado local pode não ter tamanho medido). Retorna
+  // null (e mostra toast) quando não dá para exportar. (Receita "download image"
+  // do React Flow v12.)
+  const computeFullDiagramFrame = useCallback(() => {
+    if (!canvasRef.current) return null;
+    const rfNodes = getNodes();
+    if (rfNodes.length === 0) {
+      toast.error("Nada para exportar — o diagrama está vazio");
+      return null;
+    }
+    const el = canvasRef.current.querySelector<HTMLElement>(".react-flow__viewport");
+    if (!el) {
+      toast.error("Canvas do diagrama não encontrado");
+      return null;
+    }
+    const MARGIN = 48; // respiro (unidades do modelo, ~zoom 1) ao redor do todo
+    const bounds = getNodesBounds(rfNodes);
+    const width = Math.ceil(bounds.width) + MARGIN * 2;
+    const height = Math.ceil(bounds.height) + MARGIN * 2;
+    // Enquadra o modelo inteiro (padding 5%); minZoom baixo garante que modelos
+    // gigantes caibam.
+    const { x, y, zoom } = getViewportForBounds(bounds, width, height, 0.05, 4, 0.05);
+    return {
+      el,
+      width,
+      height,
+      style: {
+        width: `${width}px`,
+        height: `${height}px`,
+        transform: `translate(${x}px, ${y}px) scale(${zoom})`,
+      },
+    };
+  }, [getNodes]);
+
+  const triggerDownload = useCallback((dataUrl: string, filename: string) => {
     const link = document.createElement("a");
     link.href = dataUrl;
-    link.download = `nuclea-der-${view.system_name || systemId}.png`;
+    link.download = filename;
     link.click();
-  }, [view.system_name, systemId]);
+  }, []);
+
+  const exportPng = useCallback(async () => {
+    const frame = computeFullDiagramFrame();
+    if (!frame) return;
+    // QUALIDADE (feedback: texto "estoura" ao dar zoom no PNG). O texto é
+    // rasterizado, então a nitidez ao ampliar depende dos pixels REAIS =
+    // css * pixelRatio. Miramos 3x, mas respeitando os limites do browser:
+    // nenhum lado passa de ~12k px e a área fica sob ~50 MP (senão o canvas
+    // estoura memória / volta em branco). Modelos grandes caem gradualmente
+    // até 1x em vez de falhar — sempre com o modelo COMPLETO.
+    const MAX_SIDE = 12000;
+    const MAX_AREA = 50_000_000; // ~50 MP (~200 MB de canvas) — teto seguro
+    let pixelRatio = 3;
+    pixelRatio = Math.min(pixelRatio, MAX_SIDE / frame.width, MAX_SIDE / frame.height);
+    pixelRatio = Math.min(pixelRatio, Math.sqrt(MAX_AREA / (frame.width * frame.height)));
+    pixelRatio = Math.max(1, pixelRatio);
+    const opts = {
+      backgroundColor: "#ffffff",
+      width: frame.width,
+      height: frame.height,
+      style: frame.style,
+    };
+    let dataUrl: string;
+    try {
+      dataUrl = await toPng(frame.el, { ...opts, pixelRatio });
+    } catch {
+      // Fallback resiliente: se o canvas em alta resolução estourar memória,
+      // tenta 1x (ainda com o modelo completo) antes de desistir.
+      try {
+        dataUrl = await toPng(frame.el, { ...opts, pixelRatio: 1 });
+      } catch {
+        toast.error(
+          "Falha ao gerar o PNG (modelo muito grande). Tente exportar um recorte/objeto.",
+        );
+        return;
+      }
+    }
+    triggerDownload(dataUrl, `nuclea-der-${view.system_name || systemId}.png`);
+  }, [computeFullDiagramFrame, triggerDownload, view.system_name, systemId]);
+
+  // Export VETORIAL (SVG): o texto vira vetor → zoom INFINITO sem pixelar. Resposta
+  // definitiva ao "texto estoura no zoom" (o PNG é raster, sempre limitado pela
+  // resolução). Mesmo enquadramento (modelo completo) do PNG. Sem pixelRatio: SVG
+  // não tem resolução fixa.
+  const exportSvg = useCallback(async () => {
+    const frame = computeFullDiagramFrame();
+    if (!frame) return;
+    let dataUrl: string;
+    try {
+      dataUrl = await toSvg(frame.el, {
+        backgroundColor: "#ffffff",
+        width: frame.width,
+        height: frame.height,
+        style: frame.style,
+      });
+    } catch {
+      toast.error("Falha ao gerar o SVG do diagrama.");
+      return;
+    }
+    triggerDownload(dataUrl, `nuclea-der-${view.system_name || systemId}.svg`);
+  }, [computeFullDiagramFrame, triggerDownload, view.system_name, systemId]);
 
   // Item 4: exportar como imagem UM objeto (a tabela selecionada no canvas).
   const selectedNodeId = useMemo(
@@ -1184,6 +1284,15 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
             <Button variant="outline" size="sm" onClick={exportPng}>
               <Download className="mr-2 h-4 w-4" />
               PNG
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={exportSvg}
+              title="Exportar o modelo completo em SVG (vetorial — zoom sem perder nitidez)"
+            >
+              <Download className="mr-2 h-4 w-4" />
+              SVG
             </Button>
             <Button
               variant="outline"
