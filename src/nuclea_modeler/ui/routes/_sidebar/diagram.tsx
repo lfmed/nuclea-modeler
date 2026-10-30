@@ -19,6 +19,7 @@ import {
   applyEdgeChanges,
   getNodesBounds,
   getViewportForBounds,
+  SelectionMode,
   type Node,
   type Edge,
   type NodeChange,
@@ -117,6 +118,13 @@ import {
 } from "@/components/diagram/layout";
 import { getTypesForTechnology } from "@/components/diagram/types-by-tech";
 import { TypePicker } from "@/components/diagram/type-picker";
+import {
+  PNG_QUALITY_KEY,
+  PNG_QUALITY_PRESETS,
+  loadPngQuality,
+  pngPixelRatio,
+  type PngQuality,
+} from "@/components/diagram/export-quality";
 import { PartitioningSection } from "@/components/diagram/partitioning-section";
 import { AttrDescriptionCell } from "@/components/attributes/description-cell";
 import { AttrDefaultCell } from "@/components/attributes/default-cell";
@@ -368,6 +376,15 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
     return m;
   }, [selectedDiagram]);
 
+  // Rodada 9 item 9 — "Só as selecionadas": foco LOCAL (não persiste) num
+  // subconjunto escolhido visualmente no canvas. Entra no filteredEntities como
+  // qualquer filtro → nós e arestas seguem o mesmo visibleIds (sem mexer na lógica
+  // de handles/arestas). Zera ao trocar sistema/schema/diagrama.
+  const [focusIds, setFocusIds] = useState<Set<string> | null>(null);
+  useEffect(() => {
+    setFocusIds(null);
+  }, [systemId, schemaId, diagramId]);
+
   const { mutate: createDiagram, isPending: creatingDiagram } = useCreateDiagram({
     mutation: {
       onSuccess: () => qc.invalidateQueries({ queryKey: ["listDiagrams"] }),
@@ -427,6 +444,7 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
     return view.entities.filter((e) => {
       if (selectedSchema && e.schema_name !== selectedSchema.schema_name) return false;
       if (diagramId && memberIds && !memberIds.has(e.entity_id)) return false;
+      if (focusIds && !focusIds.has(e.entity_id)) return false;
       if (domainFilter && (e.domain || "") !== domainFilter) return false;
       if (!f) return true;
       return (
@@ -436,7 +454,7 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
         (e.domain || "").toLowerCase().includes(f)
       );
     });
-  }, [view.entities, filter, domainFilter, selectedSchema, diagramId, memberIds]);
+  }, [view.entities, filter, domainFilter, selectedSchema, diagramId, memberIds, focusIds]);
 
   const visibleIds = useMemo(
     () => new Set(filteredEntities.map((e) => e.entity_id)),
@@ -759,6 +777,73 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
     );
   }, [schemaId, systemId, createDiagram, setDiagramMembers, view.entities, selectedSchema]);
 
+  // ── Seleção visual de tabelas (rodada 9, item 9) ─────────────────────────────
+  // O cliente pediu "uma seleção visual de tabelas como alternativa ao mecanismo
+  // atual de pesquisa". As tabelas escolhidas no canvas (laço / Ctrl+clique) viram
+  // insumo de ações: criar um diagrama (recorte) só com elas, focar nelas, ou
+  // tirá-las do diagrama atual. Derivado de node.selected (estado do React Flow).
+  const selectedIds = useMemo(() => nodes.filter((n) => n.selected).map((n) => n.id), [nodes]);
+
+  const clearSelection = useCallback(
+    () => setNodes((nds) => nds.map((n) => (n.selected ? { ...n, selected: false } : n))),
+    [],
+  );
+
+  const createDiagramFromSelection = useCallback(() => {
+    const picked = view.entities.filter((e) => selectedIds.includes(e.entity_id));
+    if (picked.length === 0) return;
+    // Diagrama pertence a UM schema (diagrams.schema_id) e a tela só mostra um
+    // diagrama dentro do seu schema — então a seleção precisa ser de um schema só.
+    const schemaNames = Array.from(new Set(picked.map((e) => e.schema_name)));
+    if (schemaNames.length > 1) {
+      toast.error("A seleção tem tabelas de mais de um schema", {
+        description: `Schemas: ${schemaNames.join(", ")}. Um diagrama pertence a um único schema — selecione tabelas de um schema só.`,
+      });
+      return;
+    }
+    const schema = schemaList.find((sc) => sc.schema_name === schemaNames[0]);
+    if (!schema) {
+      toast.error(`Schema "${schemaNames[0]}" não encontrado no sistema`);
+      return;
+    }
+    const name = window.prompt(`Nome do novo diagrama (${picked.length} tabela(s) de ${schema.schema_name}):`);
+    if (!name || !name.trim()) return;
+    // Leva as posições ATUAIS do canvas: o recorte nasce com o mesmo arranjo.
+    const posById = new Map(nodes.map((n) => [n.id, n.position]));
+    createDiagram(
+      { data: { system_id: systemId, schema_id: schema.schema_id, diagram_name: name.trim() } },
+      {
+        onSuccess: (created) => {
+          setDiagramMembers({
+            diagramId: created.diagram_id,
+            data: {
+              members: picked.map((e) => ({
+                entity_id: e.entity_id,
+                pos_x: posById.get(e.entity_id)?.x ?? null,
+                pos_y: posById.get(e.entity_id)?.y ?? null,
+              })),
+            },
+          });
+          setSchemaId(schema.schema_id);
+          setDiagramId(created.diagram_id);
+        },
+      },
+    );
+  }, [view.entities, selectedIds, schemaList, nodes, createDiagram, setDiagramMembers, systemId]);
+
+  const removeSelectionFromDiagram = useCallback(() => {
+    if (!diagramId || !selectedDiagram) return;
+    const drop = new Set(selectedIds);
+    const keep = selectedDiagram.members.filter((m) => !drop.has(m.entity_id));
+    if (!confirm(`Tirar ${drop.size} tabela(s) deste diagrama? Elas continuam no modelo — só saem deste recorte.`)) return;
+    setDiagramMembers({
+      diagramId,
+      data: {
+        members: keep.map((m) => ({ entity_id: m.entity_id, pos_x: m.pos_x ?? null, pos_y: m.pos_y ?? null })),
+      },
+    });
+  }, [diagramId, selectedDiagram, selectedIds, setDiagramMembers]);
+
   const [showMembers, setShowMembers] = useState(false);
 
   // Item 5: ao trocar a estrutura (schema/diagrama/filtro), reajusta o zoom
@@ -834,44 +919,56 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
     link.click();
   }, []);
 
+  // Rodada 9 item 8 ("aumentar a resolução das imagens exportadas"): a qualidade
+  // do PNG virou ESCOLHA do usuário (persistida no localStorage). Antes era 3x fixo
+  // com teto de 12k px/50 MP; modelos médios já caíam para ~1-2x sem aviso.
+  const [pngQuality, setPngQuality] = useState<PngQuality>(() => loadPngQuality());
+  useEffect(() => {
+    try {
+      localStorage.setItem(PNG_QUALITY_KEY, pngQuality);
+    } catch {
+      /* storage indisponível (modo privado) — só não persiste */
+    }
+  }, [pngQuality]);
+
   const exportPng = useCallback(async () => {
     const frame = computeFullDiagramFrame();
     if (!frame) return;
-    // QUALIDADE (feedback: texto "estoura" ao dar zoom no PNG). O texto é
-    // rasterizado, então a nitidez ao ampliar depende dos pixels REAIS =
-    // css * pixelRatio. Miramos 3x, mas respeitando os limites do browser:
-    // nenhum lado passa de ~12k px e a área fica sob ~50 MP (senão o canvas
-    // estoura memória / volta em branco). Modelos grandes caem gradualmente
-    // até 1x em vez de falhar — sempre com o modelo COMPLETO.
-    const MAX_SIDE = 12000;
-    const MAX_AREA = 50_000_000; // ~50 MP (~200 MB de canvas) — teto seguro
-    let pixelRatio = 3;
-    pixelRatio = Math.min(pixelRatio, MAX_SIDE / frame.width, MAX_SIDE / frame.height);
-    pixelRatio = Math.min(pixelRatio, Math.sqrt(MAX_AREA / (frame.width * frame.height)));
-    pixelRatio = Math.max(1, pixelRatio);
+    // O texto é rasterizado: a nitidez ao ampliar depende dos pixels REAIS =
+    // css * pixelRatio. O preset define o alvo e os tetos (lado/área) que o browser
+    // aguenta; modelos grandes caem até 1x em vez de falhar — sempre COMPLETOS.
+    const preset = PNG_QUALITY_PRESETS[pngQuality];
+    const target = pngPixelRatio(frame.width, frame.height, preset);
     const opts = {
       backgroundColor: "#ffffff",
       width: frame.width,
       height: frame.height,
       style: frame.style,
     };
-    let dataUrl: string;
-    try {
-      dataUrl = await toPng(frame.el, { ...opts, pixelRatio });
-    } catch {
-      // Fallback resiliente: se o canvas em alta resolução estourar memória,
-      // tenta 1x (ainda com o modelo completo) antes de desistir.
+    // Fallback em degraus (alvo → metade → … → 1x): se o canvas em alta resolução
+    // estourar memória (o toPng rejeita ou devolve vazio), tenta o próximo degrau.
+    const ratios = [target, target / 2, target / 4, 1].filter((r, i, a) => r >= 1 && a.indexOf(r) === i);
+    for (const ratio of ratios) {
       try {
-        dataUrl = await toPng(frame.el, { ...opts, pixelRatio: 1 });
-      } catch {
-        toast.error(
-          "Falha ao gerar o PNG (modelo muito grande). Tente exportar um recorte/objeto.",
-        );
+        const dataUrl = await toPng(frame.el, { ...opts, pixelRatio: ratio });
+        if (!dataUrl || dataUrl.length < 100) throw new Error("canvas vazio");
+        triggerDownload(dataUrl, `nuclea-der-${view.system_name || systemId}.png`);
+        const w = Math.round(frame.width * ratio);
+        const h = Math.round(frame.height * ratio);
+        // Diz a resolução REAL obtida — e sugere o SVG quando o teto limitou.
+        const limited = ratio < preset.ratio;
+        toast.success(`PNG exportado: ${w.toLocaleString("pt-BR")} × ${h.toLocaleString("pt-BR")} px (${ratio.toFixed(1)}x)`, {
+          description: limited
+            ? "O modelo é grande e a resolução foi limitada pelo navegador. Para nitidez em qualquer zoom, use o SVG (vetorial)."
+            : undefined,
+        });
         return;
+      } catch {
+        /* tenta o próximo degrau */
       }
     }
-    triggerDownload(dataUrl, `nuclea-der-${view.system_name || systemId}.png`);
-  }, [computeFullDiagramFrame, triggerDownload, view.system_name, systemId]);
+    toast.error("Falha ao gerar o PNG (modelo muito grande). Use o SVG ou exporte um recorte/objeto.");
+  }, [computeFullDiagramFrame, triggerDownload, view.system_name, systemId, pngQuality]);
 
   // Export VETORIAL (SVG): o texto vira vetor → zoom INFINITO sem pixelar. Resposta
   // definitiva ao "texto estoura no zoom" (o PNG é raster, sempre limitado pela
@@ -912,13 +1009,16 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
       toast.error("Objeto selecionado não encontrado no canvas");
       return;
     }
-    const dataUrl = await toPng(el, { backgroundColor: "#ffffff", pixelRatio: 2 });
+    // Um só nó é pequeno: usa o alvo do preset direto (respeitando os tetos).
+    const r = el.getBoundingClientRect();
+    const ratio = pngPixelRatio(r.width || 300, r.height || 300, PNG_QUALITY_PRESETS[pngQuality]);
+    const dataUrl = await toPng(el, { backgroundColor: "#ffffff", pixelRatio: ratio });
     const ent = view.entities.find((e) => e.entity_id === selectedNodeId);
     const link = document.createElement("a");
     link.href = dataUrl;
     link.download = `nuclea-obj-${ent?.technical_name || selectedNodeId}.png`;
     link.click();
-  }, [selectedNodeId, view.entities]);
+  }, [selectedNodeId, view.entities, pngQuality]);
 
   const exportJson = useCallback(() => {
     const payload = {
@@ -1004,13 +1104,30 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
   };
 
   // Bind delete to React Flow node selection (Backspace/Delete keys)
+  // Confirmação de exclusão ANTES de o React Flow remover os nós (rodada 9 item 9).
+  // Antes o confirm ficava no onNodesDelete, que roda DEPOIS da remoção: cancelar
+  // não trazia o nó de volta (sumia da tela até recarregar), e com a seleção
+  // múltipla nova o usuário levaria um confirm POR tabela. Agora: uma pergunta só
+  // para a seleção inteira; cancelar aborta a remoção de nós e arestas.
+  const onBeforeDelete = useCallback(
+    async ({ nodes: toDelete }: { nodes: Node[]; edges: Edge[] }) => {
+      if (toDelete.length === 0) return true;
+      const names = toDelete.map((n) => (n.data as any)?.entity?.technical_name ?? n.id);
+      const msg =
+        toDelete.length === 1
+          ? `Excluir entidade "${names[0]}"? Atributos serão removidos junto.`
+          : `Excluir ${toDelete.length} entidades? Atributos serão removidos junto.\n\n${names
+              .slice(0, 15)
+              .map((n) => `• ${n}`)
+              .join("\n")}${names.length > 15 ? `\n… e mais ${names.length - 15}` : ""}`;
+      return confirm(msg);
+    },
+    [],
+  );
   const onNodesDelete = useCallback(
     (deleted: Node[]) => {
-      for (const node of deleted) {
-        if (confirm(`Excluir entidade "${(node.data as any)?.entity?.technical_name}"? Atributos serão removidos junto.`)) {
-          deleteEntity.mutate({ entityId: node.id });
-        }
-      }
+      // Já confirmado no onBeforeDelete. A exclusão é STAGED na sessão/ticket.
+      for (const node of deleted) deleteEntity.mutate({ entityId: node.id });
     },
     [deleteEntity],
   );
@@ -1158,7 +1275,7 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
               {(
                 [
                   { m: "move", label: "Mover", Icon: Hand, title: "Mover: clique e arraste as tabelas pelo canvas" },
-                  { m: "select", label: "Selecionar", Icon: MousePointer2, title: "Selecionar: um clique seleciona; duplo clique abre a edição" },
+                  { m: "select", label: "Selecionar", Icon: MousePointer2, title: "Selecionar: clique seleciona; arraste no fundo para selecionar várias (laço); Ctrl/⌘+clique soma; duplo clique edita. Pan: botão direito/meio" },
                   { m: "connect", label: "Conectar", Icon: Waypoints, title: "Conectar: arraste de uma tabela até outra para criar uma FK" },
                 ] as const
               ).map(({ m, label, Icon, title }) => (
@@ -1282,10 +1399,28 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
               <Maximize2 className="mr-2 h-4 w-4" />
               Encaixar
             </Button>
-            <Button variant="outline" size="sm" onClick={exportPng}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={exportPng}
+              title="Exportar o modelo completo em PNG na qualidade escolhida ao lado"
+            >
               <Download className="mr-2 h-4 w-4" />
               PNG
             </Button>
+            <select
+              value={pngQuality}
+              onChange={(e) => setPngQuality(e.target.value as PngQuality)}
+              className="h-8 rounded-md border bg-background px-2 text-xs"
+              title="Resolução do PNG. Máxima gera arquivos grandes; para zoom ilimitado use o SVG."
+              aria-label="Qualidade do PNG"
+            >
+              {(Object.keys(PNG_QUALITY_PRESETS) as PngQuality[]).map((q) => (
+                <option key={q} value={q}>
+                  {PNG_QUALITY_PRESETS[q].label}
+                </option>
+              ))}
+            </select>
             <Button
               variant="outline"
               size="sm"
@@ -1394,11 +1529,28 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
         <div
           ref={canvasRef}
           className={cn(
-            "h-[calc(100vh-16rem)] min-h-[520px] w-full rounded-md border bg-background",
+            "relative h-[calc(100vh-16rem)] min-h-[520px] w-full rounded-md border bg-background",
             // Dica visual do modo do cursor (round 5, pt 10).
             canvasMode === "connect" && "cursor-crosshair",
           )}
         >
+          {/* Barra da seleção visual (rodada 9 item 9). Fica FORA do
+              .react-flow__viewport → não sai nos exports PNG/SVG. */}
+          {/* ≥2: um clique simples (1 tabela) é o uso normal — inclusive do
+              "PNG objeto" — e não deve abrir a barra a cada clique. */}
+          {(selectedIds.length >= 2 || focusIds) && (
+            <SelectionBar
+              count={selectedIds.length >= 2 ? selectedIds.length : 0}
+              focused={focusIds?.size ?? null}
+              inDiagram={!!diagramId}
+              busy={creatingDiagram || savingMembers}
+              onCreateDiagram={createDiagramFromSelection}
+              onFocus={() => setFocusIds(new Set(selectedIds))}
+              onUnfocus={() => setFocusIds(null)}
+              onRemoveFromDiagram={removeSelectionFromDiagram}
+              onClear={clearSelection}
+            />
+          )}
           <ReactFlow
             // FIX (arestas/tabelas somem ao TROCAR de sistema/recorte): ao trocar
             // o systemId ou o diagrama, TODO o conjunto de nós é substituído (ids
@@ -1416,6 +1568,7 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
             onNodesDelete={onNodesDelete}
+            onBeforeDelete={onBeforeDelete}
             onNodeClick={onNodeClick}
             onNodeDoubleClick={onNodeDoubleClick}
             // Modo do cursor (round 5, pt 10): só arrasta em "move"; só conecta em
@@ -1423,6 +1576,14 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
             nodesDraggable={canvasMode === "move"}
             nodesConnectable={canvasMode === "connect"}
             elementsSelectable
+            // Seleção VISUAL de várias tabelas (rodada 9 item 9): no modo
+            // "Selecionar", arrastar no fundo desenha um laço; o pan vai para o
+            // botão do meio/direito. Em qualquer modo: Shift+arrastar = laço e
+            // Ctrl/⌘+clique soma à seleção. Partial = basta o laço tocar a tabela.
+            selectionOnDrag={canvasMode === "select"}
+            panOnDrag={canvasMode === "select" ? [1, 2] : true}
+            selectionMode={SelectionMode.Partial}
+            multiSelectionKeyCode={["Meta", "Control"]}
             deleteKeyCode={["Backspace", "Delete"]}
             fitView
             fitViewOptions={{ padding: 0.15 }}
@@ -1569,6 +1730,66 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
   );
 }
 
+/**
+ * Barra flutuante das ações sobre as tabelas selecionadas no canvas (rodada 9,
+ * item 9). Só aparece com seleção (ou com o foco ativo, para poder sair dele).
+ */
+function SelectionBar({
+  count,
+  focused,
+  inDiagram,
+  busy,
+  onCreateDiagram,
+  onFocus,
+  onUnfocus,
+  onRemoveFromDiagram,
+  onClear,
+}: {
+  count: number;
+  focused: number | null;
+  inDiagram: boolean;
+  busy: boolean;
+  onCreateDiagram: () => void;
+  onFocus: () => void;
+  onUnfocus: () => void;
+  onRemoveFromDiagram: () => void;
+  onClear: () => void;
+}) {
+  return (
+    <div className="absolute left-1/2 top-2 z-10 flex -translate-x-1/2 flex-wrap items-center gap-1 rounded-md border bg-background/95 px-2 py-1 text-xs shadow-md">
+      {count > 0 && <span className="px-1 font-medium">{count} tabela(s) selecionada(s)</span>}
+      {count > 0 && (
+        <Button size="sm" variant="outline" className="h-7" disabled={busy} onClick={onCreateDiagram}
+          title="Cria um diagrama (recorte) só com as tabelas selecionadas, mantendo as posições">
+          + Diagrama com elas
+        </Button>
+      )}
+      {count > 0 && (
+        <Button size="sm" variant="outline" className="h-7" onClick={onFocus}
+          title="Mostra só as selecionadas (temporário — não altera nenhum diagrama)">
+          Só as selecionadas
+        </Button>
+      )}
+      {count > 0 && inDiagram && (
+        <Button size="sm" variant="outline" className="h-7 text-destructive" disabled={busy} onClick={onRemoveFromDiagram}
+          title="Tira as selecionadas deste diagrama (continuam no modelo)">
+          Tirar do diagrama
+        </Button>
+      )}
+      {focused != null && (
+        <Button size="sm" variant="secondary" className="h-7" onClick={onUnfocus}>
+          Mostrar todas ({focused} em foco)
+        </Button>
+      )}
+      {count > 0 && (
+        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onClear} title="Limpar seleção">
+          <X className="h-3.5 w-3.5" />
+        </Button>
+      )}
+    </div>
+  );
+}
+
 function MembersDialog({
   schemaName,
   schemaEntities,
@@ -1585,11 +1806,34 @@ function MembersDialog({
   onSave: (ids: Set<string>) => void;
 }) {
   const [picked, setPicked] = useState<Set<string>>(() => new Set(initialIds));
+  // Rodada 9 item 9: escolha VISUAL (cartões em grade com nº de colunas, PK e
+  // LGPD) em vez de uma lista de nomes — o cliente achava a escolha só por
+  // nome/pesquisa pouco prática. O filtro só estreita o que aparece; "Todas/
+  // Nenhuma" agem sobre o que está VISÍVEL (permite "todas que começam com X").
+  const [q, setQ] = useState("");
+  const visible = useMemo(() => {
+    const f = q.trim().toLowerCase();
+    if (!f) return schemaEntities;
+    return schemaEntities.filter(
+      (e) =>
+        e.technical_name.toLowerCase().includes(f) ||
+        (e.logical_name || "").toLowerCase().includes(f),
+    );
+  }, [schemaEntities, q]);
   const toggle = (id: string) =>
     setPicked((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
+      return next;
+    });
+  const setVisible = (on: boolean) =>
+    setPicked((prev) => {
+      const next = new Set(prev);
+      for (const e of visible) {
+        if (on) next.add(e.entity_id);
+        else next.delete(e.entity_id);
+      }
       return next;
     });
   return (
@@ -1598,7 +1842,7 @@ function MembersDialog({
       onClick={onClose}
     >
       <div
-        className="bg-background rounded-lg border shadow-xl max-w-lg w-full max-h-[80vh] flex flex-col"
+        className="bg-background rounded-lg border shadow-xl max-w-4xl w-full max-h-[85vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between p-4 border-b">
@@ -1609,30 +1853,75 @@ function MembersDialog({
             <X className="h-4 w-4" />
           </Button>
         </div>
-        <div className="p-4 overflow-auto space-y-1">
+        <div className="flex flex-wrap items-center gap-2 px-4 pt-3">
+          <Input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Filtrar por nome…"
+            className="h-8 max-w-xs"
+          />
+          <Button variant="outline" size="sm" className="h-8" onClick={() => setVisible(true)}>
+            Todas{q ? " (visíveis)" : ""}
+          </Button>
+          <Button variant="outline" size="sm" className="h-8" onClick={() => setVisible(false)}>
+            Nenhuma{q ? " (visíveis)" : ""}
+          </Button>
+          <span className="text-xs text-muted-foreground">
+            Dica: no canvas, arraste no modo “Selecionar” para escolher várias e use “+ Diagrama com elas”.
+          </span>
+        </div>
+        <div className="p-4 overflow-auto">
           {schemaEntities.length === 0 && (
             <p className="text-sm text-muted-foreground">Schema sem tabelas.</p>
           )}
-          {schemaEntities.map((e) => (
-            <label
-              key={e.entity_id}
-              className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted/50 cursor-pointer"
-            >
-              <input
-                type="checkbox"
-                className="h-4 w-4 accent-nuclea-primary"
-                checked={picked.has(e.entity_id)}
-                onChange={() => toggle(e.entity_id)}
-              />
-              <span className="font-mono">{e.technical_name}</span>
-              {e.logical_name && (
-                <span className="text-xs text-muted-foreground">· {e.logical_name}</span>
-              )}
-            </label>
-          ))}
+          <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
+            {visible.map((e) => {
+              const on = picked.has(e.entity_id);
+              const pkCount = e.attributes.filter((a) => a.is_primary_key).length;
+              return (
+                <button
+                  type="button"
+                  key={e.entity_id}
+                  onClick={() => toggle(e.entity_id)}
+                  aria-pressed={on}
+                  className={cn(
+                    "rounded-md border p-2 text-left text-xs transition-colors",
+                    on
+                      ? "border-nuclea-primary bg-nuclea-primary/10 ring-1 ring-nuclea-primary"
+                      : "hover:bg-muted/50",
+                  )}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="checkbox"
+                      readOnly
+                      tabIndex={-1}
+                      checked={on}
+                      className="h-3.5 w-3.5 accent-nuclea-primary pointer-events-none"
+                    />
+                    <span className="truncate font-mono text-sm font-medium">{e.technical_name}</span>
+                  </div>
+                  {e.logical_name && (
+                    <div className="mt-0.5 truncate text-muted-foreground">{e.logical_name}</div>
+                  )}
+                  <div className="mt-1 flex flex-wrap gap-1 text-[10px] text-muted-foreground">
+                    <span>{e.attributes.length} col.</span>
+                    {pkCount > 0 && <span>· {pkCount} PK</span>}
+                    {e.entity_type !== "TABLE" && <span>· {e.entity_type}</span>}
+                    {e.has_lgpd_flag && <span className="text-nuclea-primary">· LGPD</span>}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          {schemaEntities.length > 0 && visible.length === 0 && (
+            <p className="text-sm text-muted-foreground">Nenhuma tabela com “{q}”.</p>
+          )}
         </div>
         <div className="flex items-center justify-between gap-2 p-4 border-t">
-          <span className="text-xs text-muted-foreground">{picked.size} selecionada(s)</span>
+          <span className="text-xs text-muted-foreground">
+            {picked.size} de {schemaEntities.length} selecionada(s)
+          </span>
           <div className="flex gap-2">
             <Button variant="ghost" size="sm" onClick={onClose}>
               Cancelar

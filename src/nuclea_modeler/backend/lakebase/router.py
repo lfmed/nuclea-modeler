@@ -45,25 +45,61 @@ def _row_to_out(r: list) -> SandboxOut:
     )
 
 
+def _is_scope_error(exc: Exception) -> bool:
+    """True quando a API recusou o token OBO por falta do scope `postgres`.
+
+    O SDK nem sempre devolve um `PermissionDenied` tipado: com o 403 de scope ele
+    às vezes falha ao parsear o corpo e levanta um erro genérico cuja mensagem
+    contém "Invalid scope" — por isso a checagem é pela mensagem.
+    """
+    msg = str(exc)
+    return "Invalid scope" in msg or "required scopes" in msg
+
+
+def _instances_out(ws) -> list[ListAvailableInstancesOut]:
+    return [
+        ListAvailableInstancesOut(
+            instance_name=inst.name or "",
+            state=str(inst.state.value) if inst.state else "UNKNOWN",
+            capacity=str(inst.capacity.value) if inst.capacity else None,
+            pg_version=str(inst.pg_version.value) if inst.pg_version else None,
+            read_write_dns=inst.read_write_dns,
+            uid=inst.uid,
+        )
+        for inst in ws.database.list_database_instances()
+    ]
+
+
 @router.get("/instances", response_model=list[ListAvailableInstancesOut], operation_id="listLakebaseInstances")
-def list_instances(user_ws: Dependencies.UserClient) -> list[ListAvailableInstancesOut]:
-    """List Lakebase instances available in the workspace (live, from Databricks SDK)."""
-    out: list[ListAvailableInstancesOut] = []
+def list_instances(
+    user_ws: Dependencies.UserClient,
+    app_ws: Dependencies.Client,
+) -> list[ListAvailableInstancesOut]:
+    """List Lakebase instances available in the workspace (live, from Databricks SDK).
+
+    Rodada 9 (item 1): em produção esta rota dava 403 "Invalid scope, required
+    scopes: postgres" — o app não declarava o scope `postgres` em
+    `user_api_scopes`, então o token OBO do usuário não pode chamar a API de
+    database. A correção de verdade é declarar o scope no app (opção A aprovada);
+    mas, para a tela não quebrar enquanto o scope não estiver ativo (ou se o
+    usuário ainda não re-consentiu), caímos no SP do app — que é quem de fato
+    conecta no sandbox (ver test_sandbox). Com o SP a lista mostra só as
+    instâncias que o SP enxerga, o que é exatamente o que dá pra usar.
+    """
     try:
-        for inst in user_ws.database.list_database_instances():
-            out.append(
-                ListAvailableInstancesOut(
-                    instance_name=inst.name or "",
-                    state=str(inst.state.value) if inst.state else "UNKNOWN",
-                    capacity=str(inst.capacity.value) if inst.capacity else None,
-                    pg_version=str(inst.pg_version.value) if inst.pg_version else None,
-                    read_write_dns=inst.read_write_dns,
-                    uid=inst.uid,
-                )
-            )
-    except Exception as exc:
-        raise HTTPException(500, f"failed to list Lakebase instances: {exc}") from exc
-    return out
+        return _instances_out(user_ws)
+    except Exception as exc:  # noqa: BLE001 — SDK levanta tipos variados
+        if not _is_scope_error(exc):
+            raise HTTPException(500, f"failed to list Lakebase instances: {exc}") from exc
+    try:
+        return _instances_out(app_ws)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            500,
+            "Não foi possível listar as instâncias Lakebase: o app não tem o scope "
+            "'postgres' para o usuário e o service principal do app também não "
+            f"conseguiu listar ({exc}).",
+        ) from exc
 
 
 @router.get("/sandboxes", response_model=list[SandboxListOut], operation_id="listSandboxes")

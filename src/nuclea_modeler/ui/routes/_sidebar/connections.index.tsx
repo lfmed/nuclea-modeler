@@ -11,6 +11,7 @@ import {
   useDeleteConnection,
 } from "@/lib/api";
 import selector from "@/lib/selector";
+import { ConnectionTestError } from "@/components/connections/test-error";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -170,6 +171,13 @@ function ConnectionsTable({ onSelect }: { onSelect: (id: string) => void }) {
                   <td className="py-2 pr-3">{c.system_name || c.system_id}</td>
                   <td className="py-2 pr-3">
                     <Badge variant="outline">{c.connection_type}</Badge>
+                    {/* Rodada 9 item 3: ODBC não roda no Databricks Apps — deixar explícito
+                        para o usuário recadastrar como conexão nativa (DATABASE). */}
+                    {c.connection_type === "ODBC" && (
+                      <Badge variant="destructive" className="ml-1" title="ODBC não é suportado no runtime do Databricks Apps. Recadastre como conexão de banco nativa.">
+                        descontinuada
+                      </Badge>
+                    )}
                   </td>
                   <td className="py-2 pr-3">
                     <TestStatusBadge status={c.last_test_status} />
@@ -204,12 +212,18 @@ function ConnectionDetailSheet({
 
   const { mutate: test, isPending: testing } = useTestConnection({
     mutation: {
-      onSuccess: () => {
+      onSuccess: (r) => {
         if (connectionId) {
           qc.invalidateQueries({ queryKey: ["getConnection", connectionId] });
         }
         qc.invalidateQueries({ queryKey: ["listConnections"] });
-        toast.success("Conexão testada");
+        // Rodada 9 item 3: antes era sempre "Conexão testada" (verde) — inclusive
+        // quando o teste FALHAVA. Agora o toast reflete o resultado + diagnóstico.
+        if (r.status === "success") {
+          toast.success(`Conexão OK${r.latency_ms != null ? ` (${r.latency_ms} ms)` : ""}`);
+        } else {
+          toast.error("Falha na conexão", { description: r.hint ?? r.error ?? undefined });
+        }
       },
       onError: (e) => toast.error(String(e)),
     },
@@ -271,6 +285,13 @@ function ConnectionDetailSheet({
               <div className="flex flex-wrap items-center gap-2">
                 <EnvBadge env={conn.environment} />
                 <Badge variant="outline">{conn.connection_type}</Badge>
+                {/* Rodada 9 item 3: ODBC não roda no Databricks Apps — deixar explícito
+                    para o usuário recadastrar como conexão nativa (DATABASE). */}
+                {conn.connection_type === "ODBC" && (
+                  <Badge variant="destructive" className="ml-1" title="ODBC não é suportado no runtime do Databricks Apps. Recadastre como conexão de banco nativa.">
+                    descontinuada
+                  </Badge>
+                )}
                 <span className="text-sm text-muted-foreground">·</span>
                 <span className="text-sm text-muted-foreground">
                   {conn.system_name || conn.system_id}
@@ -488,11 +509,7 @@ function TestStatusBlock({
             Versão detectada: <span className="font-mono">{version}</span>
           </p>
         )}
-        {error && (
-          <pre className="mt-2 rounded-md bg-destructive/10 p-3 text-xs whitespace-pre-wrap text-destructive">
-            {error}
-          </pre>
-        )}
+        {error && <ConnectionTestError error={error} />}
       </div>
     </div>
   );

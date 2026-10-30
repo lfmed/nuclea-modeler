@@ -16,6 +16,7 @@ import { Separator } from "@/components/ui/separator";
 import {
   ArrowLeft, AlertCircle, RefreshCw, Trash2, CheckCircle2, XCircle, Clock,
 } from "lucide-react";
+import { ConnectionTestError } from "@/components/connections/test-error";
 
 export const Route = createFileRoute("/_sidebar/connections/$id")({
   component: ConnectionDetailPage,
@@ -29,10 +30,16 @@ function ConnectionDetailPage() {
 
   const { mutate: test, isPending: testing } = useTestConnection({
     mutation: {
-      onSuccess: () => {
+      onSuccess: (r) => {
         qc.invalidateQueries({ queryKey: ["getConnection", id] });
         qc.invalidateQueries({ queryKey: ["listConnections"] });
-        toast.success("Conexão testada");
+        // Rodada 9 item 3: antes era sempre "Conexão testada" (verde) — inclusive
+        // quando o teste FALHAVA. Agora o toast reflete o resultado + diagnóstico.
+        if (r.status === "success") {
+          toast.success(`Conexão OK${r.latency_ms != null ? ` (${r.latency_ms} ms)` : ""}`);
+        } else {
+          toast.error("Falha na conexão", { description: r.hint ?? r.error ?? undefined });
+        }
       },
       onError: (e) => toast.error(String(e)),
     },
@@ -92,6 +99,13 @@ function ConnectionDetailPage() {
               <div className="flex items-center gap-2 mt-2">
                 <EnvBadge env={conn.environment} />
                 <Badge variant="outline">{conn.connection_type}</Badge>
+                {/* Rodada 9 item 3: ODBC não roda no Databricks Apps — deixar explícito
+                    para o usuário recadastrar como conexão nativa (DATABASE). */}
+                {conn.connection_type === "ODBC" && (
+                  <Badge variant="destructive" className="ml-1" title="ODBC não é suportado no runtime do Databricks Apps. Recadastre como conexão de banco nativa.">
+                    descontinuada
+                  </Badge>
+                )}
                 {conn.connection_type === "DATABASE" && conn.config?.engine ? (
                   <Badge variant="secondary">{String(conn.config.engine)}</Badge>
                 ) : null}
@@ -256,11 +270,7 @@ function TestStatusBlock({
       <div className="space-y-1 text-sm">
         {latency != null && <p>Latência: <span className="font-mono">{latency} ms</span></p>}
         {version && <p>Versão detectada: <span className="font-mono">{version}</span></p>}
-        {error && (
-          <pre className="mt-2 rounded-md bg-destructive/10 p-3 text-xs whitespace-pre-wrap text-destructive">
-            {error}
-          </pre>
-        )}
+        {error && <ConnectionTestError error={error} />}
       </div>
     </div>
   );

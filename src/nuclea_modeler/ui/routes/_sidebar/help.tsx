@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { WelcomeTour, resetWelcomeTour } from "@/components/apx/welcome-tour";
+import { PracticalGuides } from "@/components/apx/help-guides";
 import { Sparkles } from "lucide-react";
 import {
   BookOpen,
@@ -53,6 +54,7 @@ const SECTIONS = [
   { id: "papeis", label: "Por papel (RBAC)", icon: <UserCog className="h-3.5 w-3.5" /> },
   { id: "tickets", label: "Fluxo de Tickets", icon: <Workflow className="h-3.5 w-3.5" /> },
   { id: "lgpd", label: "Faixas LGPD", icon: <ShieldAlert className="h-3.5 w-3.5" /> },
+  { id: "guias", label: "Guias práticos", icon: <BookOpenText className="h-3.5 w-3.5" /> },
   { id: "faq", label: "FAQ", icon: <MessageCircleQuestion className="h-3.5 w-3.5" /> },
   { id: "atalhos", label: "Atalhos", icon: <Keyboard className="h-3.5 w-3.5" /> },
   { id: "sobre", label: "Sobre", icon: <Wrench className="h-3.5 w-3.5" /> },
@@ -69,6 +71,15 @@ function Help() {
       <Roles />
       <TicketFlow />
       <LgpdFlags />
+      {/* Rodada 9 item 10: Código DB / Canvas / Linhagem / dialeto com exemplos. */}
+      <Section
+        id="guias"
+        icon={<BookOpenText className="h-4 w-4" />}
+        title="Guias práticos"
+        subtitle="Passo a passo com exemplos para os recursos que mais geram dúvida: Código DB, Canvas Exploratório, Linhagem e dialeto."
+      >
+        <PracticalGuides />
+      </Section>
       <Faq />
       <Shortcuts />
       <About />

@@ -113,9 +113,74 @@ CSV_HEADERS = [
     "column_description",
 ]
 
+# Rodada 9 (item 5): o cliente pediu os exports CSV/XLSX "enriquecidos" com
+# tipagem, nulabilidade, PK e FK. O CSV já tinha tipo/PK/nulabilidade; faltava a
+# FK. `fk_references` é SÓ DE EXPORT (informativa): o import a IGNORA de propósito
+# — criar relacionamento a partir de texto livre editado numa planilha geraria FKs
+# erradas em silêncio; relacionamento se cria no DER/Relacionamentos. Fica FORA de
+# CSV_HEADERS porque CSV_HEADERS também é o cabeçalho do CSV canônico que o import
+# do XLSX monta internamente (parse_and_stage_xlsx).
+CSV_EXPORT_HEADERS = [*CSV_HEADERS, "fk_references"]
+
+# Colunas extras do .xlsx, ANEXADAS depois das 4 do formato Embarcadero
+# (table|table_description|column|column_description). O leitor do import
+# (`_read_xlsx_rows`) indexa por NOME de cabeçalho, então colunas a mais não
+# quebram o re-import e o arquivo continua compatível com o Embarcadero.
+XLSX_EXTRA_HEADERS = ["schema", "data_type", "is_nullable", "is_pk", "fk_references"]
+
 
 def _b(v: Any) -> str:
     return "" if v is None else str(v)
+
+
+def fk_references_by_attr(
+    rels: list[dict[str, Any]], attr_meta: dict[str, dict[str, Any]],
+) -> dict[str, str]:
+    """Mapa attribute_id da coluna-FK (filha) → "schema.tabela.coluna" referenciada.
+
+    `rels` vem de `ddl.service.fetch_relationships` (arrays já normalizados por
+    `as_str_list`); `attr_meta` é {attribute_id: {schema, table, column, is_pk}}.
+
+    GOTCHA (o mesmo do marcador FK do DER, v1.0057): a orientação source/target NÃO
+    é confiável — o app grava source=PAI/target=FILHO, mas há dado legado/seed com o
+    inverso. Decidimos o lado referenciado pela PK: o lado cujas colunas são TODAS
+    PK é o pai; o outro é a FK. Se os dois (ou nenhum) forem todo-PK (ex.: relação
+    1:1 PK↔PK), caímos na convenção source=PAI. As colunas casam por POSIÇÃO
+    (source_attr_ids[i] ↔ target_attr_ids[i]), como no render_foreign_keys.
+    Coluna com mais de uma FK recebe as referências separadas por "; ".
+    """
+    def _all_pk(ids: list[str]) -> bool:
+        return bool(ids) and all(attr_meta.get(i, {}).get("is_pk") for i in ids)
+
+    refs: dict[str, list[str]] = {}
+    for rel in rels:
+        src = rel.get("source_attr_ids") or []
+        tgt = rel.get("target_attr_ids") or []
+        parent_ids, child_ids = src, tgt
+        if _all_pk(tgt) and not _all_pk(src):
+            parent_ids, child_ids = tgt, src
+        for child_id, parent_id in zip(child_ids, parent_ids):
+            parent = attr_meta.get(parent_id)
+            if child_id not in attr_meta or parent is None:
+                continue  # ponta fora do sistema/apagada — não inventa referência
+            ref = f"{parent['schema']}.{parent['table']}.{parent['column']}"
+            bucket = refs.setdefault(child_id, [])
+            if ref not in bucket:
+                bucket.append(ref)
+    return {aid: "; ".join(v) for aid, v in refs.items()}
+
+
+def _fk_refs_for_system(sql, system_id: str, attr_meta: dict[str, dict[str, Any]]) -> dict[str, str]:
+    """Carrega os relacionamentos do sistema e resolve as FKs por coluna.
+
+    Best-effort: falha ao ler relacionamentos não pode derrubar o export de
+    metadados (a coluna fk_references só sai vazia)."""
+    from ..ddl.service import fetch_relationships  # lazy: evita custo no import do módulo
+
+    try:
+        return fk_references_by_attr(fetch_relationships(sql, system_id), attr_meta)
+    except Exception:  # noqa: BLE001
+        return {}
 
 
 def _slugify(name: str) -> str:
@@ -188,7 +253,7 @@ def export_system_csv(sql, system_id: str) -> str:
                e.domain, e.criticality,
                a.technical_name, a.logical_name, a.native_data_type,
                a.is_primary_key, a.is_nullable, a.description_md,
-               a.ordinal_position
+               a.ordinal_position, a.attribute_id
         FROM {s.fq_table('attributes')} a
         JOIN {s.fq_table('entities')} e ON e.entity_id = a.entity_id
         WHERE e.system_id = :sid
@@ -197,9 +262,14 @@ def export_system_csv(sql, system_id: str) -> str:
         """,
         [delta.param("sid", system_id)],
     )
+    attr_meta = {
+        r[13]: {"schema": r[0], "table": r[1], "column": r[6], "is_pk": delta.as_bool(r[9])}
+        for r in rows
+    }
+    fk_refs = _fk_refs_for_system(sql, system_id, attr_meta)
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(CSV_HEADERS)
+    w.writerow(CSV_EXPORT_HEADERS)
     for r in rows:
         w.writerow([
             _b(r[0]), _b(r[1]), _b(r[2]), _b(r[3]), _b(r[4]), _b(r[5]),
@@ -207,6 +277,7 @@ def export_system_csv(sql, system_id: str) -> str:
             "true" if delta.as_bool(r[9]) else "false",
             "true" if (r[10] is None or delta.as_bool(r[10])) else "false",
             _b(r[11]),
+            fk_refs.get(r[13], ""),
         ])
     return buf.getvalue()
 
@@ -581,7 +652,8 @@ def export_system_xlsx(sql, system_id: str) -> bytes:
         sql,
         f"""
         SELECT e.technical_name, e.description_md, a.technical_name, a.description_md,
-               a.ordinal_position, a.attribute_id
+               a.ordinal_position, a.attribute_id,
+               e.schema_name, a.native_data_type, a.is_nullable, a.is_primary_key
         FROM {s.fq_table('attributes')} a
         JOIN {s.fq_table('entities')} e ON e.entity_id = a.entity_id
         WHERE e.system_id = :sid
@@ -608,16 +680,30 @@ def export_system_xlsx(sql, system_id: str) -> bytes:
         if token and aid not in classif_by_attr:
             classif_by_attr[aid] = token
 
+    attr_meta = {
+        r[5]: {"schema": r[6], "table": r[0], "column": r[2], "is_pk": delta.as_bool(r[9])}
+        for r in rows
+    }
+    fk_refs = _fk_refs_for_system(sql, system_id, attr_meta)
+
     wb = Workbook()
     ws = wb.active
     ws.title = "Planilha1"
-    ws.append(["table", "table_description", "column", "column_description"])
+    ws.append(["table", "table_description", "column", "column_description", *XLSX_EXTRA_HEADERS])
     for r in rows:
         desc = r[3] or ""
         token = classif_by_attr.get(r[5])
         if token:
             desc = (desc + f" | CLASSIFICACAO={token}").strip()
-        ws.append([_b(r[0]), _b(r[1]), _b(r[2]), desc])
+        ws.append([
+            _b(r[0]), _b(r[1]), _b(r[2]), desc,
+            # rodada 9 item 5 — colunas extras, informativas (o import as ignora)
+            _b(r[6]), _b(r[7]),
+            # is_nullable NULL = anulável (mesma regra do export CSV)
+            "true" if (r[8] is None or delta.as_bool(r[8])) else "false",
+            "true" if delta.as_bool(r[9]) else "false",
+            fk_refs.get(r[5], ""),
+        ])
     out = io.BytesIO()
     wb.save(out)
     return out.getvalue()

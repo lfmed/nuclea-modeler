@@ -133,6 +133,18 @@ export interface ConnectionTestResult {
   latency_ms?: number | null;
   db_version?: string | null;
   error?: string | null;
+  // Rodada 9 item 3 — diagnóstico da falha (testers.classify_db_error).
+  error_category?:
+    | "DNS"
+    | "NETWORK"
+    | "REFUSED"
+    | "AUTH"
+    | "SSL"
+    | "DATABASE"
+    | "DRIVER"
+    | "UNKNOWN"
+    | null;
+  hint?: string | null;
   tested_at: string;
 }
 
@@ -353,6 +365,23 @@ export const useArchiveSystem = (
       (
         await api.delete<{ archived: string }>(
           `/systems/${encodeURIComponent(systemId)}`,
+        )
+      ).data,
+    ...opts?.mutation,
+  });
+
+// Define SÓ a tecnologia/dialeto do sistema (rodada 9, item 7). Rota própria
+// (PATCH) porque o PUT /systems/{id} regrava todos os campos e o Navegador só tem
+// o SystemListOut — usar o PUT apagaria description/owner_team.
+export const useSetSystemTechnology = (
+  opts?: Opts<SystemOut, { systemId: string; technology: string | null }>,
+) =>
+  useMutation({
+    mutationFn: async ({ systemId, technology }) =>
+      (
+        await api.patch<SystemOut>(
+          `/systems/${encodeURIComponent(systemId)}/technology`,
+          { technology },
         )
       ).data,
     ...opts?.mutation,
