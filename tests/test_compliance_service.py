@@ -123,3 +123,76 @@ def test_parse_import_xlsx_roundtrip():
     assert rows[0]["system"] == "CRM Comercial"
     assert service.parse_recurrence(rows[0]["recurrence_raw"]) == "MONTHLY"
     assert service.normalize_date(rows[0]["date_raw"]) == "2026-05-01"
+
+
+# ─── Rodada 9 (avaliação consolidada, item 12): datas e cabeçalhos do Excel BR ─
+#
+# O cliente reportou falha ao importar planilhas com datas, sem mandar o arquivo.
+# Estes casos documentam os formatos que o Excel BR produz de fato.
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("10/12/2026 00:00:00", "2026-12-10"),   # data com hora (texto)
+        ("2026-12-10 00:00", "2026-12-10"),
+        ("10.12.2026", "2026-12-10"),            # separador ponto
+        ("2026/12/10", "2026-12-10"),            # ano primeiro com barra
+        ("10-dez-2026", "2026-12-10"),           # mês abreviado PT
+        ("10/Dec/26", "2026-12-10"),             # mês abreviado EN, ano 2 dígitos
+        ("20261210", "2026-12-10"),              # AAAAMMDD
+        ("12/25/2026", "2026-12-25"),            # US óbvio (25 não é mês)
+        ("05/06/2026", "2026-06-05"),            # ambíguo → dia primeiro (BR)
+        (46000, "2025-12-09"),                   # serial do Excel (célula numérica)
+        (46000.0, "2025-12-09"),
+        ("46000", "2025-12-09"),                 # serial exportado como texto
+        (True, None),                            # bool não é data
+        (0, None),                               # fora da faixa do Excel
+    ],
+)
+def test_normalize_date_formatos_excel_br(raw, expected):
+    assert service.normalize_date(raw) == expected
+
+
+def test_parse_import_csv_windows_1252_com_acentos():
+    """Excel BR salva CSV em Windows-1252: cabeçalho e nomes acentuados precisam casar."""
+    data = "Sistema;Periodicidade;Próxima Data\nNúcleo Câmbio;Trimestral;10/12/2026\n".encode("cp1252")
+    rows = service.parse_import(data, "cal.csv")
+    assert rows[0]["system"] == "Núcleo Câmbio"
+    assert service.normalize_date(rows[0]["date_raw"]) == "2026-12-10"
+
+
+def test_parse_import_cabecalho_com_titulo_antes_e_variantes():
+    data = (
+        "Calendário de Conformidade 2026\n"
+        "\n"
+        "Nome do Sistema,Frequência,Data de Vencimento\n"
+        "CRM,Mensal,2026-01-31\n"
+    ).encode("utf-8")
+    rows = service.parse_import(data, "cal.csv")
+    assert rows == [{"system": "CRM", "recurrence_raw": "Mensal", "date_raw": "2026-01-31"}]
+
+
+def test_parse_import_xlsx_celula_data_e_serial():
+    openpyxl = pytest.importorskip("openpyxl")
+    from io import BytesIO
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["Calendário"])  # título antes do cabeçalho
+    ws.append(["Sistema", "Periodicidade", "Próxima Data"])
+    ws.append(["A", "Anual", datetime(2026, 12, 10, 0, 0)])  # célula de data
+    ws.append(["B", "Semestral", 46000])                    # célula numérica (serial)
+    buf = BytesIO()
+    wb.save(buf)
+    rows = service.parse_import(buf.getvalue(), "cal.xlsx")
+    assert [service.normalize_date(r["date_raw"]) for r in rows] == ["2026-12-10", "2025-12-09"]
+
+
+def test_parse_import_xls_tem_erro_claro():
+    with pytest.raises(ValueError, match=r"\.xls"):
+        service.parse_import(b"\xd0\xcf\x11\xe0binario", "antigo.xls")
+
+
+def test_parse_import_cabecalho_invalido_lista_colunas_encontradas():
+    with pytest.raises(ValueError, match="foo, bar, baz"):
+        service.parse_import(b"foo,bar,baz\n1,2,3\n", "x.csv")

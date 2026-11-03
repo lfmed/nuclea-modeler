@@ -268,7 +268,7 @@ async def import_calendar(
             continue
         if not iso:
             failed += 1
-            rows.append(ComplianceImportRow(ok=False, system=raw_sys, error=f"data inválida: {row.get('date_raw')!r}"))
+            rows.append(ComplianceImportRow(ok=False, system=raw_sys, error=f"data inválida: {row.get('date_raw')!r} — {service.DATE_FORMATS_HELP}"))
             continue
         created = _upsert(sql, system_id=sid, recurrence=rec, next_due_date=iso, notes=None, actor=actor)
         if created:
