@@ -20,6 +20,12 @@ interface EntityNodeData {
    * filho = lado FK). O nó só consulta pertinência para marcar a coluna com "FK".
    */
   fkAttrIds?: Set<string>;
+  /**
+   * Contraste visual (item 3d da avaliação consolidada). "high" = cartão branco
+   * com borda forte e cabeçalho em faixa colorida, para destacar do canvas cinza.
+   * Ausente = "standard" (visual anterior). Ver components/diagram/contrast.ts.
+   */
+  contrast?: "standard" | "high";
 }
 
 interface EntityNodeProps {
@@ -54,7 +60,8 @@ const pendingLabel = (op?: string | null) => {
 };
 
 export const EntityNode = memo(({ data, selected }: EntityNodeProps) => {
-  const { entity, expanded, highlight, fkAttrIds } = data;
+  const { entity, expanded, highlight, fkAttrIds, contrast } = data;
+  const high = contrast === "high";
   const showAttributes = expanded;
   const pendingOp = entity.pending_op ?? null;
   const hasPending = !!pendingOp;
@@ -68,22 +75,28 @@ export const EntityNode = memo(({ data, selected }: EntityNodeProps) => {
 
   return (
     <div
-      className={`bg-card rounded-lg shadow-sm min-w-[240px] max-w-[320px] transition-shadow ${
+      className={`${high ? "bg-white dark:bg-slate-800 shadow-md" : "bg-card shadow-sm"} rounded-lg min-w-[240px] max-w-[320px] transition-shadow ${
         hasPending
           ? pendingBorderClass(pendingOp)
           : selected
             ? "border ring-2 ring-nuclea-primary shadow-lg"
             : highlight
               ? "border ring-1 ring-nuclea-accent"
-              : "border border-border hover:shadow-md"
+              : high
+                ? "border-2 border-slate-400 dark:border-slate-500 hover:shadow-lg"
+                : "border border-border hover:shadow-md"
       } ${isRemove ? "opacity-50" : ""}`}
     >
       {/* Header */}
       <div
         className={`px-3 py-2 rounded-t-lg border-b ${
           entity.has_lgpd_flag
-            ? "bg-nuclea-primary/10 border-nuclea-primary/30"
-            : "bg-muted/50"
+            ? high
+              ? "bg-nuclea-primary/20 border-nuclea-primary/40"
+              : "bg-nuclea-primary/10 border-nuclea-primary/30"
+            : high
+              ? "bg-slate-200 border-slate-300 dark:bg-slate-700 dark:border-slate-600"
+              : "bg-muted/50"
         }`}
       >
         <div className="flex items-start justify-between gap-2">
@@ -97,7 +110,7 @@ export const EntityNode = memo(({ data, selected }: EntityNodeProps) => {
             </div>
             <div className="flex items-center gap-2">
               <h3
-                className={`font-mono text-sm font-semibold truncate ${
+                className={`font-mono text-sm truncate ${high ? "font-bold text-slate-900 dark:text-slate-50" : "font-semibold"} ${
                   isRemove ? "line-through" : ""
                 }`}
               >

@@ -86,6 +86,7 @@ import {
   ImageDown,
   LayoutGrid,
   Maximize2,
+  Contrast,
   MousePointer2,
   Network,
   Plus,
@@ -125,6 +126,14 @@ import {
   pngPixelRatio,
   type PngQuality,
 } from "@/components/diagram/export-quality";
+import {
+  CANVAS_BG_CLASS,
+  GRID_COLOR,
+  loadDerContrast,
+  saveDerContrast,
+  styleEdge,
+  type DerContrast,
+} from "@/components/diagram/contrast";
 import { PartitioningSection } from "@/components/diagram/partitioning-section";
 import { AttrDescriptionCell } from "@/components/attributes/description-cell";
 import { AttrDefaultCell } from "@/components/attributes/default-cell";
@@ -381,6 +390,9 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
   // qualquer filtro → nós e arestas seguem o mesmo visibleIds (sem mexer na lógica
   // de handles/arestas). Zera ao trocar sistema/schema/diagrama.
   const [focusIds, setFocusIds] = useState<Set<string> | null>(null);
+  // Contraste visual (item 3d da avaliação consolidada) — só estilo, ver contrast.ts.
+  const [contrast, setContrast] = useState<DerContrast>(() => loadDerContrast());
+  useEffect(() => saveDerContrast(contrast), [contrast]);
   useEffect(() => {
     setFocusIds(null);
   }, [systemId, schemaId, diagramId]);
@@ -530,11 +542,11 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
         // reposicionados pelo layout incremental. Quem decide se um nó é "novo"
         // é positionedIds, não a coordenada (evita o bug do sentinel (0,0)).
         position: saved ?? { x: 0, y: 0 },
-        data: { entity: e, expanded, fkAttrIds } as any,
+        data: { entity: e, expanded, fkAttrIds, contrast } as any,
         draggable: true,
       };
     });
-  }, [filteredEntities, savedPosOf, expanded, fkAttrIds]);
+  }, [filteredEntities, savedPosOf, expanded, fkAttrIds, contrast]);
 
   const baseEdges = useMemo<Edge[]>(() => {
     // As arestas seguem SEMPRE o mesmo conjunto visível dos nós (visibleIds), então
@@ -566,15 +578,18 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
     return edges.map((e) => {
       const s = posById.get(e.source);
       const t = posById.get(e.target);
-      if (!s || !t) return e;
+      // Estilo (espessura/cor/rótulo/seta) do contraste escolhido — aplicado POR
+      // CIMA da aresta; a escolha de handles abaixo continua idêntica.
+      const styled = styleEdge(e, contrast, !!e.selected);
+      if (!s || !t) return styled;
       const targetOnRight = t.x >= s.x;
       return {
-        ...e,
+        ...styled,
         sourceHandle: targetOnRight ? "source-right" : "source-left",
         targetHandle: targetOnRight ? "target-left" : "target-right",
       };
     });
-  }, [edges, nodes]);
+  }, [edges, nodes, contrast]);
 
   // Destaca a tabela-origem pendente no modo Conectar (pt 9) com um anel de foco,
   // sem mexer no estado dos nós (só uma className derivada para o render).
@@ -1402,6 +1417,16 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
             <Button
               variant="outline"
               size="sm"
+              onClick={() => setContrast((c) => (c === "high" ? "standard" : "high"))}
+              aria-pressed={contrast === "high"}
+              title="Alto contraste: linhas e rótulos mais grossos e tabelas destacadas do fundo. Clique para alternar."
+            >
+              <Contrast className="mr-2 h-4 w-4" />
+              {contrast === "high" ? "Contraste: alto" : "Contraste: padrão"}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               onClick={exportPng}
               title="Exportar o modelo completo em PNG na qualidade escolhida ao lado"
             >
@@ -1529,7 +1554,8 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
         <div
           ref={canvasRef}
           className={cn(
-            "relative h-[calc(100vh-16rem)] min-h-[520px] w-full rounded-md border bg-background",
+            "relative h-[calc(100vh-16rem)] min-h-[520px] w-full rounded-md border",
+            CANVAS_BG_CLASS[contrast],
             // Dica visual do modo do cursor (round 5, pt 10).
             canvasMode === "connect" && "cursor-crosshair",
           )}
@@ -1594,7 +1620,7 @@ function DiagramCanvas({ systemId }: { systemId: string }) {
               markerEnd: { type: MarkerType.ArrowClosed },
             }}
           >
-            <Background gap={20} size={1} color="rgba(123, 45, 142, 0.08)" />
+            <Background gap={20} size={1} color={GRID_COLOR[contrast]} />
             <Controls position="bottom-right" />
             <MiniMap
               pannable
