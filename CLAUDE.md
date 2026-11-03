@@ -447,6 +447,9 @@ conformidade) aguarda a planilha do cliente; itens 4 (ODBC), 11, 12 e 13 depende
   próprios em `types-by-tech`/`index-types-by-tech` (`techKey` checa "dynamo" ANTES das
   regras relacionais). "Outros não relacionais" (MongoDB/Cassandra/Cosmos) = mesmo molde,
   a fazer quando o cliente disser quais usa.
+  **Validado no app deployado** com `scripts/smoke_dynamodb.py` (cria/arquiva
+  `SMOKE-DYNAMO-*`: import Workbench → apply → PK composta → atributo inferido → leitura do
+  GSI → export JSON). Rode-o após mexer em extractions/ddl/IndexType.
 
 ## Package Management
 - **Frontend:** Use `apx bun install` or `apx bun add <dependency>` for frontend package management.
