@@ -56,13 +56,27 @@ def _is_scope_error(exc: Exception) -> bool:
     return "Invalid scope" in msg or "required scopes" in msg
 
 
+def _enum_str(v) -> str | None:
+    """Valor de campo "enum" do SDK como texto, venha ele como Enum OU como str.
+
+    Achado ao validar a v1.0069 no app deployado: com o scope `postgres` ativo, a
+    listagem passou a funcionar e quebrou na conversão (`'str' object has no
+    attribute 'value'`) — nesta versão do SDK `state`/`capacity`/`pg_version` da
+    DatabaseInstance chegam como str. Aceitar os dois formatos evita depender da
+    versão do SDK.
+    """
+    if v is None:
+        return None
+    return str(getattr(v, "value", v))
+
+
 def _instances_out(ws) -> list[ListAvailableInstancesOut]:
     return [
         ListAvailableInstancesOut(
             instance_name=inst.name or "",
-            state=str(inst.state.value) if inst.state else "UNKNOWN",
-            capacity=str(inst.capacity.value) if inst.capacity else None,
-            pg_version=str(inst.pg_version.value) if inst.pg_version else None,
+            state=_enum_str(inst.state) or "UNKNOWN",
+            capacity=_enum_str(inst.capacity),
+            pg_version=_enum_str(inst.pg_version),
             read_write_dns=inst.read_write_dns,
             uid=inst.uid,
         )
@@ -170,7 +184,7 @@ def create_sandbox(
             "default_schema": payload.default_schema,
             "description": payload.description,
             "read_write_dns": inst.read_write_dns,
-            "pg_version": str(inst.pg_version.value) if inst.pg_version else None,
+            "pg_version": _enum_str(inst.pg_version),
             "last_test_status": None,
             "is_active": True,
             "created_at": now, "created_by": actor,

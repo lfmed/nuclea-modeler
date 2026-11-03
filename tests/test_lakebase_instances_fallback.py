@@ -63,3 +63,26 @@ def test_sp_tambem_falhando_devolve_mensagem_clara():
     assert ei.value.status_code == 500
     assert "postgres" in ei.value.detail
     assert "sp sem acesso" in ei.value.detail
+
+
+def test_campos_enum_aceitam_str_ou_enum():
+    """v1.0070: no runtime, state/capacity/pg_version vieram como STR (não Enum) e o
+    `.value` quebrava a listagem com 500 logo depois do scope postgres ser ativado."""
+    from enum import Enum
+
+    class _State(Enum):
+        AVAILABLE = "AVAILABLE"
+
+    as_str = SimpleNamespace(
+        name="a", state="AVAILABLE", capacity="CU_1", pg_version="PG_VERSION_16",
+        read_write_dns="a.db", uid="u-a",
+    )
+    as_enum = SimpleNamespace(
+        name="b", state=_State.AVAILABLE, capacity=None, pg_version=None,
+        read_write_dns="b.db", uid="u-b",
+    )
+    out = lk_router.list_instances(_WS([as_str, as_enum]), _WS([]))
+    assert [(i.state, i.capacity, i.pg_version) for i in out] == [
+        ("AVAILABLE", "CU_1", "PG_VERSION_16"),
+        ("AVAILABLE", None, None),
+    ]
