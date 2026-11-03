@@ -319,7 +319,8 @@ def generate_export(
     # (pai E filho) foram resolvidas — relacionamento sem mapeamento coluna-a-coluna
     # é ignorado (não dá pra emitir uma FK sem colunas). source=PAI, target=FILHO.
     fk_statements: list[str] = []
-    rels = fetch_relationships(sql, payload.system_id, eids)
+    # DynamoDB não tem FK (nem SQL): pula a emissão de relacionamentos.
+    rels = fetch_relationships(sql, payload.system_id, eids) if payload.dialect != "DYNAMODB" else []
     if rels:
         ent_ref_by_id: dict[str, str] = {}
         attr_name_by_id: dict[str, str] = {}
@@ -367,6 +368,12 @@ def generate_export(
         fk_statements = render_foreign_keys(resolved_fks, payload)
 
     combined_text = "\n\n-- ---\n\n".join(f.ddl_text for f in files)
+    if payload.dialect == "DYNAMODB":
+        # JSON não aceita "-- comentários": o combinado é uma LISTA JSON válida com as
+        # tabelas que geraram sem erro (cada item = input de create-table).
+        combined_text = json.dumps(
+            [json.loads(f.ddl_text) for f in files if not f.errors], indent=2, ensure_ascii=False,
+        )
     if fk_statements:
         combined_text += (
             "\n\n-- ---\n\n-- Foreign Keys (relacionamentos)\n"

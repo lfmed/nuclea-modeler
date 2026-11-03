@@ -62,6 +62,13 @@ const DB2_IDX: IndexTypeOption[] = [
   { value: "UNIQUE", label: "UNIQUE", hint: "garante unicidade" },
 ];
 
+// Rodada 9 consolidada, item 17 — DynamoDB: só índices secundários (as colunas do
+// índice são as chaves dele: partition [+ sort]).
+const DYNAMODB_IDX: IndexTypeOption[] = [
+  { value: "GSI", label: "GSI (Global Secondary Index)", hint: "partition/sort key próprias; consistência eventual" },
+  { value: "LSI", label: "LSI (Local Secondary Index)", hint: "mesma partition key da tabela, sort key alternativa" },
+];
+
 const GENERIC_IDX: IndexTypeOption[] = [
   { value: "BTREE", label: "BTREE" },
   { value: "UNIQUE", label: "UNIQUE" },
@@ -107,6 +114,11 @@ const DB2_PART: PartitionOption[] = [
   { value: "RANGE", label: "RANGE", needsBounds: true, hint: "por intervalo (data, número)" },
 ];
 
+// DynamoDB particiona sozinho pela partition key — não há estratégia a escolher.
+const DYNAMODB_PART: PartitionOption[] = [
+  { value: "NONE", label: "Gerenciado pelo DynamoDB", hint: "particionado automaticamente pela partition key (PK)" },
+];
+
 const GENERIC_PART: PartitionOption[] = [
   { value: "NONE", label: "Sem particionamento" },
   { value: "RANGE", label: "RANGE", needsBounds: true },
@@ -119,6 +131,8 @@ const GENERIC_PART: PartitionOption[] = [
 function techKey(tech: string | null | undefined): string {
   const t = (tech || "").toLowerCase().trim();
   if (!t) return "generic";
+  // Antes das demais: "dynamodb" não pode cair em nenhuma regra de banco relacional.
+  if (t.includes("dynamo")) return "dynamodb";
   if (t.includes("postgres") || t.includes("lakebase") || t.includes("pg")) return "pg";
   if (t.includes("oracle")) return "oracle";
   if (t.includes("sqlserver") || t.includes("mssql") || t.includes("sql server")) return "mssql";
@@ -136,6 +150,7 @@ export function getIndexTypesForTechnology(tech: string | null | undefined): Ind
     case "mysql": return MYSQL_IDX;
     case "databricks": return DATABRICKS_IDX;
     case "db2": return DB2_IDX;
+    case "dynamodb": return DYNAMODB_IDX;
     default: return GENERIC_IDX;
   }
 }
@@ -148,6 +163,7 @@ export function getPartitionStrategiesForTechnology(tech: string | null | undefi
     case "mysql": return MYSQL_PART;
     case "databricks": return DATABRICKS_PART;
     case "db2": return DB2_PART;
+    case "dynamodb": return DYNAMODB_PART;
     default: return GENERIC_PART;
   }
 }

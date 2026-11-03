@@ -13,6 +13,7 @@ from ..core.sql import SqlDependency
 from ..rbac.router import _current_email
 from .models import (
     DDLImportIn,
+    DynamoDBImportIn,
     EmbarcaderoImportIn,
     ExtractionListOut,
     ExtractionOut,
@@ -23,6 +24,7 @@ from .models import (
 )
 from .service import (
     run_ddl_import,
+    run_dynamodb_import,
     run_embarcadero_import,
     run_lakebase_extraction,
     run_uc_extraction,
@@ -230,6 +232,28 @@ def preview_ddl(
         actor=actor,
         open_ticket_on_diff=False,  # preview nunca abre ticket
         dry_run=True,
+    )
+
+
+@router.post(
+    "/dynamodb/run",
+    response_model=ExtractionResult,
+    operation_id="runDynamoDBImport",
+)
+def run_dynamodb(
+    payload: DynamoDBImportIn,
+    sql: SqlDependency,
+    user_ws: Dependencies.UserClient,
+) -> ExtractionResult:
+    """Import de modelo DynamoDB via JSON (describe-table / NoSQL Workbench /
+    CloudFormation). Rodada 9 consolidada, item 17."""
+    actor = _current_email(user_ws)
+    return run_dynamodb_import(
+        sql,
+        system_id=payload.system_id,
+        json_text=payload.json_text,
+        actor=actor,
+        open_ticket_on_diff=payload.open_ticket,
     )
 
 

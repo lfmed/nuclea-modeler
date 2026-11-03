@@ -324,6 +324,13 @@ function DialectGuide() {
               No <strong>Exportar DDL</strong> o dialeto é livre (o destino costuma ser outro banco,
               ex. Databricks); há um atalho “usar o dialeto do sistema”.
             </>,
+            <>
+              <strong>DynamoDB (não relacional):</strong> escolha a tecnologia “DynamoDB”. O modelo
+              entra por <Link to="/extractions" className="underline">Engenharia Reversa</Link> → aba{" "}
+              <strong>DynamoDB (JSON)</strong> (saída do <code>aws dynamodb describe-table</code>,
+              NoSQL Workbench ou CloudFormation) e sai em <strong>Exportar DDL → DynamoDB (JSON)</strong>{" "}
+              (input do <code>create-table</code>). Partition + sort key = PK; GSI/LSI = índices.
+            </>,
           ]}
         />
       </CardContent>

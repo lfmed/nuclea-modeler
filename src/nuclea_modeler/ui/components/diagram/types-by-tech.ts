@@ -120,6 +120,22 @@ const DB2: TypeFamily[] = [
   { name: "XML", param: "none" },
 ];
 
+// Rodada 9 consolidada, item 17 — tipos do DynamoDB (mesmo vocabulário do import
+// JSON em backend/extractions/dynamodb.py::TYPE_NAMES). Chaves só aceitam
+// STRING/NUMBER/BINARY.
+const DYNAMODB: TypeFamily[] = [
+  { name: "STRING", param: "none" },
+  { name: "NUMBER", param: "none" },
+  { name: "BINARY", param: "none" },
+  { name: "BOOLEAN", param: "none" },
+  { name: "MAP", param: "none" },
+  { name: "LIST", param: "none" },
+  { name: "STRING_SET", param: "none" },
+  { name: "NUMBER_SET", param: "none" },
+  { name: "BINARY_SET", param: "none" },
+  { name: "NULL", param: "none" },
+];
+
 const GENERIC: TypeFamily[] = [
   { name: "STRING", param: "none" },
   { name: "VARCHAR", param: "length", defaultLength: 255 },
@@ -137,6 +153,7 @@ const GENERIC: TypeFamily[] = [
 export function getTypeFamiliesForTechnology(tech: string | null | undefined): TypeFamily[] {
   const t = (tech || "").toLowerCase().trim();
   if (!t) return GENERIC;
+  if (t.includes("dynamo")) return DYNAMODB;
   if (t.includes("postgres") || t.includes("lakebase") || t.includes("pg")) return POSTGRES;
   if (t.includes("oracle")) return ORACLE;
   if (t.includes("sqlserver") || t.includes("mssql") || t.includes("sql server")) return SQLSERVER;

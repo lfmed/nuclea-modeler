@@ -469,7 +469,9 @@ function triggerDownload(
   systemName: string,
   dialect: DDLDialect,
 ) {
-  const blob = new Blob([result.combined_text], { type: "text/sql" });
+  // DynamoDB (rodada 9, item 17): o "DDL" é JSON de create-table → .json.
+  const isJson = dialect === "DYNAMODB";
+  const blob = new Blob([result.combined_text], { type: isJson ? "application/json" : "text/sql" });
   const url = URL.createObjectURL(blob);
   // Nome do arquivo = nome do sistema "slugificado" (round 5, pt 17). Antes usávamos
   // o systemId (UUID), pouco legível. Ex.: "Cadastro de Clientes" → "cadastro-de-clientes".
@@ -482,7 +484,7 @@ function triggerDownload(
       .toLowerCase() || "system";
   const a = document.createElement("a");
   a.href = url;
-  a.download = `${slug}-${dialect.toLowerCase()}.sql`;
+  a.download = `${slug}-${dialect.toLowerCase()}.${isJson ? "json" : "sql"}`;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -504,6 +506,18 @@ function SystemDialectHint({
   onUse: (d: DDLDialect) => void;
 }) {
   const d = technologyToDialect(technology);
+  if ((technology || "").toLowerCase().includes("dynamo")) {
+    return current === "DYNAMODB" ? (
+      <p className="text-xs text-muted-foreground">Mesmo banco do sistema (DynamoDB) — sai em JSON de create-table.</p>
+    ) : (
+      <p className="text-xs text-muted-foreground">
+        Sistema DynamoDB.{" "}
+        <button type="button" className="underline hover:text-foreground" onClick={() => onUse("DYNAMODB")}>
+          Exportar como DynamoDB (JSON)
+        </button>
+      </p>
+    );
+  }
   if (!d) {
     return (
       <p className="text-xs text-muted-foreground">
