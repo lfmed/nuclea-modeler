@@ -31,7 +31,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertCircle, CalendarCheck, Upload, CheckCircle2, Trash2, Clock } from "lucide-react";
+import { AlertCircle, CalendarCheck, Upload, Download, CheckCircle2, Trash2, Clock } from "lucide-react";
 
 export const Route = createFileRoute("/_sidebar/compliance")({
   component: CompliancePage,
@@ -143,8 +143,10 @@ function ImportCard({ onDone }: { onDone: () => void }) {
         <CardTitle className="text-lg">1ª carga — importar planilha</CardTitle>
         <CardDescription>
           CSV ou XLSX com as colunas <code>sistema</code>, <code>periodicidade</code>
-          (mensal/trimestral/semestral/anual) e <code>proxima_data</code> (AAAA-MM-DD ou
-          DD/MM/AAAA). Faz upsert por sistema.
+          (mensal/trimestral/semestral/anual) e <code>proxima_data</code>. Faz upsert por
+          sistema. Datas aceitas: DD/MM/AAAA, AAAA-MM-DD, DD.MM.AAAA, 10-dez-2026, com ou
+          sem hora, ou célula de data do Excel. O cabeçalho pode ter acentos/espaços
+          (“Próxima Data”) e linhas de título antes; CSV do Excel (Windows-1252) é aceito.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -155,10 +157,16 @@ function ImportCard({ onDone }: { onDone: () => void }) {
           className="hidden"
           onChange={(e) => onPick(e.target.files?.[0])}
         />
-        <Button onClick={() => fileRef.current?.click()} disabled={isPending}>
-          <Upload className="mr-2 h-4 w-4" />
-          {isPending ? "Importando..." : "Selecionar planilha"}
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={() => fileRef.current?.click()} disabled={isPending}>
+            <Upload className="mr-2 h-4 w-4" />
+            {isPending ? "Importando..." : "Selecionar planilha"}
+          </Button>
+          <Button variant="outline" onClick={downloadTemplate}>
+            <Download className="mr-2 h-4 w-4" />
+            Baixar modelo (.csv)
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );
@@ -362,4 +370,23 @@ export function DueBadge({ daysUntil }: { daysUntil?: number | null }) {
       Em dia
     </Badge>
   );
+}
+
+/**
+ * Modelo da planilha de 1ª carga (rodada 9, item 12): o cliente teve falha com
+ * datas e não sabia o formato esperado. CSV com ";" (padrão do Excel BR) e BOM
+ * UTF-8 para o Excel abrir os acentos certo. Gerado no browser, sem backend.
+ */
+function downloadTemplate() {
+  const csv =
+    "\uFEFFsistema;periodicidade;proxima_data\n" +
+    "Nome do sistema (como cadastrado);Trimestral;10/12/2026\n" +
+    "Outro sistema;Anual;2027-03-31\n";
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "modelo-calendario-conformidade.csv";
+  a.click();
+  URL.revokeObjectURL(url);
 }
