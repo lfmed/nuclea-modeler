@@ -80,7 +80,7 @@ def _call(tok: str, method: str, path: str, body: dict | None, timeout: int):
     )
     t0 = time.monotonic()
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310 — URL fixa https do app
             raw = resp.read()
             return resp.status, (json.loads(raw) if raw else {}), time.monotonic() - t0
     except urllib.error.HTTPError as e:
@@ -168,7 +168,7 @@ def main() -> int:
     )
     t0 = time.monotonic()
     try:
-        with urllib.request.urlopen(req, timeout=args.timeout) as resp:
+        with urllib.request.urlopen(req, timeout=args.timeout) as resp:  # nosec B310 — URL fixa https do app
             dt = time.monotonic() - t0
             data = json.loads(resp.read())
             print(f"HTTP {resp.status} em {dt:.1f}s")
