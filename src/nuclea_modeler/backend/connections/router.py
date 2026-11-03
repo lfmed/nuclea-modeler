@@ -328,7 +328,13 @@ def test_connection(
             "last_test_at": now,
             "last_test_latency_ms": outcome.latency_ms,
             "last_test_db_version": outcome.db_version,
-            "last_test_error": outcome.error,
+            # A orientação vai junto no texto persistido para a tela de detalhe
+            # (que lê last_test_error) mostrar o diagnóstico sem schema novo.
+            "last_test_error": (
+                f"{outcome.error}\nDiagnóstico: {outcome.hint}"
+                if outcome.error and outcome.hint
+                else outcome.error
+            ),
             "updated_at": now,
             "updated_by": actor,
         },
@@ -338,5 +344,7 @@ def test_connection(
         latency_ms=outcome.latency_ms,
         db_version=outcome.db_version,
         error=outcome.error,
+        error_category=outcome.error_category,
+        hint=outcome.hint,
         tested_at=now,
     )

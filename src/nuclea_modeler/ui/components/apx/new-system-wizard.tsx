@@ -41,6 +41,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { TECHNOLOGY_OPTIONS } from "@/lib/dialects";
 
 /**
  * Wizard de Novo Sistema em 2 passos:
@@ -55,15 +56,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 type SourceKind = "NONE" | "LAKEBASE" | "UC" | "DDL" | "EMBARCADERO";
 
-const TECH_OPTIONS = [
-  "PostgreSQL",
-  "Oracle",
-  "SQL Server",
-  "MySQL",
-  "Databricks",
-  "DB2",
-  "Outro",
-];
+// Rodada 9 item 7: mesma lista do Navegador (lib/dialects) — a tecnologia do
+// sistema É o dialeto dele e vira o padrão do import de DDL. "Outro" fica livre.
+const TECH_OPTIONS = [...TECHNOLOGY_OPTIONS.map((o) => o.label), "Outro"];
 
 // Os `value` DEVEM bater com o backend (extractions/service.py
 // _resolve_sqlglot_dialect e o Literal DDLDialect). Antes usávamos
@@ -663,7 +658,7 @@ function StepConfigure(props: {
           </div>
           <div>
             <label className="text-xs font-medium block mb-1">
-              Tecnologia
+              Tecnologia (dialeto)
               {props.source !== "NONE" && (
                 <span className="ml-2 text-[10px] uppercase tracking-wider text-muted-foreground font-normal">
                   determinada pela fonte

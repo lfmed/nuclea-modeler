@@ -33,6 +33,10 @@ class TesterOutcome:
     latency_ms: int
     db_version: str | None = None
     error: str | None = None
+    # Rodada 9 item 3: categoria + orientação acionável da falha (ver
+    # classify_db_error). Só preenchidos em falha de conexão de BANCO.
+    error_category: str | None = None
+    hint: str | None = None
 
 
 class DriverUnavailable(RuntimeError):
@@ -297,6 +301,93 @@ _ENGINE_PROBES = {
 }
 
 
+# ─── Diagnóstico de falha de conexão (rodada 9, item 3) ─────────────────────
+#
+# O cliente reportou "não foi possível estabelecer conexão com bases externas" e
+# a tela só mostrava o texto cru do driver (ex. "OperationalError: ... timeout").
+# Cada driver fala de um jeito, mas as CAUSAS são poucas e cada uma tem um dono
+# diferente (rede/infra do cliente × DBA × quem cadastrou). O classificador mapeia
+# o texto do erro para uma categoria + o que fazer. A ORDEM das regras importa:
+#   - DNS antes de NETWORK: "could not translate host name" às vezes vem junto de
+#     "timeout" em retries; a causa raiz é o nome não resolver.
+#   - AUTH antes de SSL: a msg do pg_hba ("no pg_hba.conf entry … SSL off") cita
+#     SSL mas é regra de acesso, não falha de TLS.
+# Casamento por substring em minúsculas — robusto a versão de driver, como o
+# `type(kind).__name__` do import de DDL. Na dúvida cai em UNKNOWN (não inventa).
+
+_PRIVATE_NET_HINT = (
+    "Se o banco fica em rede privada/on-prem, ele não é alcançável pela internet a partir "
+    "do Databricks: é preciso a infra do cliente liberar o acesso — conectividade privada do "
+    "serverless do workspace (NCC / endpoint privado / VPN) ou liberar no firewall a saída do "
+    "Databricks para esse host"
+)
+
+_ERROR_RULES: list[tuple[str, tuple[str, ...], str]] = [
+    (
+        "DNS",
+        ("could not translate host name", "failed to resolve host", "name or service not known",
+         "nodename nor servname",
+         "temporary failure in name resolution", "getaddrinfo", "no address associated",
+         "name resolution", "unknown host", "gaierror"),
+        "O nome do host não foi resolvido a partir do Databricks. Confira se o host está correto. "
+        + _PRIVATE_NET_HINT + ".",
+    ),
+    (
+        "AUTH",
+        ("password authentication failed", "authentication failed", "access denied",
+         "login failed", "ora-01017", "invalid username/password", "sql30082n",
+         "28p01", "pg_hba.conf", "invalid authorization",
+         # Postgres: 'FATAL: role "x" does not exist' é usuário inexistente (AUTH),
+         # não banco inexistente — precisa vir antes da regra DATABASE.
+         'role "'),
+        "O servidor respondeu, mas recusou usuário/senha (ou a regra de acesso a partir deste "
+        "host). Confira as credenciais e se o usuário pode logar de hosts externos "
+        "(ex.: pg_hba.conf no Postgres, grants por host no MySQL).",
+    ),
+    (
+        "REFUSED",
+        ("connection refused", "actively refused", "errno 111", "10061", "ora-12541",
+         "no listener"),
+        "A máquina respondeu, mas recusou a porta: banco parado, porta errada ou o serviço não "
+        "escuta nesse IP. Confira host/porta com o DBA.",
+    ),
+    (
+        "NETWORK",
+        ("timed out", "timeout", "no route to host", "network is unreachable",
+         "ora-12170", "sql30081n", "host is unreachable", "connection reset"),
+        "O host não respondeu na porta {port} dentro do tempo limite — típico de firewall/rede "
+        "bloqueando. " + _PRIVATE_NET_HINT + " (porta {port}).",
+    ),
+    (
+        "SSL",
+        ("ssl", "certificate", "tls"),
+        "Falha na negociação SSL/TLS. Ajuste o modo SSL da conexão (ex.: 'require' em vez de "
+        "'verify-full') ou confirme com o DBA que o servidor aceita TLS.",
+    ),
+    (
+        "DATABASE",
+        ("does not exist", "unknown database", "ora-12514", "sql1013n",
+         "cannot open database", "listener does not currently know of service"),
+        "Conectou no servidor, mas o banco/serviço informado não existe ou o usuário não tem "
+        "acesso a ele. Confira o nome do database (no Oracle, o service name).",
+    ),
+]
+
+
+def classify_db_error(message: str, port: Any = None) -> tuple[str, str]:
+    """Texto de erro de driver → (categoria, orientação). Categoria UNKNOWN se nada casar."""
+    text = (message or "").lower()
+    port_txt = str(port) if port not in (None, "") else "configurada"
+    for category, needles, hint in _ERROR_RULES:
+        if any(n in text for n in needles):
+            return category, hint.format(port=port_txt)
+    return (
+        "UNKNOWN",
+        "Falha não classificada. Verifique host, porta, database e credenciais; se persistir, "
+        "envie a mensagem acima para o time de infra/DBA.",
+    )
+
+
 def test_database(
     *,
     engine: str,
@@ -333,12 +424,24 @@ def test_database(
             status="failure",
             latency_ms=int((time.monotonic() - started) * 1000) or 1,
             error=str(exc),
+            error_category="DRIVER",
+            hint="O driver deste banco não carregou no runtime do app. Avise o time do app "
+            "(é problema de empacotamento, não da sua configuração).",
         )
     except Exception as exc:
+        raw = f"{type(exc).__name__}: {str(exc)[:300]}"
+        # Classifica pela mensagem COMPLETA + cadeia de causas (o oracledb embrulha
+        # o erro de socket em DPY-6005 e a causa real fica em __cause__).
+        full = " | ".join(
+            str(e) for e in (exc, exc.__cause__, exc.__context__) if e is not None
+        ) + f" | {type(exc).__name__}"
+        category, hint = classify_db_error(full, config.get("port"))
         return TesterOutcome(
             status="failure",
             latency_ms=int((time.monotonic() - started) * 1000) or 1,
-            error=f"{type(exc).__name__}: {str(exc)[:300]}",
+            error=raw,
+            error_category=category,
+            hint=hint,
         )
 
 

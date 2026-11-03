@@ -19,6 +19,12 @@ class SystemIn(BaseModel):
     is_active: bool = True
 
 
+class SystemTechnologyIn(BaseModel):
+    """Payload do PATCH /systems/{id}/technology (rodada 9 item 7) — só o dialeto."""
+
+    technology: str | None = Field(default=None, max_length=50)
+
+
 class SystemOut(BaseModel):
     system_id: str
     system_name: str

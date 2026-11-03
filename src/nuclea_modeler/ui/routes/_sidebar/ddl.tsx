@@ -13,6 +13,7 @@ import {
   type DDLExportResult,
 } from "@/lib/api";
 import selector from "@/lib/selector";
+import { technologyToDialect } from "@/lib/dialects";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -206,6 +207,11 @@ function DdlForm() {
                   </option>
                 ))}
               </select>
+              <SystemDialectHint
+                technology={systems.find((s) => s.system_id === systemId)?.technology ?? null}
+                current={dialect}
+                onUse={setDialect}
+              />
             </Field>
           </div>
 
@@ -481,4 +487,39 @@ function triggerDownload(
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+/**
+ * Atalho "usar o dialeto do sistema" no EXPORT (rodada 9, item 7). Diferente do
+ * import, o export NÃO troca o dialeto sozinho: o destino costuma ser OUTRO banco
+ * (ex. gerar SparkSQL de um modelo Postgres para o Databricks) — então só sugerimos.
+ */
+function SystemDialectHint({
+  technology,
+  current,
+  onUse,
+}: {
+  technology: string | null;
+  current: DDLDialect;
+  onUse: (d: DDLDialect) => void;
+}) {
+  const d = technologyToDialect(technology);
+  if (!d) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        Sistema sem dialeto definido — defina no Navegador (“+ dialeto” ao lado do nome).
+      </p>
+    );
+  }
+  if (d === current) {
+    return <p className="text-xs text-muted-foreground">Mesmo dialeto do sistema ({technology}).</p>;
+  }
+  return (
+    <p className="text-xs text-muted-foreground">
+      Dialeto do sistema: {technology}.{" "}
+      <button type="button" className="underline hover:text-foreground" onClick={() => onUse(d)}>
+        Usar o dialeto do sistema
+      </button>
+    </p>
+  );
 }

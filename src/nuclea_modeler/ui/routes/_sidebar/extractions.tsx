@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { QueryErrorResetBoundary, useQueryClient } from "@tanstack/react-query";
 import { ErrorBoundary } from "react-error-boundary";
 
@@ -14,6 +14,7 @@ import {
   type ExtractionResult,
 } from "@/lib/api";
 import selector from "@/lib/selector";
+import { technologyToDialect } from "@/lib/dialects";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -284,6 +285,15 @@ function DDLTab() {
 
   const [systemId, setSystemId] = useState(systems[0]?.system_id || "");
   const [dialect, setDialect] = useState("POSTGRES");
+  // Rodada 9 item 7: o dialeto PADRÃO do import é o do sistema (sua "tecnologia",
+  // definida no wizard ou no Navegador). Reaplicado a cada TROCA de sistema; dentro
+  // do mesmo sistema a escolha manual do usuário prevalece. Tecnologia desconhecida
+  // ou vazia → mantém a seleção atual.
+  const systemTech = systems.find((s) => s.system_id === systemId)?.technology ?? null;
+  const systemDialect = technologyToDialect(systemTech);
+  useEffect(() => {
+    if (systemDialect) setDialect(systemDialect);
+  }, [systemId, systemDialect]);
   const [ddlText, setDdlText] = useState("");
   // Prévia (dry-run) fica separada do resultado do import real — um import "de
   // verdade" substitui a prévia (limpa no onSuccess do runDDL).
@@ -353,6 +363,11 @@ function DDLTab() {
                 <option value="SPARKSQL">SparkSQL / Delta</option>
                 <option value="DB2">DB2 (IBM Db2 / Db2 for i)</option>
               </select>
+              <p className="text-xs text-muted-foreground">
+                {systemDialect
+                  ? `Padrão: o dialeto do sistema (${systemTech}). Para mudar o padrão, edite o dialeto do sistema no Navegador.`
+                  : "Este sistema não tem dialeto definido — defina no Navegador (clique em “+ dialeto” ao lado do nome) para ele vir pré-selecionado aqui."}
+              </p>
             </Field>
           </div>
           <Field label="DDL" required>

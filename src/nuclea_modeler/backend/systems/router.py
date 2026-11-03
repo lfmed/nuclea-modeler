@@ -15,7 +15,7 @@ from ..rbac.service import (
     ROLE_DATA_STEWARD,
     require_role,
 )
-from .models import SystemIn, SystemListOut, SystemOut
+from .models import SystemIn, SystemListOut, SystemOut, SystemTechnologyIn
 from .service import count_entities, purge_system_model
 from ..versions.service import publish_version
 from ..tickets.service import open_ticket
@@ -155,6 +155,37 @@ def update_system(
             "updated_at": datetime.utcnow(),
             "updated_by": actor,
         },
+    )
+    return get_system(system_id, sql)
+
+
+@router.patch("/{system_id}/technology", response_model=SystemOut, operation_id="setSystemTechnology")
+def set_system_technology(
+    system_id: str,
+    payload: SystemTechnologyIn,
+    sql: SqlDependency,
+    user_ws: Dependencies.UserClient,
+) -> SystemOut:
+    """Define SÓ a tecnologia/dialeto do sistema (rodada 9, item 7).
+
+    Por que uma rota própria em vez do PUT: o PUT regrava TODOS os campos do
+    sistema, e a tela que edita o dialeto (Navegador) só tem o `SystemListOut`
+    (sem description/owner_team) — reusar o PUT apagaria esses campos em
+    silêncio. A tecnologia é o "dialeto do sistema": alimenta tipos/índices/
+    particionamento por banco e o dialeto PADRÃO do import/export de DDL.
+    Mesmos papéis do PUT (Architect/Steward/Admin).
+    """
+    s = get_settings()
+    actor = _actor(user_ws)
+    require_role(sql, actor, ROLE_DATA_ARCHITECT, ROLE_DATA_STEWARD, ROLE_ADMIN)
+    _require_system(sql, system_id)
+    tech = (payload.technology or "").strip() or None
+    delta.update_by_id(
+        sql,
+        s.fq_table("systems"),
+        "system_id",
+        system_id,
+        {"technology": tech, "updated_at": datetime.utcnow(), "updated_by": actor},
     )
     return get_system(system_id, sql)
 

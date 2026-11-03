@@ -45,6 +45,17 @@ function ImportExportPage() {
           alterado no catálogo até a aprovação (as flags LGPD do <code>CLASSIFICACAO</code>
           são aplicadas direto às colunas).
         </p>
+        {/* Rodada 9 item 5: os exports trazem tipo/nulabilidade/PK/FK. A FK é só
+            informativa — o import a ignora (relacionamento se cria no DER). */}
+        <p className="text-muted-foreground max-w-3xl text-sm mt-2">
+          Os dois formatos trazem também <strong>tipo</strong>, <strong>nulabilidade</strong>,{" "}
+          <strong>PK</strong> e a <strong>FK</strong> de cada coluna (
+          <code>fk_references</code> = <code>schema.tabela.coluna</code> referenciada). A
+          coluna de FK é só informativa: o reimport a ignora — relacionamentos se criam no
+          Diagrama ou em Relacionamentos. No <strong>.xlsx</strong>, as colunas extras
+          (schema, tipo, nulabilidade, PK, FK) também são só informativas: o reimport do
+          .xlsx lê apenas descrições; para editar tipo/PK/nulabilidade use o CSV.
+        </p>
       </div>
       <QueryErrorResetBoundary>
         {({ reset }) => (

@@ -351,6 +351,51 @@ documentado para quem mantém depois.** Cumprir em todo PR:
   (`test_compliance_service.py`: normalize_date, advance_iso c/ clamp, parse_recurrence,
   due_fields, parse_import CSV/XLSX). a11y do pop-up: role=dialog/aria-modal + Esc + backdrop.
 
+## RODADA 9 — Avaliação do cliente (v1.0069)
+Itens aprovados: 1 (Lakebase, opção A), 3, 5, 6, 7, 8, 9, 10. Item 2 (datas na planilha de
+conformidade) aguarda a planilha do cliente; itens 4 (ODBC), 11, 12 e 13 dependem de alinhamento.
+- **Item 1 — Lakebase Sandbox (RCA ao vivo):** `GET /api/lakebase/instances` dava 403 "Invalid
+  scope, required scopes: postgres": o app não declara `postgres` em `user_api_scopes` (o token
+  OBO do usuário só tinha `iam.*`). Fix de verdade = declarar o scope no app (`apps update` com
+  `user_api_scopes` + os MESMOS `resources` — conferir depois que warehouse/lakebase continuam;
+  usuários re-consentem no próximo login). No código, `list_instances` cai no SP do app SÓ em erro
+  de scope (`_is_scope_error`, por MENSAGEM — o SDK não tipa esse 403). test/schemas já usavam o SP.
+- **Item 3 — Diagnóstico de conexão:** `connections/testers.py::classify_db_error` mapeia o texto
+  do driver → DNS|NETWORK|REFUSED|AUTH|SSL|DATABASE|DRIVER|UNKNOWN + orientação. ORDEM das regras
+  importa (DNS antes de NETWORK; AUTH antes de SSL por causa do pg_hba "SSL off"; `role "x" does not
+  exist` é AUTH). Classifica também a cadeia `__cause__` (oracledb embrulha em DPY-6005). A
+  orientação é PERSISTIDA em `last_test_error` como `"<erro>\nDiagnóstico: <hint>"` (sem coluna
+  nova); a UI separa pelo marcador (`components/connections/test-error.tsx`). O toast de teste
+  dizia "Conexão testada" (verde) até em FALHA — agora reflete o status. ODBC ganha selo
+  "descontinuada".
+- **Item 5 — Export enriquecido:** CSV ganha `fk_references` (fim; `CSV_EXPORT_HEADERS`); XLSX ganha
+  schema/data_type/is_nullable/is_pk/fk_references DEPOIS das 4 colunas Embarcadero. FK é SÓ de
+  export (o import ignora — relacionamento não se cria por texto de planilha). `CSV_HEADERS` NÃO
+  mudou (é também o CSV canônico interno do import XLSX). Lado da FK decidido pela PK
+  (`fk_references_by_attr`), não por source/target — mesmo gotcha do marcador FK do DER (v1.0057).
+- **Item 6 — Exclusão em lote:** só UI (Navegador): "Selecionar vários" → arquivar em lote; nos
+  arquivados → restaurar / solicitar exclusão em lote (1 ticket SYSTEM_DELETE por sistema, mesmo
+  endpoint). Execução SEQUENCIAL (rate limit). Atalho "Sistemas de teste" = `SMOKE-*`, `tmp-*`,
+  palavra test/teste/testes.
+- **Item 7 — Dialeto:** a TECNOLOGIA do sistema É o dialeto. `ui/lib/dialects.ts` =
+  vocabulário único (rótulo gravado ↔ chave canônica do backend). Editável no Navegador via
+  `PATCH /systems/{id}/technology` (`setSystemTechnology`) — rota própria porque o PUT regrava todos
+  os campos e o Navegador só tem `SystemListOut` (apagaria description/owner_team). Import de DDL
+  pré-seleciona o dialeto do sistema a cada troca de sistema; export só SUGERE (destino é outro banco).
+- **Item 8 — Resolução do PNG:** presets padrão/alta/máxima (`components/diagram/export-quality.ts`,
+  persistido em localStorage). Fallback em degraus (alvo → metade → … → 1x); toast mostra a
+  resolução REAL e sugere SVG quando o teto do browser limitou.
+- **Item 9 — Seleção visual no DER:** modo "Selecionar" = laço (`selectionOnDrag`, pan no botão
+  meio/direito); Shift+arrastar e Ctrl/⌘+clique em qualquer modo. Barra (≥2 selecionadas): criar
+  diagrama com elas (exige 1 schema — diagrama pertence a um schema; leva as posições), "só as
+  selecionadas" (foco LOCAL via `focusIds` no `filteredEntities` — nós e arestas seguem o mesmo
+  `visibleIds`, sem tocar em handles/arestas), tirar do diagrama. A confirmação de exclusão foi
+  para `onBeforeDelete` (antes, no `onNodesDelete`, cancelar não trazia o nó de volta e a seleção
+  múltipla daria N confirms). MembersDialog virou grade de cartões com filtro/Todas/Nenhuma.
+- **Item 10 — Guias:** seção "Guias práticos" na Ajuda (`components/apx/help-guides.tsx`): Código DB
+  com exemplos copiáveis + DDL de exemplo para download (gerado no browser), Canvas, Linhagem e
+  dialeto. Os campos citados batem com os formulários — atualizar junto se mudarem.
+
 ## Package Management
 - **Frontend:** Use `apx bun install` or `apx bun add <dependency>` for frontend package management.
 - **Python:** Always use `uv` (never `pip`)

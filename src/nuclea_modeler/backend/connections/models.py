@@ -124,4 +124,8 @@ class ConnectionTestResult(BaseModel):
     latency_ms: int | None = None
     db_version: str | None = None
     error: str | None = None
+    # Rodada 9 item 3 — diagnóstico da falha (DNS|NETWORK|REFUSED|AUTH|SSL|DATABASE|
+    # DRIVER|UNKNOWN) + o que fazer. Ver testers.classify_db_error.
+    error_category: str | None = None
+    hint: str | None = None
     tested_at: datetime
