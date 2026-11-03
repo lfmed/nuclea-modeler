@@ -6,7 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-SourceKind = Literal["LAKEBASE", "DDL_FILE", "EMBARCADERO", "ODBC", "REST", "UC"]
+SourceKind = Literal["LAKEBASE", "DDL_FILE", "EMBARCADERO", "ODBC", "REST", "UC", "DYNAMODB"]
 ExtractionStatus = Literal["RUNNING", "SUCCESS", "PARTIAL", "FAILED"]
 
 
@@ -47,6 +47,19 @@ class DDLImportIn(BaseModel):
     system_id: str
     dialect: str = "ANSI"
     ddl_text: str = Field(min_length=1, max_length=5_000_000)
+    open_ticket: bool = True
+
+
+class DynamoDBImportIn(BaseModel):
+    """Import de modelo DynamoDB via JSON (rodada 9 consolidada, item 17).
+
+    Aceita describe-table, NoSQL Workbench ou CloudFormation (ver
+    `extractions/dynamodb.py`). Cap de 20 MB: modelos DynamoDB são pequenos (só
+    chaves/índices + itens de exemplo do Workbench); acima disso é dump de dados.
+    """
+
+    system_id: str
+    json_text: str = Field(min_length=1, max_length=20_000_000)
     open_ticket: bool = True
 
 

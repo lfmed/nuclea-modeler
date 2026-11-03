@@ -628,7 +628,9 @@ export const useDeleteAttribute = (
 export type IndexType =
   | "BTREE" | "HASH" | "UNIQUE" | "GIN" | "BRIN" | "GIST"
   | "BITMAP" | "CLUSTERED" | "NONCLUSTERED"
-  | "Z-ORDER" | "LIQUID";
+  | "Z-ORDER" | "LIQUID"
+  // Rodada 9 consolidada, item 17 — índices secundários do DynamoDB.
+  | "GSI" | "LSI";
 
 export type ColumnDirection = "ASC" | "DESC";
 export type PartitionStrategy = "RANGE" | "LIST" | "HASH" | "LIQUID" | "NONE";
@@ -1730,7 +1732,9 @@ export type DDLDialect =
   | "POSTGRES"
   | "MYSQL"
   | "SPARKSQL"
-  | "DB2";
+  | "DB2"
+  // Rodada 9 consolidada, item 17: não é SQL — JSON de `create-table`.
+  | "DYNAMODB";
 
 export interface DDLDialectInfo {
   code: DDLDialect;
@@ -2238,7 +2242,7 @@ export const useDeactivateSandbox = (
 
 // ─── Extractions (M2 — Reverse Engineering) ──────────────────────────────────
 
-export type SourceKind = "LAKEBASE" | "DDL_FILE" | "EMBARCADERO" | "ODBC" | "REST";
+export type SourceKind = "LAKEBASE" | "DDL_FILE" | "EMBARCADERO" | "ODBC" | "REST" | "UC" | "DYNAMODB";
 export type ExtractionStatus = "RUNNING" | "SUCCESS" | "PARTIAL" | "FAILED";
 
 export interface ExtractedAttribute {
@@ -3018,6 +3022,23 @@ export const useRunEmbarcaderoImport = (
   useMutation({
     mutationFn: async ({ data }) =>
       (await api.post<ExtractionResult>("/extractions/embarcadero/run", data)).data,
+    ...opts?.mutation,
+  });
+
+// Rodada 9 consolidada, item 17 — import de modelo DynamoDB via JSON
+// (describe-table / NoSQL Workbench / CloudFormation; ver extractions/dynamodb.py).
+export interface DynamoDBImportIn {
+  system_id: string;
+  json_text: string;
+  open_ticket: boolean;
+}
+
+export const useRunDynamoDBImport = (
+  opts?: Opts<ExtractionResult, { data: DynamoDBImportIn }>,
+) =>
+  useMutation({
+    mutationFn: async ({ data }) =>
+      (await api.post<ExtractionResult>("/extractions/dynamodb/run", data)).data,
     ...opts?.mutation,
   });
 

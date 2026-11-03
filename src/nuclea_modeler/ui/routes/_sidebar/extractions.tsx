@@ -12,6 +12,7 @@ import {
   useRunDDLImport,
   usePreviewDDLImport,
   useRunEmbarcaderoImport,
+  useRunDynamoDBImport,
   type ExtractionResult,
 } from "@/lib/api";
 import selector from "@/lib/selector";
@@ -92,7 +93,7 @@ function Header() {
 }
 
 function ExtractionsContent() {
-  const [tab, setTab] = useState<"lakebase" | "ddl" | "dm1" | "history">("lakebase");
+  const [tab, setTab] = useState<"lakebase" | "ddl" | "dm1" | "dynamodb" | "history">("lakebase");
 
   return (
     <div className="space-y-4">
@@ -109,6 +110,10 @@ function ExtractionsContent() {
           <FileBox className="h-4 w-4 mr-2" />
           Embarcadero (.DM1)
         </TabButton>
+        <TabButton active={tab === "dynamodb"} onClick={() => setTab("dynamodb")}>
+          <FileCode className="h-4 w-4 mr-2" />
+          DynamoDB (JSON)
+        </TabButton>
         <TabButton active={tab === "history"} onClick={() => setTab("history")}>
           <Inbox className="h-4 w-4 mr-2" />
           Histórico
@@ -118,6 +123,7 @@ function ExtractionsContent() {
       {tab === "lakebase" && <LakebaseTab />}
       {tab === "ddl" && <DDLTab />}
       {tab === "dm1" && <EmbarcaderoTab />}
+      {tab === "dynamodb" && <DynamoDBTab />}
       {tab === "history" && <HistoryTab />}
     </div>
   );
@@ -367,7 +373,9 @@ function DDLTab() {
               <p className="text-xs text-muted-foreground">
                 {systemDialect
                   ? `Padrão: o dialeto do sistema (${systemTech}). Para mudar o padrão, edite o dialeto do sistema no Navegador.`
-                  : "Este sistema não tem dialeto definido — defina no Navegador (clique em “+ dialeto” ao lado do nome) para ele vir pré-selecionado aqui."}
+                  : (systemTech || "").toLowerCase().includes("dynamo")
+                    ? "Sistema DynamoDB não usa DDL SQL — importe o modelo pela aba “DynamoDB (JSON)”."
+                    : "Este sistema não tem dialeto definido — defina no Navegador (clique em “+ dialeto” ao lado do nome) para ele vir pré-selecionado aqui."}
               </p>
             </Field>
           </div>
@@ -613,6 +621,133 @@ function EmbarcaderoTab() {
           </div>
         </form>
 
+        {result && <ResultPanel result={result} />}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Import de modelo DynamoDB via JSON (rodada 9 consolidada, item 17). Aceita a
+ * saída do `aws dynamodb describe-table`, o modelo do NoSQL Workbench ou um
+ * template CloudFormation — o backend detecta o formato. Mesmo fluxo do .DM1:
+ * diff contra o catálogo → ticket de aprovação.
+ */
+function DynamoDBTab() {
+  const { data: systems } = useListSystemsSuspense(selector());
+  const qc = useQueryClient();
+  const navigate = useNavigate();
+  const MAX_BYTES = 20 * 1024 * 1024; // espelha o cap do backend (DynamoDBImportIn)
+
+  const { mutate: runImport, isPending, data: result } = useRunDynamoDBImport({
+    mutation: {
+      onSuccess: (r) => {
+        qc.invalidateQueries({ queryKey: ["listExtractions"] });
+        qc.invalidateQueries({ queryKey: ["listTickets"] });
+        if (r.ticket_id) {
+          setTimeout(() => navigate({ to: "/tickets/$id", params: { id: r.ticket_id! } }), 800);
+        }
+      },
+      onError: (e) => toast.error("Falha no import DynamoDB", { description: e.message }),
+    },
+  });
+
+  const [systemId, setSystemId] = useState(systems[0]?.system_id || "");
+  const [jsonText, setJsonText] = useState("");
+  const [fileName, setFileName] = useState("");
+
+  // Validação local só de sintaxe (o formato DynamoDB é validado no backend, que
+  // devolve mensagem acionável). Evita mandar um arquivo truncado/corrompido.
+  let jsonError: string | null = null;
+  if (jsonText.trim()) {
+    try {
+      JSON.parse(jsonText);
+    } catch (e) {
+      jsonError = `JSON inválido: ${(e as Error).message}`;
+    }
+  }
+
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    if (f.size > MAX_BYTES) {
+      toast.error("Arquivo maior que 20 MB");
+      return;
+    }
+    setFileName(f.name);
+    setJsonText(await f.text());
+  };
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!jsonText.trim() || !systemId || jsonError) return;
+    runImport({ data: { system_id: systemId, json_text: jsonText, open_ticket: true } });
+  };
+
+  if (systems.length === 0) {
+    return (
+      <EmptyState
+        icon={<FileCode className="h-10 w-10" />}
+        title="Nenhum sistema cadastrado"
+        description="Cadastre um sistema (tecnologia DynamoDB) antes de importar o modelo."
+        primaryAction={{ label: "Cadastrar sistema", to: "/entities" }}
+      />
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Importar modelo DynamoDB (JSON)</CardTitle>
+        <CardDescription>
+          Aceita a saída do <code>aws dynamodb describe-table</code> (uma ou várias
+          tabelas), o modelo exportado do <strong>NoSQL Workbench</strong> ou um template{" "}
+          <strong>CloudFormation</strong>. As tabelas entram no schema <code>dynamodb</code>;
+          partition + sort key viram a PK; GSI/LSI viram índices. Atributos não-chave vêm do
+          NoSQL Workbench (declarados ou inferidos dos itens de exemplo).
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={submit} className="space-y-4">
+          <Field label="Sistema-alvo do diff" required>
+            <SystemPicker value={systemId} onChange={setSystemId} required />
+          </Field>
+          <Field label="Arquivo JSON (ou cole abaixo)" required>
+            <Input type="file" accept=".json,application/json" onChange={onFile} />
+            {fileName && <p className="text-xs text-muted-foreground mt-1">{fileName}</p>}
+            <textarea
+              value={jsonText}
+              onChange={(e) => setJsonText(e.target.value)}
+              rows={10}
+              className="mt-2 w-full rounded-md border bg-background px-3 py-2 text-xs font-mono"
+              placeholder={'{ "Table": { "TableName": "Pedidos", "KeySchema": [ ... ], "AttributeDefinitions": [ ... ] } }'}
+            />
+            {jsonError && <p className="text-xs text-destructive mt-1">{jsonError}</p>}
+          </Field>
+          <PrereqChecklist
+            items={[
+              { label: "Sistema-alvo selecionado", ok: !!systemId },
+              { label: "JSON preenchido", ok: !!jsonText.trim() },
+              { label: "JSON válido", ok: !!jsonText.trim() && !jsonError },
+            ]}
+          />
+          <div className="flex justify-end">
+            <Button type="submit" disabled={isPending || !jsonText.trim() || !systemId || !!jsonError}>
+              {isPending ? (
+                <>
+                  <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                  Importando...
+                </>
+              ) : (
+                <>
+                  <Upload className="mr-2 h-4 w-4" />
+                  Importar
+                </>
+              )}
+            </Button>
+          </div>
+        </form>
         {result && <ResultPanel result={result} />}
       </CardContent>
     </Card>

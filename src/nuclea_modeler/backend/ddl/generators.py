@@ -23,6 +23,7 @@ from __future__ import annotations
 import re
 from typing import Any, Callable
 
+from .dynamodb_gen import gen_dynamodb
 from .models import DDLDialect, DDLExportRequest
 
 
@@ -728,6 +729,7 @@ GENERATORS: dict[DDLDialect, GeneratorFn] = {
     "MYSQL": gen_mysql,
     "SPARKSQL": gen_sparksql,
     "DB2": gen_db2,
+    "DYNAMODB": gen_dynamodb,
 }
 
 
@@ -739,4 +741,5 @@ DIALECT_LABELS: dict[DDLDialect, tuple[str, str]] = {
     "MYSQL": ("MySQL", "MySQL / MariaDB"),
     "SPARKSQL": ("Spark SQL / Delta", "Databricks (padrão)"),
     "DB2": ("DB2", "IBM Db2 (LUW / Db2 for i)"),
+    "DYNAMODB": ("DynamoDB (JSON)", "create-table --cli-input-json"),
 }

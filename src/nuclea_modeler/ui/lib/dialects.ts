@@ -29,8 +29,12 @@ export type CanonicalDialect =
 export interface TechnologyOption {
   /** Valor gravado em `systems.technology`. */
   label: string;
-  /** Dialeto canônico correspondente (import/export de DDL). */
-  dialect: CanonicalDialect;
+  /**
+   * Dialeto canônico de DDL SQL, ou `null` para bancos NÃO relacionais (DynamoDB),
+   * que não têm DDL SQL: o modelo entra/sai por JSON (Engenharia Reversa →
+   * DynamoDB; Exportar DDL → "DynamoDB (JSON)").
+   */
+  dialect: CanonicalDialect | null;
 }
 
 /** Opções oferecidas no Navegador/wizard. A ordem é a de exibição. */
@@ -42,6 +46,8 @@ export const TECHNOLOGY_OPTIONS: TechnologyOption[] = [
   { label: "DB2", dialect: "DB2" },
   { label: "Databricks", dialect: "SPARKSQL" },
   { label: "ANSI (genérico)", dialect: "ANSI" },
+  // Rodada 9 consolidada, item 17 — não relacional (sem DDL SQL).
+  { label: "DynamoDB", dialect: null },
 ];
 
 /**
@@ -52,6 +58,7 @@ export const TECHNOLOGY_OPTIONS: TechnologyOption[] = [
 export function technologyToDialect(tech: string | null | undefined): CanonicalDialect | null {
   const t = (tech || "").toLowerCase().trim();
   if (!t) return null;
+  if (t.includes("dynamo")) return null; // não relacional: sem dialeto SQL
   if (t.includes("postgres") || t.includes("lakebase") || t.includes("pg")) return "POSTGRES";
   if (t.includes("oracle") || t.includes("plsql")) return "PLSQL";
   if (t.includes("sqlserver") || t.includes("mssql") || t.includes("sql server") || t.includes("tsql"))
@@ -65,6 +72,7 @@ export function technologyToDialect(tech: string | null | undefined): CanonicalD
 
 /** Rótulo canônico da opção que corresponde à tecnologia (para pré-selecionar o select). */
 export function technologyOptionLabel(tech: string | null | undefined): string | null {
+  if ((tech || "").toLowerCase().includes("dynamo")) return "DynamoDB";
   const d = technologyToDialect(tech);
   return d ? TECHNOLOGY_OPTIONS.find((o) => o.dialect === d)?.label ?? null : null;
 }

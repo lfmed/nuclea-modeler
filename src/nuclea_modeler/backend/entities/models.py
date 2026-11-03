@@ -168,6 +168,9 @@ IndexType = Literal[
     "BTREE", "HASH", "UNIQUE", "GIN", "BRIN", "GIST",
     "BITMAP", "CLUSTERED", "NONCLUSTERED",
     "Z-ORDER", "LIQUID",
+    # Rodada 9 consolidada, item 17 — índices secundários do DynamoDB. SEM estes
+    # valores, ler um índice importado do JSON (EntityIndexOut) daria 500.
+    "GSI", "LSI",
 ]
 ColumnDirection = Literal["ASC", "DESC"]
 PartitionStrategy = Literal["RANGE", "LIST", "HASH", "LIQUID", "NONE"]

@@ -5,7 +5,9 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-DDLDialect = Literal["ANSI", "TSQL", "PLSQL", "POSTGRES", "MYSQL", "SPARKSQL", "DB2"]
+# DYNAMODB (rodada 9 consolidada, item 17): não é SQL — o "DDL" é o JSON de
+# `aws dynamodb create-table --cli-input-json` (ver ddl/dynamodb_gen.py).
+DDLDialect = Literal["ANSI", "TSQL", "PLSQL", "POSTGRES", "MYSQL", "SPARKSQL", "DB2", "DYNAMODB"]
 
 
 class DDLExportRequest(BaseModel):

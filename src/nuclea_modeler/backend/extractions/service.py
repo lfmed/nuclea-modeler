@@ -23,6 +23,7 @@ from ..core.sql import Sql
 from ..lakebase.service import open_connection
 from ..tickets.service import open_ticket
 from .ddl_split import AlterConstraints, filter_relevant, parse_alter_constraints, split_sql_statements
+from .dynamodb import parse_dynamodb_json
 from .embarcadero import parse_dm1
 from .diff import RELATIONSHIP_SCHEMA
 from .diff import compute_diff_against_catalog as compute_diff_against_catalog
@@ -1838,6 +1839,117 @@ def run_embarcadero_import(
         summary_md=summary_md,
         # 'errors' do resultado = só problemas reais (infos vão no summary_md).
         errors=problems,
+    )
+
+
+def run_dynamodb_import(
+    sql: Sql,
+    *,
+    system_id: str,
+    json_text: str,
+    actor: str,
+    open_ticket_on_diff: bool,
+) -> ExtractionResult:
+    """Import de modelo DynamoDB (JSON) → diff contra o catálogo → ticket.
+
+    Rodada 9 consolidada, item 17. Mesmo fluxo do .DM1 (parse puro em
+    `dynamodb.parse_dynamodb_json`, diff, ticket REVERSE_ENG, extração persistida).
+    """
+    started = datetime.utcnow()
+    start_clock = time.monotonic()
+
+    def _failed(msg: str, warnings: list[str] | None = None) -> ExtractionResult:
+        return ExtractionResult(
+            extraction_id="", status="FAILED", objects_found=0, objects_new=0,
+            objects_changed=0, objects_removed=0,
+            duration_ms=int((time.monotonic() - start_clock) * 1000), ticket_id=None,
+            summary_md=msg, errors=[msg] + (warnings or []),
+        )
+
+    try:
+        snapshot, warnings, fmt = parse_dynamodb_json(json_text, system_id)
+    except ValueError as exc:  # DynamoDBFormatError é ValueError — msg já acionável
+        return _failed(f"Falha ao ler o JSON do DynamoDB: {exc}")
+    # Guard ANTES do diff: snapshot vazio faria o diff marcar o catálogo inteiro
+    # como removido (mesmo cuidado do DDL/DM1).
+    if not snapshot.entities:
+        return _failed("Nenhuma tabela DynamoDB encontrada no arquivo.", warnings)
+
+    diff, summary = compute_diff_against_catalog(sql, system_id, snapshot)
+    ended = datetime.utcnow()
+    duration_ms = int((time.monotonic() - start_clock) * 1000)
+    has_changes = summary["new"] + summary["changed"] + summary["removed"] > 0
+    fmt_label = {
+        "describe-table": "aws dynamodb describe-table",
+        "nosql-workbench": "NoSQL Workbench",
+        "cloudformation": "CloudFormation",
+    }.get(fmt, fmt)
+
+    ticket_id: str | None = None
+    if has_changes and open_ticket_on_diff:
+        warn_block = (
+            "\n\n**Avisos:**\n" + "\n".join(f"- {w}" for w in warnings[:20]) if warnings else ""
+        )
+        ticket_id = open_ticket(
+            sql,
+            title=(
+                f"Reconciliação DynamoDB (JSON) — {summary['new']} novos, "
+                f"{summary['changed']} alterados, {summary['removed']} removidos"
+            ),
+            system_id=system_id,
+            source_type="REVERSE_ENG",
+            diff=diff,
+            extraction_id=None,
+            summary_md=(
+                f"Fonte: JSON DynamoDB ({fmt_label})\n\n"
+                f"- **{summary['new']}** tabelas novas\n"
+                f"- **{summary['changed']}** tabelas alteradas\n"
+                f"- **{summary['removed']}** tabelas removidas\n"
+                f"{warn_block}"
+            ),
+            created_by=actor,
+        )
+
+    status = "PARTIAL" if warnings else "SUCCESS"
+    n_idx = sum(len(e.indexes) for e in snapshot.entities)
+    summary_md = (
+        f"Formato detectado: {fmt_label}. Parseado {summary['found']} tabela(s), "
+        f"{n_idx} índice(s) GSI/LSI. +{summary['new']} novas, ~{summary['changed']} "
+        f"alteradas, -{summary['removed']} removidas."
+        + (f"\n\n{format_import_log(warnings, [])}" if warnings else "")
+    )
+    ext_id = persist_extraction(
+        sql,
+        source_kind="DYNAMODB",
+        system_id=system_id,
+        actor=actor,
+        requested_schemas=snapshot.schemas,
+        requested_kinds=["TABLE"],
+        lakebase_sandbox_id=None,
+        connection_id=None,
+        status=status,
+        started_at=started,
+        ended_at=ended,
+        objects_found=summary["found"],
+        objects_new=summary["new"],
+        objects_changed=summary["changed"],
+        objects_removed=summary["removed"],
+        snapshot=snapshot,
+        diff_summary=summary,
+        error_summary=("\n".join(warnings)[:4000]) if warnings else None,
+        ticket_id=ticket_id,
+    )
+    return ExtractionResult(
+        extraction_id=ext_id,
+        status=status,
+        objects_found=summary["found"],
+        objects_new=summary["new"],
+        objects_changed=summary["changed"],
+        objects_removed=summary["removed"],
+        duration_ms=duration_ms,
+        ticket_id=ticket_id,
+        summary_md=summary_md,
+        errors=warnings,
     )
 
 

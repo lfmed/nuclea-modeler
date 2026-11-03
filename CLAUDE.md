@@ -432,6 +432,21 @@ conformidade) aguarda a planilha do cliente; itens 4 (ODBC), 11, 12 e 13 depende
   - UI: "Carregar arquivo .sql" + contador de linhas/KB no Importar DDL.
   - Ainda síncrono: se um modelo MUITO maior voltar a passar de 300 s, o próximo passo é
     apply em background (job + polling), não mais otimização.
+- **v1.0074 — DynamoDB via JSON (item 17).** Import: `extractions/dynamodb.py` (puro)
+  detecta 3 formatos — `describe-table` (1, lista ou `{"Tables"}`), NoSQL Workbench
+  (`DataModel`; único com atributos não-chave + itens de exemplo → tipos inferidos) e
+  CloudFormation (`AWS::DynamoDB::Table`). Mapeamento: schema lógico `dynamodb`; HASH+RANGE
+  → PK composta (HASH primeiro); GSI/LSI → índices `index_type` GSI/LSI; sem FKs. Rota
+  `POST /extractions/dynamodb/run` (`runDynamoDBImport`), `SourceKind` += DYNAMODB (sem
+  migration: coluna STRING). Export: dialeto `DYNAMODB` em `ddl/dynamodb_gen.py` → JSON de
+  `create-table --cli-input-json` (valida 1–2 PKs, chaves só S/N/B, AttributeDefinitions só
+  com chaves, LSI usa a partition key da tabela; FKs puladas; combinado = lista JSON; download
+  `.json`). **GOTCHA:** `IndexType` (backend `entities/models.py` + `api.ts`) é Literal
+  FECHADO — sem "GSI"/"LSI", LER um índice importado daria 500. UI: tecnologia "DynamoDB"
+  (`TECHNOLOGY_OPTIONS.dialect = null` = não relacional), tipos/índices/particionamento
+  próprios em `types-by-tech`/`index-types-by-tech` (`techKey` checa "dynamo" ANTES das
+  regras relacionais). "Outros não relacionais" (MongoDB/Cassandra/Cosmos) = mesmo molde,
+  a fazer quando o cliente disser quais usa.
 
 ## Package Management
 - **Frontend:** Use `apx bun install` or `apx bun add <dependency>` for frontend package management.
