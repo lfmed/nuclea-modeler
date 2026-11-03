@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Suspense, useEffect, useState } from "react";
 import { QueryErrorResetBoundary, useQueryClient } from "@tanstack/react-query";
 import { ErrorBoundary } from "react-error-boundary";
+import { toast } from "sonner";
 
 import {
   useListExtractionsSuspense,
@@ -371,6 +372,39 @@ function DDLTab() {
             </Field>
           </div>
           <Field label="DDL" required>
+            {/* Rodada 9 item 10 (DDL extenso): carregar o .sql direto, em vez de
+                colar dezenas de milhares de linhas no textarea (frágil no browser).
+                Lido no cliente com File.text() — mesmo payload do colar (limite 5 MB). */}
+            <div className="flex flex-wrap items-center gap-2 pb-1">
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border px-3 py-1.5 text-xs hover:bg-muted">
+                <Upload className="h-3.5 w-3.5" />
+                Carregar arquivo .sql
+                <input
+                  type="file"
+                  accept=".sql,.ddl,.txt"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const f = e.target.files?.[0];
+                    e.target.value = ""; // permite recarregar o mesmo arquivo
+                    if (!f) return;
+                    if (f.size > 5_000_000) {
+                      toast.error("Arquivo maior que 5 MB", {
+                        description: "Divida o script (ex.: por schema) e importe em partes.",
+                      });
+                      return;
+                    }
+                    setDdlText(await f.text());
+                    toast.success(`"${f.name}" carregado`);
+                  }}
+                />
+              </label>
+              {ddlText && (
+                <span className="text-xs text-muted-foreground">
+                  {ddlText.split("\n").length.toLocaleString("pt-BR")} linhas ·{" "}
+                  {(new Blob([ddlText]).size / 1024).toLocaleString("pt-BR", { maximumFractionDigits: 0 })} KB
+                </span>
+              )}
+            </div>
             <textarea
               value={ddlText}
               onChange={(e) => setDdlText(e.target.value)}

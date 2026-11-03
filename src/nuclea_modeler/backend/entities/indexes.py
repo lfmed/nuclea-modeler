@@ -334,15 +334,13 @@ def stage_partitioning_set(
 # ─── Apply (chamado por tickets/service.py) ─────────────────────────────────
 
 
-def apply_index_add(
-    sql,
-    *,
-    entity_id: str,
-    payload: dict,
-    now: datetime,
-    actor: str,
-) -> None:
-    s = get_settings()
+def build_index_row(*, entity_id: str, payload: dict, now: datetime, actor: str) -> dict:
+    """Linha de `entity_indexes` a partir do payload do ticket.
+
+    Extraída de `apply_index_add` (rodada 9, item 10) para o apply EM LOTE de
+    tickets grandes (`tickets/bulk_apply.py`) montar as MESMAS linhas e inserir
+    todas com um `insert_many` — sem divergir do caminho unitário.
+    """
     iid = payload.get("index_id") or delta.new_id("idx-")
     columns = payload.get("columns") or []
     cols_list = [
@@ -353,24 +351,36 @@ def apply_index_add(
         for c in columns
         if isinstance(c, dict) and c.get("name")
     ]
+    return {
+        "index_id": iid,
+        "entity_id": entity_id,
+        "index_name": payload.get("index_name", ""),
+        "index_type": payload.get("index_type", "BTREE"),
+        "columns_json": _columns_to_json(cols_list),
+        "include_columns": list(payload.get("include_columns") or []),
+        "partial_where": payload.get("partial_where"),
+        "is_unique": bool(payload.get("is_unique", False)),
+        "native_comment": payload.get("native_comment"),
+        "description_md": payload.get("description_md"),
+        "origin": payload.get("origin", "MANUAL"),
+        "created_at": now, "created_by": actor,
+        "updated_at": now, "updated_by": actor,
+    }
+
+
+def apply_index_add(
+    sql,
+    *,
+    entity_id: str,
+    payload: dict,
+    now: datetime,
+    actor: str,
+) -> None:
+    s = get_settings()
     delta.insert(
         sql,
         s.fq_table("entity_indexes"),
-        {
-            "index_id": iid,
-            "entity_id": entity_id,
-            "index_name": payload.get("index_name", ""),
-            "index_type": payload.get("index_type", "BTREE"),
-            "columns_json": _columns_to_json(cols_list),
-            "include_columns": list(payload.get("include_columns") or []),
-            "partial_where": payload.get("partial_where"),
-            "is_unique": bool(payload.get("is_unique", False)),
-            "native_comment": payload.get("native_comment"),
-            "description_md": payload.get("description_md"),
-            "origin": payload.get("origin", "MANUAL"),
-            "created_at": now, "created_by": actor,
-            "updated_at": now, "updated_by": actor,
-        },
+        build_index_row(entity_id=entity_id, payload=payload, now=now, actor=actor),
     )
 
 

@@ -396,6 +396,43 @@ conformidade) aguarda a planilha do cliente; itens 4 (ODBC), 11, 12 e 13 depende
   com exemplos copiáveis + DDL de exemplo para download (gerado no browser), Canvas, Linhagem e
   dialeto. Os campos citados batem com os formulários — atualizar junto se mudarem.
 
+## RODADA 9 consolidada — pontos novos do cliente (v1.0070 → v1.0073)
+- **v1.0070 — Lakebase: enum do SDK chega como `str`.** Com o scope `postgres` ativo, a
+  listagem de instâncias saiu do 403 e quebrou em `inst.state.value`. `_enum_str` aceita
+  Enum OU str. GOTCHA: `user_api_scopes` NÃO aceita `iam.*` (implícitos) — mande só os extras.
+- **v1.0071 — DER alto contraste (item 3d):** `components/diagram/contrast.ts`. Modo "alto"
+  (padrão) = canvas cinza, cartão branco com borda 2px, cabeçalho em faixa, aresta 2,5px
+  roxo-escuro, rótulo 12px com fundo opaco. Seta com `markerUnits: "userSpaceOnUse"` — o
+  default do React Flow ESCALA a seta com a espessura. Só estilo, aplicado por cima da aresta
+  em `edgesToRender`; a escolha de handles não muda.
+- **v1.0072 — Datas na planilha de conformidade (item 12):** `compliance/service.normalize_date`
+  aceita data com hora, serial do Excel, `.`, ano-primeiro, mês PT/EN abreviado, AAAAMMDD;
+  DD/MM por padrão (BR). **GOTCHA:** CSV do Excel BR é **Windows-1252** — decodificar como
+  UTF-8 com `replace` quebrava o cabeçalho "Próxima" e nomes acentuados; agora UTF-8 estrito
+  → fallback cp1252. Cabeçalho normalizado (sem acento/caixa/espaço) e procurado nas 10
+  primeiras linhas (título antes). `.xls` recusado com mensagem. Botão "Baixar modelo".
+- **v1.0073 — DDL extenso (item 10). RCA MEDIDA no app deployado** com
+  `scripts/repro_large_ddl.py` (DDL sintético de 12 mil linhas / 358 tabelas):
+  - preview (dry-run) OK em ~14 s — o TAMANHO não era o problema;
+  - com 1 instrução não-parseável (`\connect`, `CREATE TABLESPACE`), o parse global caía
+    num split por `;` CRU → 2.207 erros, `COMMENT ON … 'a; b'` picotado. FIX:
+    `extractions/ddl_split.py` divide respeitando aspas/`$$`/comentários/`/`/`GO`/meta-
+    comando psql (termina na linha), pré-filtra (só CREATE TABLE/VIEW/INDEX, ALTER TABLE,
+    COMMENT ON, SET search_path) e o service parseia instrução a instrução (erro com nº da
+    linha). Ignoradas aparecem no resumo ("Ignoradas: 710 INSERT, 35 CREATE FUNCTION").
+  - `ALTER TABLE … ADD CONSTRAINT PRIMARY KEY/FOREIGN KEY` (formato do pg_dump) era
+    IGNORADO → tabelas sem PK/FK. Agora extraído por REGEX (`parse_alter_constraints`,
+    robusto à versão do sqlglot) e aplicado na ordem do script.
+  - **a falha real era o APPLY:** 502 do proxy aos **300 s** com só 43/358 tabelas
+    (~7 s/tabela: várias idas ao warehouse por item). FIX: `tickets/bulk_apply.py` — para
+    tickets com ≥ `BULK_MIN_ADDS` (20) adds, carrega o existente UMA vez e insere entities/
+    índices/atributos/FKs com `insert_many` por grupo; grupo que falha cai no caminho
+    unitário (idempotente). Abaixo do limiar NADA muda. Builders de linha compartilhados
+    (`_entity_row`, `_attribute_row`, `_relationship_row`, `build_index_row`).
+  - UI: "Carregar arquivo .sql" + contador de linhas/KB no Importar DDL.
+  - Ainda síncrono: se um modelo MUITO maior voltar a passar de 300 s, o próximo passo é
+    apply em background (job + polling), não mais otimização.
+
 ## Package Management
 - **Frontend:** Use `apx bun install` or `apx bun add <dependency>` for frontend package management.
 - **Python:** Always use `uv` (never `pip`)

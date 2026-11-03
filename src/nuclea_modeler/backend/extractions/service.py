@@ -22,6 +22,7 @@ from ..core._nuclea_config import get_settings
 from ..core.sql import Sql
 from ..lakebase.service import open_connection
 from ..tickets.service import open_ticket
+from .ddl_split import AlterConstraints, filter_relevant, parse_alter_constraints, split_sql_statements
 from .embarcadero import parse_dm1
 from .diff import RELATIONSHIP_SCHEMA
 from .diff import compute_diff_against_catalog as compute_diff_against_catalog
@@ -1135,24 +1136,31 @@ def run_ddl_import(
     errors: list[str] = []
     warnings: list[str] = []
 
-    # Parse RESILIENTE: tenta todo o texto; se falhar, tenta statement-a-statement.
-    # Assim, um `CREATE SCHEMA` ou `SET` malformado não aborta o lote inteiro.
-    # (errors/warnings já inicializados acima para o fallback poder registrar.)
+    # Parse INSTRUÇÃO-A-INSTRUÇÃO (rodada 9 consolidada, item 10 — "DDL extenso
+    # falha"). Antes: parse do texto INTEIRO; bastava uma instrução que o sqlglot
+    # não entende (`\connect`, `CREATE TABLESPACE`…) para cair num fallback que
+    # dividia por `;` CRU — picotando strings (`COMMENT ON … IS 'a; b'`), corpos
+    # `$$ … $$` e gerando milhares de erros (2.207 num DDL sintético de 12 mil
+    # linhas). Agora `ddl_split` divide respeitando a sintaxe, descarta o que o
+    # import não usa (INSERT, GRANT, functions…) e cada instrução é parseada
+    # isolada — uma falha afeta só ela, com o número da linha na mensagem.
+    # `ALTER TABLE … ADD CONSTRAINT PRIMARY KEY/FOREIGN KEY` (formato do pg_dump)
+    # vira AlterConstraints por regex (robusto à versão do sqlglot) e é aplicado
+    # no laço abaixo, NA ORDEM (respeita o SET search_path corrente).
     parsed: list[Any] = []
-    try:
-        parsed = sqlglot.parse(ddl_text, dialect=sg_dialect) or []
-    except Exception as exc_full:
-        # Fallback: split por ";" e tenta cada statement isolado.
-        log.debug("run_ddl_import: falha no parse global, tentando statement-a-statement: %s", exc_full)
-        for raw_stmt in ddl_text.split(";"):
-            raw_stmt = raw_stmt.strip()
-            if not raw_stmt:
-                continue
-            try:
-                stmts = sqlglot.parse(raw_stmt + ";", dialect=sg_dialect) or []
-                parsed.extend(stmts)
-            except Exception as exc_stmt:
-                errors.append(f"Statement ignorado: {str(exc_stmt)[:100]}")
+    _filtered = filter_relevant(split_sql_statements(ddl_text))
+    skipped_note = _filtered.skipped_summary()
+    for _st in _filtered.keep:
+        if re.match(r"(?i)ALTER\s+TABLE\b", _st.text):
+            _ac = parse_alter_constraints(_st.text)
+            if _ac:  # ALTER sem PK/FK (OWNER TO, ADD COLUMN…) não interessa
+                parsed.append(_ac)
+            continue
+        try:
+            parsed.extend(x for x in (sqlglot.parse(_st.text, dialect=sg_dialect) or []) if x is not None)
+        except Exception as exc_stmt:  # noqa: BLE001 — uma instrução ruim não derruba o lote
+            _head = " ".join(_st.text.split()[:3])
+            errors.append(f"Linha {_st.line}: instrução ignorada ({_head}…): {str(exc_stmt)[:100]}")
     # FKs coletadas CRUAS na 1ª passe; resolvidas por nome na 2ª passe (ver
     # `_resolve_pending_fks`). Assim a ORDEM dos CREATE TABLE deixa de importar:
     # uma FK declarada antes da tabela-alvo passa a ser resolvida corretamente.
@@ -1176,8 +1184,27 @@ def run_ddl_import(
     # `SET search_path TO a, b, c` (dumps Postgres): sem isso, tudo caía em
     # "public" mesmo quando o DDL declara `SET search_path TO streaming, public`.
     current_search_path: list[str] = ["public"]
+    # PKs declaradas por ALTER TABLE: aplicadas às entities DEPOIS do laço (o
+    # ALTER costuma vir depois do CREATE, mas pode vir antes).
+    alter_pks: dict[tuple[str, str], list[str]] = {}
     for stmt in parsed:
         if stmt is None:
+            continue
+        if isinstance(stmt, AlterConstraints):
+            _sch = stmt.schema or current_search_path[0]
+            if stmt.pk_cols:
+                alter_pks.setdefault((_sch, stmt.table), []).extend(stmt.pk_cols)
+            for _cols, _rs, _rt, _rcols in stmt.fks:
+                pending_fks.append(
+                    _PendingFK(
+                        parent_schema_hint=_rs,
+                        parent_name=_rt,
+                        parent_cols=_rcols,
+                        child_schema=_sch,
+                        child_table=stmt.table,
+                        child_cols=_cols,
+                    )
+                )
             continue
         # SET search_path muda o schema default (e a ordem de resolução).
         if isinstance(stmt, (exp.Set, exp.Command)):
@@ -1371,6 +1398,29 @@ def run_ddl_import(
                             deferred_table_comments.setdefault((sch, tbl), text)
         except Exception as exc:
             errors.append(f"parse stmt skipped: {exc}")
+
+    # Aplica as PKs de `ALTER TABLE … ADD … PRIMARY KEY`. Casa por (schema,
+    # tabela); se não achar, por NOME de tabela único no script (mesmo fallback do
+    # COMMENT ON: o ALTER pode qualificar o schema e o CREATE não, ou vice-versa).
+    # Coluna casa exato e, se não, sem diferença de caixa (Oracle/DB2 em CAIXA ALTA).
+    if alter_pks:
+        _by_key = {(e.schema_name, e.technical_name): e for e in entities}
+        _by_name: dict[str, list[ExtractedEntity]] = {}
+        for e in entities:
+            _by_name.setdefault(e.technical_name, []).append(e)
+        for (_sch, _tbl), _cols in alter_pks.items():
+            ent = _by_key.get((_sch, _tbl))
+            if ent is None and len(_by_name.get(_tbl, [])) == 1:
+                ent = _by_name[_tbl][0]
+            if ent is None:
+                warnings.append(
+                    f"PRIMARY KEY de ALTER TABLE para tabela que não está no script: {_sch}.{_tbl}"
+                )
+                continue
+            _lower = {c.lower() for c in _cols}
+            for a in ent.attributes:
+                if a.technical_name in _cols or a.technical_name.lower() in _lower:
+                    a.is_primary_key = True
 
     # Aplica os comentários de COMMENT ON coletados (autoritativos — sobrescrevem
     # o que veio inline no CREATE, pois são declarações explícitas).
@@ -1569,6 +1619,9 @@ def run_ddl_import(
         f"Parseado {summary['found']} objetos. "
         f"+{summary['new']} novos, ~{summary['changed']} alterados, "
         f"-{summary['removed']} removidos.{rel_note}{idx_note}"
+        # Instruções que o import não usa (INSERT, GRANT, functions…) — contadas,
+        # não são erro. Ajuda a entender um script grande ("o resto foi ignorado").
+        + (f"\nIgnoradas (não usadas pelo import): {skipped_note}." if skipped_note else "")
     )
     # `errors` = problemas de parse; `warnings` = avisos informativos (órfãs etc).
     import_log = format_import_log(errors, warnings)

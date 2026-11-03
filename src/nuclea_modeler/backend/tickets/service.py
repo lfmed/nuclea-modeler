@@ -102,6 +102,12 @@ def open_ticket(
     return tid
 
 
+# A partir de quantos op=add de entity o apply usa o caminho EM LOTE
+# (tickets/bulk_apply.py). Abaixo disso (editor do DER, CSV, imports pequenos) o
+# caminho unitário de sempre — já validado em produção — segue intocado.
+BULK_MIN_ADDS = 20
+
+
 def apply_ticket(
     sql: Sql,
     ticket_id: str,
@@ -215,7 +221,8 @@ def apply_ticket(
         diff.get("entities", []),
         key=lambda e: 1 if e.get("schema_name") == "__relationship__" else 0,
     )
-    for ent_change in entries_sorted:
+
+    def _apply_entry(ent_change: dict[str, Any]) -> None:
         op = ent_change.get("op")
         schema_name = ent_change.get("schema_name", "")
         technical_name = ent_change.get("technical_name", "")
@@ -229,7 +236,7 @@ def apply_ticket(
                     state.applied_entities += 1
             except Exception as exc:
                 state.errors.append(f"relationship {op} {technical_name}: {exc}")
-            continue
+            return
 
         ent_dec = _decision_for_entity(decisions, schema_name, technical_name, op)
 
@@ -237,14 +244,14 @@ def apply_ticket(
         # Para op=change: decisão é por field — entity-level action é fallback.
         if op in ("add", "remove") and ent_dec and ent_dec.action == "ignore":
             state.ignored_items += 1
-            continue
+            return
         if op in ("add", "remove") and ent_dec and ent_dec.action == "reverse":
             try:
                 _apply_reverse_entity(ws, sandbox_info, ent_change)  # type: ignore[arg-type]
                 state.reversed_items += 1
             except Exception as exc:
                 state.errors.append(f"reverse {op} {schema_name}.{technical_name}: {exc}")
-            continue
+            return
 
         try:
             if op == "add":
@@ -255,6 +262,39 @@ def apply_ticket(
                 _apply_op_change(state, ent_change, ent_dec)
         except Exception as exc:  # keep going on per-entity errors
             state.errors.append(f"{op} {schema_name}.{technical_name}: {exc}")
+
+    # Apply EM LOTE para tickets grandes (rodada 9, item 10 — ver bulk_apply.py):
+    # o import de um DDL de 358 tabelas estourava os 300 s do proxy no apply
+    # (~7 s/tabela no caminho unitário). Só os `add` SEM decisão ignore/reverse
+    # vão para o lote; o resto segue o loop de sempre, na mesma ordem relativa
+    # (entities → relationships). Abaixo do limiar, nada muda.
+    def _is_rel(e: dict[str, Any]) -> bool:
+        return e.get("schema_name") == "__relationship__"
+
+    def _bulkable_entity_add(e: dict[str, Any]) -> bool:
+        if _is_rel(e) or e.get("op") != "add":
+            return False
+        d = _decision_for_entity(decisions, e.get("schema_name", ""), e.get("technical_name", ""), "add")
+        return not (d and d.action in ("ignore", "reverse"))
+
+    entity_adds = [e for e in entries_sorted if _bulkable_entity_add(e)]
+    if len(entity_adds) >= BULK_MIN_ADDS:
+        from .bulk_apply import apply_entity_adds_bulk, apply_relationship_adds_bulk
+
+        rel_adds = [e for e in entries_sorted if _is_rel(e) and e.get("op") == "add"]
+        bulk_ids = {id(e) for e in entity_adds} | {id(e) for e in rel_adds}
+        rest = [e for e in entries_sorted if id(e) not in bulk_ids]
+        apply_entity_adds_bulk(state, entity_adds)
+        for ent_change in rest:
+            if not _is_rel(ent_change):
+                _apply_entry(ent_change)
+        apply_relationship_adds_bulk(state, rel_adds)
+        for ent_change in rest:
+            if _is_rel(ent_change):
+                _apply_entry(ent_change)
+    else:
+        for ent_change in entries_sorted:
+            _apply_entry(ent_change)
 
     # Compatibilidade com código antigo abaixo: aliases pra contadores.
     applied_entities = state.applied_entities
@@ -585,28 +625,7 @@ def _apply_relationship_change(
         )
         if existing:
             return
-        delta.insert(
-            sql,
-            s.fq_table("relationships"),
-            {
-                "relationship_id": rid,
-                "system_id": payload.get("system_id"),
-                "source_entity_id": payload.get("source_entity_id"),
-                "target_entity_id": payload.get("target_entity_id"),
-                "source_attr_ids": payload.get("source_attr_ids") or [],
-                "target_attr_ids": payload.get("target_attr_ids") or [],
-                "rel_type": payload.get("rel_type"),
-                "source_cardinality": payload.get("source_cardinality"),
-                "target_cardinality": payload.get("target_cardinality"),
-                "description": payload.get("description"),
-                "origin": payload.get("origin", "MANUAL"),
-                "fk_update_rule": payload.get("fk_update_rule"),
-                "fk_delete_rule": payload.get("fk_delete_rule"),
-                "relationship_name": payload.get("relationship_name"),
-                "created_at": now, "created_by": applied_by,
-                "updated_at": now, "updated_by": applied_by,
-            },
-        )
+        delta.insert(sql, s.fq_table("relationships"), _relationship_row(rid, payload, applied_by, now))
         return
 
     if op == "change":
@@ -718,6 +737,73 @@ def _apply_flag_keys_to_target(
             state.errors.append(f"flag '{key}': {exc}")
 
 
+def _entity_row(state: _ApplyState, ent_change: dict[str, Any], eid: str) -> dict[str, Any]:
+    """Linha de `entities` para um op=add. Compartilhada pelo caminho unitário
+    (`_apply_op_add`) e pelo apply EM LOTE (`bulk_apply`) — mesmo conteúdo."""
+    payload = ent_change.get("payload") or {}
+    return {
+        "entity_id": eid,
+        "system_id": state.system_id,
+        "schema_name": ent_change.get("schema_name", ""),
+        "technical_name": ent_change.get("technical_name", ""),
+        "logical_name": payload.get("logical_name"),
+        "description_md": payload.get("description_md") or payload.get("native_comment"),
+        "domain": payload.get("domain"),
+        "entity_type": ent_change.get("entity_type", "TABLE"),
+        "native_comment": payload.get("native_comment"),
+        "row_count_approx": payload.get("row_count_approx"),
+        "tags": payload.get("tags", []),
+        "is_shared": bool(payload.get("is_shared", False)),
+        "last_extracted_at": state.now,
+        "created_at": state.now, "created_by": state.applied_by,
+        "updated_at": state.now, "updated_by": state.applied_by,
+    }
+
+
+def _attribute_row(state: _ApplyState, attr: dict[str, Any], idx: int, eid: str) -> dict[str, Any]:
+    """Linha de `attributes` (mesmo contrato de `_entity_row`)."""
+    return {
+        "attribute_id": attr.get("attribute_id") or delta.new_id("attr-"),
+        "entity_id": eid,
+        "technical_name": attr.get("technical_name", ""),
+        "logical_name": attr.get("logical_name"),
+        "ordinal_position": attr.get("ordinal_position", idx + 1),
+        "native_data_type": attr.get("native_data_type"),
+        "is_nullable": attr.get("is_nullable"),
+        "default_value": attr.get("default_value"),
+        "is_primary_key": bool(attr.get("is_primary_key", False)),
+        # round 6 pt 15: descrição importada de COMMENT ON COLUMN;
+        # round 6 pt 21: expressão de CHECK constraint da coluna.
+        "description_md": attr.get("description_md"),
+        "native_comment": attr.get("native_comment"),
+        "check_constraint": attr.get("check_constraint"),
+        "created_at": state.now, "created_by": state.applied_by,
+        "updated_at": state.now, "updated_by": state.applied_by,
+    }
+
+
+def _relationship_row(rid: str, payload: dict, applied_by: str, now: datetime) -> dict[str, Any]:
+    """Linha de `relationships` para um op=add (unitário e em lote)."""
+    return {
+        "relationship_id": rid,
+        "system_id": payload.get("system_id"),
+        "source_entity_id": payload.get("source_entity_id"),
+        "target_entity_id": payload.get("target_entity_id"),
+        "source_attr_ids": payload.get("source_attr_ids") or [],
+        "target_attr_ids": payload.get("target_attr_ids") or [],
+        "rel_type": payload.get("rel_type"),
+        "source_cardinality": payload.get("source_cardinality"),
+        "target_cardinality": payload.get("target_cardinality"),
+        "description": payload.get("description"),
+        "origin": payload.get("origin", "MANUAL"),
+        "fk_update_rule": payload.get("fk_update_rule"),
+        "fk_delete_rule": payload.get("fk_delete_rule"),
+        "relationship_name": payload.get("relationship_name"),
+        "created_at": now, "created_by": applied_by,
+        "updated_at": now, "updated_by": applied_by,
+    }
+
+
 def _apply_op_add(state: _ApplyState, ent_change: dict[str, Any]) -> None:
     """Materializa um entity novo + attributes + indexes (op='add').
 
@@ -789,27 +875,7 @@ def _apply_op_add(state: _ApplyState, ent_change: dict[str, Any]) -> None:
         else:
             payload = ent_change.get("payload") or {}
             eid = payload.get("pre_allocated_entity_id") or delta.new_id("ent-")
-            delta.insert(
-                state.sql,
-                s.fq_table("entities"),
-                {
-                    "entity_id": eid,
-                    "system_id": state.system_id,
-                    "schema_name": schema_name,
-                    "technical_name": technical_name,
-                    "logical_name": payload.get("logical_name"),
-                    "description_md": payload.get("description_md") or payload.get("native_comment"),
-                    "domain": payload.get("domain"),
-                    "entity_type": ent_change.get("entity_type", "TABLE"),
-                    "native_comment": payload.get("native_comment"),
-                    "row_count_approx": payload.get("row_count_approx"),
-                    "tags": payload.get("tags", []),
-                    "is_shared": bool(payload.get("is_shared", False)),
-                    "last_extracted_at": state.now,
-                    "created_at": state.now, "created_by": state.applied_by,
-                    "updated_at": state.now, "updated_by": state.applied_by,
-                },
-            )
+            delta.insert(state.sql, s.fq_table("entities"), _entity_row(state, ent_change, eid))
             state.applied_entities += 1
             new_entity = True
             # round 6 pt 16: flags escolhidas na criação da tabela (via ticket).
@@ -855,25 +921,7 @@ def _apply_op_add(state: _ApplyState, ent_change: dict[str, Any]) -> None:
         name = attr.get("technical_name", "")
         if not name or name in existing_attr_names:
             continue
-        aid = attr.get("attribute_id") or delta.new_id("attr-")
-        row = {
-            "attribute_id": aid,
-            "entity_id": eid,
-            "technical_name": name,
-            "logical_name": attr.get("logical_name"),
-            "ordinal_position": attr.get("ordinal_position", idx + 1),
-            "native_data_type": attr.get("native_data_type"),
-            "is_nullable": attr.get("is_nullable"),
-            "default_value": attr.get("default_value"),
-            "is_primary_key": bool(attr.get("is_primary_key", False)),
-            # round 6 pt 15: descrição importada de COMMENT ON COLUMN;
-            # round 6 pt 21: expressão de CHECK constraint da coluna.
-            "description_md": attr.get("description_md"),
-            "native_comment": attr.get("native_comment"),
-            "check_constraint": attr.get("check_constraint"),
-            "created_at": state.now, "created_by": state.applied_by,
-            "updated_at": state.now, "updated_by": state.applied_by,
-        }
+        row = _attribute_row(state, attr, idx, eid)
         attr_specs.append((name, row, attr))
 
     # Fast-path: um único INSERT multi-linha com TODAS as colunas da entity.
