@@ -183,6 +183,20 @@ class ExtractionOut(ExtractionListOut):
     diff_summary: dict | None = None
 
 
+class ExtractionErrorsOut(BaseModel):
+    """Log de erros/avisos de UMA extração (v1.0075) — `GET /extractions/{id}/errors`.
+
+    Endpoint próprio (e não `getExtraction`) porque o Histórico só precisa do
+    log: `getExtraction` devolve também o `snapshot` inteiro, que num DDL de 12
+    mil linhas tem MBs. `errors` = 1 mensagem por item, na ordem gravada
+    (problemas de parse primeiro, depois avisos).
+    """
+
+    extraction_id: str
+    status: ExtractionStatus
+    errors: list[str] = Field(default_factory=list)
+
+
 class PreviewObject(BaseModel):
     """Uma linha do PREVIEW (dry-run) de import: o que MUDARIA por objeto.
 

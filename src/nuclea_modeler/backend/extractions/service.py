@@ -472,6 +472,92 @@ def format_import_log(problems: list[str], infos: list[str]) -> str:
     return "\n\n".join(parts)
 
 
+# ─── Erros de import VISÍVEIS depois do import (v1.0075) ──────────────────────
+# Antes, os erros de parse só apareciam no card de resultado logo após o import
+# ("Erros (N)" recolhido). O ticket mostrava só a CONTAGEM ("Erros de parse: 61")
+# e o Histórico só o status PARTIAL — quem abria o ticket depois não tinha onde
+# ver QUAIS instruções falharam (pergunta real do cliente). Além disso o log
+# gravado em `extractions.error_summary` era cortado em 4000 chars NO MEIO de uma
+# linha: com ~60 erros de ~150 chars, metade se perdia.
+# Agora: (1) o ticket lista os primeiros erros (`format_ticket_errors`); (2) o log
+# é gravado com limite generoso, cortado em FRONTEIRA DE LINHA e com marcador de
+# quantos ficaram de fora (`join_error_summary`); (3) o Histórico lê o log por
+# `GET /extractions/{id}/errors` (`split_error_summary`).
+
+# Limite do log persistido. A coluna é STRING (Delta, sem limite prático) e o
+# snapshot_json da MESMA linha já carrega MBs num DDL grande — 100 mil chars
+# (~600 erros) não pesa. O limite existe só para um DDL patológico (milhares de
+# erros) não inflar a linha sem necessidade.
+ERROR_SUMMARY_MAX_CHARS = 100_000
+
+# Quantos erros entram no resumo do ticket. O resumo é lido por quem APROVA —
+# precisa dar a noção do que falhou sem virar um muro de texto; a lista completa
+# fica no Histórico (o texto do ticket aponta para lá).
+TICKET_ERRORS_LIMIT = 30
+
+
+def join_error_summary(
+    lines: list[str], max_chars: int = ERROR_SUMMARY_MAX_CHARS
+) -> str | None:
+    """Junta as mensagens (1 por linha) para gravar em `error_summary`.
+
+    Corta em FRONTEIRA DE LINHA (nunca no meio de uma mensagem) e, se cortou,
+    termina com `… (+N mensagem(ns) não gravada(s))` — quem lê o Histórico sabe
+    que a lista está incompleta e quantas faltam. Mensagens com quebra de linha
+    interna são achatadas (o log é lido de volta com 1 mensagem por linha).
+    Devolve None para lista vazia (coluna fica NULL, como antes).
+    """
+    clean = [" ".join(str(m).split()) for m in lines if str(m).strip()]
+    if not clean:
+        return None
+    kept: list[str] = []
+    used = 0
+    for i, msg in enumerate(clean):
+        cost = len(msg) + (1 if kept else 0)  # +1 = o "\n" separador
+        if used + cost > max_chars:
+            # O marcador pode passar do limite em poucos chars — de propósito: o
+            # limite é folgado e saber QUANTAS faltam vale mais que a exatidão.
+            kept.append(f"… (+{len(clean) - i} mensagem(ns) não gravada(s))")
+            break
+        kept.append(msg)
+        used += cost
+    return "\n".join(kept)
+
+
+def split_error_summary(text: str | None) -> list[str]:
+    """Inverso de `join_error_summary`: texto gravado → lista de mensagens.
+
+    Tolera o formato antigo (antes da v1.0075 o log era o mesmo `\\n`.join, só
+    que truncado em 4000 chars — a última linha pode vir cortada, e é exibida
+    assim mesmo). Linhas vazias são descartadas.
+    """
+    if not text:
+        return []
+    return [ln.strip() for ln in str(text).splitlines() if ln.strip()]
+
+
+def format_ticket_errors(errors: list[str], limit: int = TICKET_ERRORS_LIMIT) -> str:
+    """Bloco markdown com os primeiros `limit` erros de parse para o ticket.
+
+    Vazio quando não há erros. Quando há mais que `limit`, diz quantos ficaram
+    de fora e ONDE ver a lista completa (Engenharia Reversa → Histórico).
+    """
+    if not errors:
+        return ""
+    shown = errors[:limit]
+    block = "\n\n**Erros de parse (instruções ignoradas):**\n" + "\n".join(
+        f"- {e}" for e in shown
+    )
+    rest = len(errors) - len(shown)
+    if rest > 0:
+        block += f"\n- … e mais {rest} erro(s)."
+    block += (
+        "\nLista completa: Engenharia Reversa → aba Histórico → \"Ver erros\" "
+        "nesta extração."
+    )
+    return block
+
+
 def persist_extraction(
     sql: Sql,
     *,
@@ -1506,7 +1592,9 @@ def run_ddl_import(
             objects_found=0, objects_new=0, objects_changed=0, objects_removed=0,
             snapshot=empty_snapshot,
             diff_summary=None,
-            error_summary=msg[:4000],
+            # v1.0075: grava também os erros de parse (antes só a msg geral —
+            # justamente o caso em que mais importa saber o que falhou).
+            error_summary=join_error_summary([msg] + errors),
             ticket_id=None,
         )
         return ExtractionResult(
@@ -1603,6 +1691,9 @@ def run_ddl_import(
                 f"{summary.get('relationships', 0)} relacionamento(s), "
                 f"{idx_count} índice(s).\n"
                 f"Erros de parse: {len(errors)}"
+                # v1.0075: o ticket lista QUAIS instruções falharam (antes só a
+                # contagem — o aprovador não tinha onde ver os erros).
+                f"{format_ticket_errors(errors)}"
                 f"{warnings_block}"
             ),
             created_by=actor,
@@ -1664,7 +1755,9 @@ def run_ddl_import(
         objects_removed=summary["removed"],
         snapshot=snapshot,
         diff_summary=summary,
-        error_summary=("\n".join(errors + warnings)[:4000]) if (errors or warnings) else None,
+        # v1.0075: corte em fronteira de linha + limite folgado (antes [:4000]
+        # cortava a lista no meio); lido de volta pelo Histórico ("Ver erros").
+        error_summary=join_error_summary(errors + warnings),
         ticket_id=ticket_id,
     )
     return ExtractionResult(
@@ -1823,7 +1916,7 @@ def run_embarcadero_import(
         snapshot=snapshot,
         diff_summary=summary,
         # Log completo persistido (não mais truncado em 500): problemas primeiro.
-        error_summary=("\n".join(problems + infos)[:4000]) if parse_warnings else None,
+        error_summary=join_error_summary(problems + infos) if parse_warnings else None,
         ticket_id=ticket_id,
     )
 
@@ -1936,7 +2029,7 @@ def run_dynamodb_import(
         objects_removed=summary["removed"],
         snapshot=snapshot,
         diff_summary=summary,
-        error_summary=("\n".join(warnings)[:4000]) if warnings else None,
+        error_summary=join_error_summary(warnings),
         ticket_id=ticket_id,
     )
     return ExtractionResult(

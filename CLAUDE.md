@@ -451,6 +451,21 @@ conformidade) aguarda a planilha do cliente; itens 4 (ODBC), 11, 12 e 13 depende
   `SMOKE-DYNAMO-*`: import Workbench → apply → PK composta → atributo inferido → leitura do
   GSI → export JSON). Rode-o após mexer em extractions/ddl/IndexType.
 
+- **v1.0075 — Erros de import VISÍVEIS depois do import.** Pergunta do cliente: o
+  ticket dizia "Erros de parse: 61" mas não havia onde ver QUAIS. Antes os erros só
+  apareciam no card de resultado logo após importar; o ticket tinha só a contagem, o
+  Histórico só o status PARTIAL, e `extractions.error_summary` era cortado em 4000
+  chars no MEIO da linha. Agora (`extractions/service.py`): `format_ticket_errors`
+  põe os 30 primeiros no resumo do ticket (+ "e mais N" + onde ver tudo);
+  `join_error_summary` grava 1 msg/linha com limite de 100 mil chars, corte em
+  fronteira de linha e marcador "+N não gravada(s)"; `GET /extractions/{id}/errors`
+  (`getExtractionErrors`, rota LEVE — `getExtraction` traz o snapshot de MBs) alimenta
+  o "Ver erros" do Histórico (linha expansível) com botão "Copiar". Extrações antigas
+  continuam com o log truncado em 4000 (não dá para recuperar). **Lembrete:** os erros
+  de parse do DDL são de instruções que o import USA (CREATE TABLE/VIEW/INDEX, ALTER,
+  COMMENT ON — o resto é filtrado antes), então um erro pode significar uma tabela
+  que NÃO entrou no modelo. Teste: `tests/test_extraction_error_log.py`.
+
 ## Package Management
 - **Frontend:** Use `apx bun install` or `apx bun add <dependency>` for frontend package management.
 - **Python:** Always use `uv` (never `pip`)

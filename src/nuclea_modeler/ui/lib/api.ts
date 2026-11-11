@@ -2363,6 +2363,27 @@ export const useGetExtractionSuspense = (id: string, s?: Selector<ExtractionOut>
     ...s?.query,
   });
 
+// v1.0075: log de erros/avisos de UMA extração (o "Ver erros" do Histórico).
+// Rota própria e leve — `getExtraction` traz o snapshot inteiro (MBs num DDL
+// grande). `errors` = 1 mensagem por item (problemas de parse primeiro).
+export interface ExtractionErrorsOut {
+  extraction_id: string;
+  status: ExtractionStatus;
+  errors: string[];
+}
+
+export const useGetExtractionErrorsSuspense = (
+  id: string,
+  s?: Selector<ExtractionErrorsOut>,
+) =>
+  useSuspenseQuery({
+    queryKey: ["getExtractionErrors", id],
+    queryFn: () =>
+      api.get<ExtractionErrorsOut>(`/extractions/${encodeURIComponent(id)}/errors`),
+    select: (r) => r.data,
+    ...s?.query,
+  });
+
 export const useRunLakebaseExtraction = (
   opts?: Opts<ExtractionResult, { data: LakebaseExtractionIn }>,
 ) =>
