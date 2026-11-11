@@ -1,10 +1,11 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { Suspense, useEffect, useState } from "react";
+import { Fragment, Suspense, useEffect, useState } from "react";
 import { QueryErrorResetBoundary, useQueryClient } from "@tanstack/react-query";
 import { ErrorBoundary } from "react-error-boundary";
 import { toast } from "sonner";
 
 import {
+  useGetExtractionErrorsSuspense,
   useListExtractionsSuspense,
   useListSandboxesSuspense,
   useListSystemsSuspense,
@@ -37,6 +38,9 @@ import {
   CheckCircle2,
   XCircle,
   Upload,
+  Copy,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { EmptyState } from "@/components/apx/empty-state";
 import { SystemPicker } from "@/components/apx/system-picker";
@@ -860,9 +864,9 @@ function ResultPanel({
       {result.errors.length > 0 && (
         <details className="mt-3">
           <summary className="text-xs cursor-pointer">Erros ({result.errors.length})</summary>
-          <ul className="list-disc pl-5 mt-2 space-y-1 text-xs font-mono">
-            {result.errors.map((e, i) => <li key={i}>{e}</li>)}
-          </ul>
+          <div className="mt-2">
+            <ErrorList errors={result.errors} />
+          </div>
         </details>
       )}
     </div>
@@ -914,6 +918,9 @@ function Counter({
 
 function HistoryTab() {
   const { data: extractions } = useListExtractionsSuspense({}, selector());
+  // v1.0075: uma extração expandida por vez ("Ver erros") — o log é buscado só
+  // ao abrir (rota leve /extractions/{id}/errors), não para as 100 linhas.
+  const [openId, setOpenId] = useState<string | null>(null);
   if (extractions.length === 0) {
     return (
       <EmptyState
@@ -945,12 +952,14 @@ function HistoryTab() {
                 <th className="py-2 px-3 font-medium text-right">Alterados</th>
                 <th className="py-2 px-3 font-medium text-right">Removidos</th>
                 <th className="py-2 px-3 font-medium">Ticket</th>
+                <th className="py-2 px-3 font-medium">Erros</th>
                 <th className="py-2 px-3 font-medium">Quando</th>
               </tr>
             </thead>
             <tbody>
               {extractions.map((e) => (
-                <tr key={e.extraction_id} className="border-b hover:bg-muted/40">
+                <Fragment key={e.extraction_id}>
+                <tr className="border-b hover:bg-muted/40">
                   <td className="py-2 px-3 font-mono text-xs">{e.extraction_id.slice(0, 12)}…</td>
                   <td className="py-2 px-3">
                     <Badge variant="outline">{e.source_kind}</Badge>
@@ -970,16 +979,123 @@ function HistoryTab() {
                       <span className="text-xs text-muted-foreground">—</span>
                     )}
                   </td>
+                  <td className="py-2 px-3">
+                    {/* Só PARTIAL/FAILED gravam log (SUCCESS = sem erro nem aviso). */}
+                    {e.status === "PARTIAL" || e.status === "FAILED" ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setOpenId((cur) => (cur === e.extraction_id ? null : e.extraction_id))
+                        }
+                        aria-expanded={openId === e.extraction_id}
+                        className="inline-flex items-center gap-1 text-xs text-nuclea-primary hover:underline"
+                      >
+                        {openId === e.extraction_id ? (
+                          <ChevronDown className="h-3 w-3" />
+                        ) : (
+                          <ChevronRight className="h-3 w-3" />
+                        )}
+                        Ver erros
+                      </button>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </td>
                   <td className="py-2 px-3 text-xs text-muted-foreground">
                     {new Date(e.started_at).toLocaleString("pt-BR")}
                   </td>
                 </tr>
+                {openId === e.extraction_id && (
+                  <tr className="border-b bg-muted/20">
+                    <td colSpan={11} className="px-3 py-3">
+                      <ExtractionErrorsPanel extractionId={e.extraction_id} />
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
           </table>
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * Log de erros/avisos de UMA extração, carregado sob demanda (v1.0075).
+ *
+ * Por que existe: antes os erros só apareciam no card de resultado, logo após
+ * o import — o ticket mostrava só "Erros de parse: N" e quem o abria depois não
+ * tinha onde ver QUAIS instruções falharam. ErrorBoundary/Suspense próprios:
+ * uma falha aqui não derruba a tabela do Histórico.
+ */
+function ExtractionErrorsPanel({ extractionId }: { extractionId: string }) {
+  return (
+    <QueryErrorResetBoundary>
+      {({ reset }) => (
+        <ErrorBoundary
+          onReset={reset}
+          fallbackRender={({ resetErrorBoundary }) => (
+            <div className="flex items-center gap-2 text-xs text-destructive">
+              <AlertCircle className="h-4 w-4" />
+              Não foi possível carregar o log desta extração.
+              <Button size="sm" variant="outline" onClick={resetErrorBoundary}>
+                Tentar novamente
+              </Button>
+            </div>
+          )}
+        >
+          <Suspense fallback={<Skeleton className="h-16 w-full" />}>
+            <ExtractionErrorsContent extractionId={extractionId} />
+          </Suspense>
+        </ErrorBoundary>
+      )}
+    </QueryErrorResetBoundary>
+  );
+}
+
+function ExtractionErrorsContent({ extractionId }: { extractionId: string }) {
+  const { data } = useGetExtractionErrorsSuspense(extractionId, selector());
+  if (data.errors.length === 0) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        Nenhum erro gravado para esta extração.
+      </p>
+    );
+  }
+  return <ErrorList errors={data.errors} />;
+}
+
+/**
+ * Lista de erros/avisos de import com botão "Copiar" — usada no card de
+ * resultado e no Histórico. Copiar é o caminho prático para o cliente mandar
+ * o log ao suporte/DBA (a lista de um DDL grande não cabe num print).
+ */
+function ErrorList({ errors }: { errors: string[] }) {
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(errors.join("\n"));
+      toast.success(`${errors.length} linha(s) copiada(s)`);
+    } catch {
+      toast.error("Não foi possível copiar — selecione o texto manualmente.");
+    }
+  };
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground">{errors.length} mensagem(ns)</span>
+        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={copy}>
+          <Copy className="mr-1 h-3 w-3" />
+          Copiar
+        </Button>
+      </div>
+      <ul className="list-disc pl-5 space-y-1 text-xs font-mono max-h-80 overflow-auto">
+        {errors.map((e, i) => (
+          <li key={i} className="break-all">{e}</li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

@@ -15,6 +15,7 @@ from .models import (
     DDLImportIn,
     DynamoDBImportIn,
     EmbarcaderoImportIn,
+    ExtractionErrorsOut,
     ExtractionListOut,
     ExtractionOut,
     ExtractionResult,
@@ -28,6 +29,7 @@ from .service import (
     run_embarcadero_import,
     run_lakebase_extraction,
     run_uc_extraction,
+    split_error_summary,
 )
 
 router = APIRouter(prefix=f"{api_prefix}/extractions", tags=["extractions"])
@@ -74,6 +76,37 @@ def list_extractions(sql: SqlDependency, system_id: str | None = None) -> list[E
         )
         for r in rows
     ]
+
+
+@router.get(
+    "/{extraction_id}/errors",
+    response_model=ExtractionErrorsOut,
+    operation_id="getExtractionErrors",
+)
+def get_extraction_errors(extraction_id: str, sql: SqlDependency) -> ExtractionErrorsOut:
+    """Log de erros/avisos de uma extração — alimenta o "Ver erros" do Histórico.
+
+    Lê SÓ `status` + `error_summary` (não o snapshot, que pode ter MBs). O log
+    gravado é 1 mensagem por linha (`service.join_error_summary`). Leitura, sem
+    checagem de papel — mesmo nível de `listExtractions`/`getExtraction`.
+    """
+    s = get_settings()
+    row = delta.fetch_one_params(
+        sql,
+        f"""
+        SELECT e.extraction_id, e.status, e.error_summary
+        FROM {s.fq_table('extractions')} e
+        WHERE e.extraction_id = :extraction_id
+        """,
+        [delta.param("extraction_id", extraction_id)],
+    )
+    if not row:
+        raise HTTPException(404, f"extraction '{extraction_id}' not found")
+    return ExtractionErrorsOut(
+        extraction_id=row[0],
+        status=cast(any, row[1]),
+        errors=split_error_summary(row[2]),
+    )
 
 
 @router.get("/{extraction_id}", response_model=ExtractionOut, operation_id="getExtraction")
