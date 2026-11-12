@@ -523,14 +523,21 @@ Edite substituindo os 4 placeholders críticos:
 | `<WAREHOUSE_ID>` | ID do SQL Warehouse | Final da URL do warehouse (`/sql/warehouses/<ID>`) |
 | `<CATALOG_NAME>` | Unity Catalog onde o app guarda estado | Catalog Explorer |
 | `<LAKEBASE_INSTANCE_NAME>` | (opcional) Nome da instance Lakebase | Compute → Lakebase. Se NÃO usar Lakebase, **comente toda a sub-seção `database:`** sob `nuclea-lakebase` |
-| `nuclea-modeler` em `NUCLEA_SECRETS_SCOPE` | Nome do secret scope (opcional) | Você cria no passo 3 |
+| `nuclea-modeler` em `NUCLEA_SECRETS_SCOPE` | Nome do secret scope (guarda a chave de cifra das senhas de conexão) | Você cria no passo 3 |
 
 > Os valores `NUCLEA_SCHEMA=nuclea_modeler`, `NUCLEA_LOG_JSON=true`, `NUCLEA_MIGRATIONS_AUTO_APPLY=false` são defaults e **não precisam mudar**.
 
-**3) Crie o secret scope (opcional — só se for conectar a ODBC/REST externos)**
+**3) Crie o secret scope e a chave de cifra (obrigatório para Conexões)**
+
+O app cifra a senha das conexões de banco com uma chave-mestra em Databricks
+Secrets; sem ela, salvar conexão com senha falha com *"Chave de cifra indisponível"*.
 ```bash
 databricks secrets create-scope nuclea-modeler --profile <SEU_PROFILE>
+KEY=$(python3 -c "import os,base64;print(base64.urlsafe_b64encode(os.urandom(32)).decode())")
+databricks secrets put-secret nuclea-modeler conn_enc_key --string-value "$KEY" --profile <SEU_PROFILE>
 ```
+Não troque nem apague essa chave depois (senhas já salvas deixariam de abrir). O
+READ do SP do app no scope vem no passo 5 (o SP só existe após o passo 4).
 
 **4) Crie o app no workspace**
 ```bash
@@ -549,6 +556,12 @@ GRANT ALL PRIVILEGES ON SCHEMA <CATALOG_NAME>.nuclea_modeler TO `<SP_APPLICATION
 ```
 
 > **Se usar Lakebase**: o SP precisa também de `CAN_CONNECT_AND_CREATE` na instance (já declarado em `resources.nuclea-lakebase.database.permission` no `app.yml`).
+
+**Leitura da chave de cifra (obrigatório para Conexões)** — o SP do app lê a chave do passo 3:
+```bash
+databricks secrets put-acl nuclea-modeler <SP_APPLICATION_ID> READ --profile <SEU_PROFILE>
+```
+(Com o app já no ar, não precisa reiniciar: a próxima tentativa de salvar já acha a chave.)
 
 **6) Deploy**
 ```bash

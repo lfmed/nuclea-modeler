@@ -868,12 +868,18 @@ env:
           <div class="substep">Salve</div>
         </li>
         <li>
-          <h4>(Opcional) Crie secret scope</h4>
-          <div class="substep">Só se vai usar conexões ODBC ou REST a sistemas externos.</div>
-          <div class="substep">Atualmente o Workspace UI não tem editor de secret scope pleno —
-            crie via Admin Settings se disponível, ou peça pro admin Databricks rodar
-            <code>databricks secrets create-scope nuclea-modeler</code> no terminal dele.</div>
-          <div class="substep"><strong>Pra primeiro deploy, pode pular.</strong></div>
+          <h4>Secret scope + chave de cifra (necessário para Conexões)</h4>
+          <div class="substep">O app cifra a senha das conexões de banco com uma chave-mestra em
+            Databricks Secrets. Sem ela, salvar conexão com senha falha com
+            <em>"Chave de cifra indisponível"</em>. O Workspace UI não cria secrets —
+            peça pro admin Databricks rodar na CLI (troque <code>&lt;SP_APPLICATION_ID&gt;</code>
+            pelo <code>service_principal_client_id</code> do app, em <code>databricks apps get nuclea-modeler</code>):</div>
+          <pre><code>databricks secrets create-scope nuclea-modeler
+KEY=$(python3 -c &quot;import os,base64;print(base64.urlsafe_b64encode(os.urandom(32)).decode())&quot;)
+databricks secrets put-secret nuclea-modeler conn_enc_key --string-value &quot;$KEY&quot;
+databricks secrets put-acl nuclea-modeler &lt;SP_APPLICATION_ID&gt; READ</code></pre>
+          <div class="substep">Pode ser feito depois do 1º deploy — não precisa reiniciar o app.
+            <strong>Não troque nem apague essa chave depois</strong> (senhas já salvas deixariam de abrir).</div>
         </li>
         <li>
           <h4>Clique Deploy</h4>

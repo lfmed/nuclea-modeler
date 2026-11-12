@@ -309,7 +309,7 @@
     <li><a href="#prereq">Pré-requisitos</a></li>
     <li><a href="#step1">1. Clone do repositório</a></li>
     <li><a href="#step2">2. Parametrize <code>app.yml</code></a></li>
-    <li><a href="#step3">3. Secret scope (opcional)</a></li>
+    <li><a href="#step3">3. Secret scope + chave de cifra</a></li>
     <li><a href="#step4">4. Criar o app</a></li>
     <li><a href="#step5">5. Permissões no UC</a></li>
     <li><a href="#step6">6. Deploy</a></li>
@@ -435,13 +435,23 @@ cd nuclea-modeler</pre>
 <!-- ─── STEP 3 ────────────────────────────────────────────── -->
 <section class="step" id="step3">
   <span class="num">3</span>
-  <h2>Crie o secret scope <span style="color:var(--text-soft);font-size:14px;font-weight:normal">(opcional)</span></h2>
-  <p>Necessário apenas se for cadastrar conexões ODBC/REST a sistemas legados que exigem credenciais.</p>
+  <h2>Crie o secret scope e a chave de cifra</h2>
+  <p>O app cifra a senha de cada conexão de banco (<strong>Conexões → Nova conexão</strong>) com uma
+    chave-mestra guardada em Databricks Secrets. Sem ela, salvar uma conexão com senha falha com
+    <em>"Chave de cifra indisponível"</em> — o app nunca grava senha em texto puro.</p>
   <div class="code">
     <button class="copy" onclick="copyCode(this)">Copiar</button>
-    <pre>databricks secrets create-scope nuclea-modeler --profile &lt;SEU_PROFILE&gt;</pre>
+    <pre>databricks secrets create-scope nuclea-modeler --profile &lt;SEU_PROFILE&gt;
+
+KEY=$(python3 -c &quot;import os,base64;print(base64.urlsafe_b64encode(os.urandom(32)).decode())&quot;)
+databricks secrets put-secret nuclea-modeler conn_enc_key --string-value &quot;$KEY&quot; --profile &lt;SEU_PROFILE&gt;</pre>
   </div>
-  <p>Se mudou <code class="inline">NUCLEA_SECRETS_SCOPE</code> no <code class="inline">app.yml</code>, use o mesmo nome aqui.</p>
+  <p>Se mudou <code class="inline">NUCLEA_SECRETS_SCOPE</code> no <code class="inline">app.yml</code>, use o mesmo nome aqui e no passo 5.</p>
+  <div class="callout info">
+    <strong>⚠️ Não troque nem apague essa chave depois</strong>
+    As senhas já salvas deixariam de abrir e as conexões teriam que ser recadastradas. O READ do
+    service principal do app no scope é dado no passo 5 (o SP só existe após o passo 4).
+  </div>
 </section>
 
 
@@ -482,6 +492,13 @@ GRANT ALL PRIVILEGES
     <strong>💡 Execute no SQL Editor</strong>
     Use o mesmo SQL Warehouse declarado no <code class="inline">app.yml</code>.
   </div>
+  <h3>Leitura da chave de cifra (Conexões)</h3>
+  <p>O app lê a chave do passo 3 com o próprio service principal — conceda READ no scope:</p>
+  <div class="code">
+    <button class="copy" onclick="copyCode(this)">Copiar</button>
+    <pre>databricks secrets put-acl nuclea-modeler &lt;SP_APPLICATION_ID&gt; READ --profile &lt;SEU_PROFILE&gt;</pre>
+  </div>
+  <p>Com o app já no ar, não precisa reiniciar: a próxima tentativa de salvar a conexão já encontra a chave.</p>
 </section>
 
 

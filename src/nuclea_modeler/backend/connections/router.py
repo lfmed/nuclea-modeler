@@ -87,11 +87,17 @@ def _encrypt_password_or_400(password: str | None, app_ws) -> str | None:
     if not password:
         return None
     if not crypto.is_configured(app_ws):
+        # v1.0076: mensagem com causa + comandos prontos (scope real e client ID
+        # do SP preenchidos). A tela mostra o `detail` com quebras de linha
+        # (whitespace-pre-wrap em connections.new.tsx). 500 = falta configuração
+        # do SERVIDOR, não erro do que o usuário digitou.
         raise HTTPException(
             500,
-            "Chave de cifra indisponível — não é possível salvar a senha com "
-            "segurança. Configure o secret 'nuclea-modeler/conn_enc_key' e o READ "
-            "do SP do app no scope.",
+            crypto.missing_key_help(
+                get_settings().secrets_scope,
+                crypto.app_sp_client_id(app_ws),
+                crypto.last_error(),
+            ),
         )
     return crypto.encrypt(password, app_ws)
 
