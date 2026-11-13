@@ -46,13 +46,25 @@ Se **não usar Lakebase**, remova ou comente o bloco `nuclea-lakebase` em
 Schema (`NUCLEA_SCHEMA`) é criado automaticamente na primeira run pelas
 migrations. Sugestão: `nuclea_modeler` (default no `.example`).
 
-## 3. Crie o secret scope (opcional, só se for conectar a ODBC/REST)
+## 3. Crie o secret scope e a chave de cifra (obrigatório para Conexões)
+
+O app cifra a senha de cada conexão de banco (Conexões → Nova conexão) com uma
+**chave-mestra** guardada em Databricks Secrets. Sem ela, salvar uma conexão com
+senha falha com *"Chave de cifra indisponível"* — o app nunca grava senha em texto puro.
 
 ```bash
 databricks secrets create-scope nuclea-modeler --profile <SEU_PROFILE>
+
+# Gera a chave (Fernet) e grava no secret `conn_enc_key`
+KEY=$(python3 -c "import os,base64;print(base64.urlsafe_b64encode(os.urandom(32)).decode())")
+databricks secrets put-secret nuclea-modeler conn_enc_key --string-value "$KEY" --profile <SEU_PROFILE>
 ```
 
-Se mudou `NUCLEA_SECRETS_SCOPE`, use o nome correspondente.
+- Se mudou `NUCLEA_SECRETS_SCOPE` no `app.yml`, use o mesmo nome aqui e no passo 5.
+- **Não troque nem apague essa chave depois:** as senhas já salvas deixam de abrir
+  e as conexões precisam ser recadastradas. Não precisa guardar cópia — ela fica no secret.
+- O READ do service principal do app no scope é dado no **passo 5** (o SP só
+  existe depois do passo 4).
 
 ## 4. Cria o app
 
@@ -79,6 +91,16 @@ GRANT ALL PRIVILEGES ON SCHEMA <CATALOG_NAME>.nuclea_modeler TO `<SP_APPLICATION
 ```
 
 O `<SP_APPLICATION_ID>` é o UUID que `databricks apps create` retornou.
+
+**Leitura da chave de cifra (obrigatório para Conexões).** O app lê a chave do
+passo 3 com o próprio SP — dê READ no scope:
+
+```bash
+databricks secrets put-acl nuclea-modeler <SP_APPLICATION_ID> READ --profile <SEU_PROFILE>
+```
+
+Se o app já estiver no ar, não precisa reiniciar nem re-deployar: a próxima
+tentativa de salvar a conexão já encontra a chave.
 
 ### Grants extras por funcionalidade
 

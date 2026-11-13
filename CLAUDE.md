@@ -466,6 +466,19 @@ conformidade) aguarda a planilha do cliente; itens 4 (ODBC), 11, 12 e 13 depende
   COMMENT ON — o resto é filtrado antes), então um erro pode significar uma tabela
   que NÃO entrou no modelo. Teste: `tests/test_extraction_error_log.py`.
 
+- **v1.0076 — "Chave de cifra indisponível" ao salvar conexão (ambiente do CLIENTE).**
+  Não é bug: no workspace do cliente faltava o secret `<scope>/conn_enc_key` e/ou o READ
+  do SP do app no scope (no nosso fevm está configurado). Os guias de deploy diziam que
+  o scope era "opcional, só ODBC/REST" — corrigidos (`DEPLOY.md`, `HANDOVER.md`,
+  `docs/deploy/guia-cliente.html`, `deploy-via-ui.html`): passo 3 cria scope + chave,
+  passo 5 dá `put-acl … READ` (o SP só existe depois do `apps create`). A mensagem do
+  500 virou ajuda acionável (`crypto.missing_key_help`): causa provável pela classe da
+  exceção do SDK (`crypto.last_error`: PermissionDenied/ResourceDoesNotExist…) + os
+  comandos com o scope REAL e o client ID do SP (`app_sp_client_id`: `ws.config.client_id`
+  → env `DATABRICKS_CLIENT_ID`) preenchidos. **Só o sucesso é cacheado** → depois de criar
+  secret+grant NÃO precisa reiniciar o app (a mensagem promete isso; teste cobre).
+  `connections.new.tsx` mostra `error.message` (sem prefixo "AxiosError:").
+
 ## Package Management
 - **Frontend:** Use `apx bun install` or `apx bun add <dependency>` for frontend package management.
 - **Python:** Always use `uv` (never `pip`)

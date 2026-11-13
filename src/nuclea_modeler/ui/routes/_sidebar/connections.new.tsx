@@ -90,7 +90,9 @@ function ConnectionForm() {
       },
       onError: (err) => {
         toast.error("Erro ao criar conexão", {
-          description: err instanceof Error ? err.message : "Falha desconhecida",
+          // Só a 1ª linha no toast — o detalhe completo (ex.: os comandos da
+          // ajuda da chave de cifra) aparece no card "Falha ao salvar" abaixo.
+          description: err instanceof Error ? err.message.split("\n")[0] : "Falha desconhecida",
         });
       },
     },
@@ -284,7 +286,13 @@ function ConnectionForm() {
         <Card className="border-destructive/50">
           <CardContent className="pt-4 text-sm text-destructive">
             <p className="font-medium">Falha ao salvar:</p>
-            <pre className="mt-1 text-xs whitespace-pre-wrap">{String(error)}</pre>
+            {/* `.message` (não String(error)): o interceptor de api.ts já põe o
+                `detail` do backend em message — String() prefixava "AxiosError: ".
+                whitespace-pre-wrap preserva as quebras de linha da ajuda da
+                chave de cifra (crypto.missing_key_help, v1.0076). */}
+            <pre className="mt-1 text-xs whitespace-pre-wrap">
+              {error instanceof Error ? error.message : String(error)}
+            </pre>
           </CardContent>
         </Card>
       )}
